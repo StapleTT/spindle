@@ -11,7 +11,7 @@
 
 ## ⚠️ Notes Before Starting
 
-- The design prototype URL returned a 404 at project creation time. Implement a clean, modern email client UI that matches standard two-panel/three-panel email client conventions until the prototype is accessible.
+- The design prototype URL returned a 404 at project creation time. Before creating any web page content, ask for the Claude Design URL.
 - All secrets (OAuth client IDs, session secrets, SMTP credentials) must go in a `.env` file. Never commit `.env`.
 - Run `npm install` before starting. See `package.json` for all dependencies.
 - SQLite DB file lives at `./data/spindle.db` — created automatically on first run.
@@ -56,7 +56,7 @@ spindle/
 │       └── sanitize.js        # HTML email sanitization (DOMPurify server-side)
 └── public/
     ├── index.html             # Main app shell (requires login)
-    ├── login.html             # Login / Register page
+    ├── auth.html             # Login / Register page
     ├── recovery.html          # Account recovery page
     ├── css/
     │   ├── main.css           # Base styles, CSS variables, light/dark themes
@@ -178,10 +178,10 @@ Create all tables on startup if they don't exist:
 - [ ] Check `req.user.role === 'admin'` — if not, return 403
 
 ### 2.7 Frontend Auth Pages
-- [ ] `public/login.html` — login form + register form (toggle between)
-- [ ] Register form includes invite code field
-- [ ] Client-side validation before submit
-- [ ] Redirect to `index.html` on success; show error messages inline on failure
+- [x] `public/auth.html` — login form + register form (toggle between)
+- [x] Register form includes invite code field
+- [x] Client-side validation before submit
+- [x] Redirect to `index.html` on success; show error messages inline on failure
 
 ---
 
@@ -348,7 +348,7 @@ Create all tables on startup if they don't exist:
 ### 7.5 Global State & API (`public/js/app.js`, `public/js/api.js`)
 - [ ] `api.js`: thin fetch wrapper — handles auth errors (redirect to login on 401), JSON parsing, error toasts
 - [ ] `app.js`: global state (currentAccount, currentFolder, currentMessage, user, theme)
-- [ ] On load: call `GET /api/auth/me` — redirect to `login.html` if 401
+- [ ] On load: call `GET /api/auth/me` — redirect to `auth.html` if 401
 - [ ] Theme: read from user record; apply `data-theme` attribute; persist via `PATCH /api/settings/theme`
 
 ---

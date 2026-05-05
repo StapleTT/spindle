@@ -84,7 +84,7 @@ function renderReset(token) {
         'cp-err')}
       <button class="btn" id="reset-go">[ set new password ] <span class="ret">↵</span></button>
     </div>
-    <div class="auth-footer"><div><a href="/login.html">← back to login</a></div><div></div></div>
+    <div class="auth-footer"><div><a href="/auth.html">← back to login</a></div><div></div></div>
   </div>`;
 
   [['np','np-t'],['cp','cp-t']].forEach(([inp,tog])=>{
@@ -110,7 +110,7 @@ function renderReset(token) {
         ${statusLine('ok','password updated successfully')}
         <div class="card">
           <div class="card-info">Your password has been updated. You can now log in with your new credentials.</div>
-          <button class="btn" onclick="location.href='/login.html'">[ go to login ] <span class="ret">↵</span></button>
+          <button class="btn" onclick="location.href='/auth.html'">[ go to login ] <span class="ret">↵</span></button>
         </div>
       </div>`;
     } else {
@@ -126,7 +126,7 @@ function renderInvalid() {
     ${statusLine('err','invalid or expired reset link')}
     <div class="card">
       <div class="card-info">This reset link is invalid or has already been used. Request a new one from the login page.</div>
-      <button class="btn" onclick="location.href='/login.html'">[ back to login ] <span class="ret">↵</span></button>
+      <button class="btn" onclick="location.href='/auth.html'">[ back to login ] <span class="ret">↵</span></button>
     </div>
   </div>`;
 }
