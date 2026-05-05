@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "WebFetch(domain:api.anthropic.com)",
+      "Bash(cp \"C:\\\\Users\\\\Staple\\\\.claude\\\\projects\\\\C--Users-Staple-Documents-spindle\\\\ca58b9cd-c489-46d6-92b1-262f7210417f\\\\tool-results\\\\webfetch-1778002529345-czs89i.bin\" /tmp/spindle_design.gz)",
+      "Bash(cd /tmp)",
+      "Bash(gunzip -f spindle_design.gz)",
+      "Bash(mkdir spindle_design_extracted)",
+      "Bash(tar -xf spindle_design -C spindle_design_extracted)"
+    ]
+  }
+}

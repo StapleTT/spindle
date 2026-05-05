@@ -1,0 +1,89 @@
+/* Spindle — base styles, CSS variables, theming */
+
+:root {
+  /* Dark theme (default — the design is intentionally dark-first) */
+  --bg:        #0a0a0a;
+  --bg-2:      #111111;
+  --bg-3:      #161616;
+  --line:      rgba(255,255,255,0.10);
+  --line-2:    rgba(255,255,255,0.06);
+  --fg:        #d4d4d4;
+  --fg-dim:    #888888;
+  --fg-dimmer: #555555;
+  --fg-bright: #f0f0f0;
+  --keyword:   #ffffff;
+
+  /* Spacing tokens — overridden by density variants */
+  --pad-x:       24px;
+  --pad-y:       32px;
+  --gap:         16px;
+  --field-pad-y: 14px;
+}
+
+/* Density variants */
+[data-density="compact"] {
+  --pad-x:       18px;
+  --pad-y:       22px;
+  --gap:         12px;
+  --field-pad-y: 10px;
+}
+[data-density="spacious"] {
+  --pad-x:       32px;
+  --pad-y:       44px;
+  --gap:         22px;
+  --field-pad-y: 18px;
+}
+
+/* Light theme override (for settings toggle) */
+[data-theme="light"] {
+  --bg:        #f5f1ea;
+  --bg-2:      #ede9e1;
+  --bg-3:      #e5e0d8;
+  --line:      rgba(0,0,0,0.10);
+  --line-2:    rgba(0,0,0,0.06);
+  --fg:        #333333;
+  --fg-dim:    #777777;
+  --fg-dimmer: #aaaaaa;
+  --fg-bright: #111111;
+  --keyword:   #000000;
+}
+
+/* Base reset */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "JetBrains Mono", ui-monospace, "Cascadia Code", "Fira Code", monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  letter-spacing: 0.01em;
+  min-height: 100vh;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* Page transitions */
+.fade-enter { opacity: 0; }
+.fade-enter-active { opacity: 1; transition: opacity 0.25s ease; }
+
+/* Cursor blink */
+.cursor::after {
+  content: "_";
+  margin-left: 2px;
+  animation: blink 1.05s steps(2) infinite;
+  color: var(--fg-bright);
+}
+@keyframes blink { 50% { opacity: 0; } }
+
+/* Misc helpers */
+.kbd {
+  font-family: inherit;
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  color: var(--fg-dim);
+}
+.divider-dim { height: 1px; background: var(--line-2); width: 100%; }
