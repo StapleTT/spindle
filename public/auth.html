@@ -3,6 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script>
+    (function() {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
+      mq.addEventListener('change', function(e) {
+        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
+      });
+    })();
+  </script>
   <title>Spindle — Access</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -11,6 +20,13 @@
   <link rel="stylesheet" href="/css/main.css">
   <link rel="stylesheet" href="/css/layout.css">
   <link rel="stylesheet" href="/css/components.css">
+  <style>
+    @keyframes auth-in {
+      from { opacity: 0; transform: translateY(22px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .page-enter { animation: auth-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  </style>
 </head>
 <body>
 <div id="root"></div>
@@ -73,7 +89,9 @@ let VIEW = null;
 function go(v, ...args) {
   VIEW = v;
   const root = document.getElementById('root');
-  root.className = 'fade-enter fade-enter-active';
+  root.className = '';
+  void root.offsetWidth; // force reflow so animation restarts between views
+  root.className = 'page-enter';
   if (v === 'login')    { root.innerHTML = loginHTML();    wireLogin(); }
   if (v === 'register') { root.innerHTML = regHTML();      wireReg(); }
   if (v === 'recover')  { root.innerHTML = recoverHTML(...args); if (!args[0]) wireRecover(); }
@@ -96,8 +114,8 @@ function loginHTML() {
       <button class="btn" id="l-go">[ authenticate ] <span class="ret">↵</span></button>
     </div>
     ${authFooter(
-      `<a onclick="go('recover')">forgot password <span class="arrow">↗</span></a>`,
-      `<a onclick="go('register')">create account <span class="arrow">↗</span></a>`
+      `<a id="l-recover">forgot password <span class="arrow">↗</span></a>`,
+      `<a id="l-register">create account <span class="arrow">↗</span></a>`
     )}
   </div>`;
 }
@@ -116,11 +134,13 @@ function wireLogin() {
     if (!v) return;
     btn.disabled=true; btn.innerHTML='[ authenticating… ]';
     const res = await post('/api/auth/login',{username:u,password:p});
-    if (res.ok) { location.href='/'; return; }
+    if (res.ok) { await new Promise(r => setTimeout(r, 700)); location.href='/inbox.html'; return; }
     btn.disabled=false; btn.innerHTML='[ authenticate ] <span class="ret">↵</span>';
     showErr('l-pe', res.data.error || 'authentication failed');
   }
   btn.onclick = submit;
+  document.getElementById('l-recover').onclick = () => go('recover');
+  document.getElementById('l-register').onclick = () => go('register');
   document.addEventListener('keydown', function h(e){ if(e.key==='Enter'&&VIEW==='login'){ document.removeEventListener('keydown',h); submit(); } });
 }
 
@@ -157,7 +177,7 @@ function regHTML() {
         'r-cpe')}
       <button class="btn" id="r-go">[ create account ] <span class="ret">↵</span></button>
     </div>
-    ${authFooter(`<a onclick="go('login')">← back to login</a>`,'')}
+    ${authFooter(`<a id="r-back">← back to login</a>`,'')}
   </div>`;
 }
 const getReqs = (p) => ({
@@ -181,6 +201,7 @@ function wireReg() {
     t.onclick=()=>{const s=i.type==='text';i.type=s?'password':'text';t.textContent=s?'show':'hide';};
   });
   document.getElementById('r-p').addEventListener('input',e=>updateReqs(e.target.value));
+  document.getElementById('r-back').onclick = () => go('login');
   document.getElementById('r-go').onclick = async () => {
     const ic=document.getElementById('r-ic').value.trim();
     const u =document.getElementById('r-u').value.trim();
@@ -199,7 +220,7 @@ function wireReg() {
     const btn=document.getElementById('r-go');
     btn.disabled=true; btn.innerHTML='[ creating account… ]';
     const res=await post('/api/auth/register',{invite_code:ic,username:u,recovery_email:em||undefined,password:p});
-    if(res.ok){location.href='/';return;}
+    if(res.ok){location.href='/inbox.html';return;}
     btn.disabled=false; btn.innerHTML='[ create account ] <span class="ret">↵</span>';
     const msg=res.data.error||'registration failed';
     if(/invite/i.test(msg))        showErr('r-ice',msg);
@@ -219,7 +240,7 @@ function recoverHTML(sent, sentTo) {
         A single-use reset link will arrive at <span class="kw">${sentTo}</span> if a matching account was found.
         The link expires in <span class="em">1 hour</span>.
       </div>
-      <button class="btn" onclick="go('login')">[ back to login ] <span class="ret">↵</span></button>
+      <button class="btn" id="rc-done">[ back to login ] <span class="ret">↵</span></button>
     </div>
   </div>`;
 
@@ -238,12 +259,14 @@ function recoverHTML(sent, sentTo) {
       <button class="btn" id="rc-go">[ send reset link ] <span class="ret">↵</span></button>
     </div>
     ${authFooter(
-      `<a onclick="go('login')">← back to login</a>`,
-      `<a onclick="go('register')">create account <span class="arrow">↗</span></a>`
+      `<a id="rc-back">← back to login</a>`,
+      `<a id="rc-register">create account <span class="arrow">↗</span></a>`
     )}
   </div>`;
 }
 function wireRecover() {
+  document.getElementById('rc-back').onclick = () => go('login');
+  document.getElementById('rc-register').onclick = () => go('register');
   document.getElementById('rc-go').onclick = async () => {
     const u  = document.getElementById('rc-u').value.trim();
     const em = document.getElementById('rc-em').value.trim();
@@ -256,12 +279,13 @@ function wireRecover() {
     btn.disabled=true; btn.innerHTML='[ dispatching… ]';
     await post('/api/auth/recovery/request',{username:u,recovery_email:em});
     document.getElementById('root').innerHTML = recoverHTML(true, em);
+    document.getElementById('rc-done').onclick = () => go('login');
   };
 }
 
 /* ── Boot ────────────────────────────────────────────────────────── */
 (async()=>{
-  try { const r=await fetch('/api/auth/me'); if(r.ok){location.href='/';return;} } catch(_){}
+  try { const r=await fetch('/api/auth/me'); if(r.ok){location.href='/inbox.html';return;} } catch(_){}
   // Check for view hint in hash (e.g. auth.html#register)
   const hash = location.hash.replace('#','');
   if (hash === 'register') go('register');

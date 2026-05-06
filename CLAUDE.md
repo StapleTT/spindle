@@ -55,8 +55,8 @@ spindle/
 │       ├── crypto.js          # Token generation (invite codes, recovery tokens)
 │       └── sanitize.js        # HTML email sanitization (DOMPurify server-side)
 └── public/
-    ├── index.html             # Main app shell (requires login)
-    ├── auth.html             # Login / Register page
+    ├── inbox.html             # Main app shell (requires login)
+    ├── auth.html              # Login / Register page
     ├── recovery.html          # Account recovery page
     ├── css/
     │   ├── main.css           # Base styles, CSS variables, light/dark themes
@@ -150,60 +150,60 @@ Create all tables on startup if they don't exist:
 ## Phase 2 — Authentication
 
 ### 2.1 Registration (`POST /api/auth/register`)
-- [ ] Validate invite code exists, is unused, and is not revoked
-- [ ] Check username is unique
-- [ ] Hash password with bcrypt (12 rounds)
-- [ ] Insert user; if `SELECT COUNT(*) FROM users` was 0, set role to `'admin'`
-- [ ] Mark invite code as used (`used_by = new user id`)
-- [ ] Store `invite_code_used` on user record
-- [ ] Auto-login after registration (create session)
+- [x] Validate invite code exists, is unused, and is not revoked
+- [x] Check username is unique
+- [x] Hash password with bcrypt (12 rounds)
+- [x] Insert user; if `SELECT COUNT(*) FROM users` was 0, set role to `'admin'`
+- [x] Mark invite code as used (`used_by = new user id`)
+- [x] Store `invite_code_used` on user record
+- [x] Auto-login after registration (create session)
 
 ### 2.2 Login (`POST /api/auth/login`)
-- [ ] Find user by username
-- [ ] bcrypt.compare password
-- [ ] Create session with `req.session.userId` and `req.session.role`
-- [ ] Return user info (id, username, role, theme)
+- [x] Find user by username
+- [x] bcrypt.compare password
+- [x] Create session with `req.session.userId` and `req.session.role`
+- [x] Return user info (id, username, role, theme)
 
 ### 2.3 Logout (`POST /api/auth/logout`)
-- [ ] Destroy session
+- [x] Destroy session
 
 ### 2.4 Session Check (`GET /api/auth/me`)
-- [ ] Return current user info if session exists, else 401
+- [x] Return current user info if session exists, else 401
 
 ### 2.5 Auth Middleware (`src/middleware/requireAuth.js`)
-- [ ] Check `req.session.userId` — if missing, return 401
-- [ ] Attach `req.user` from DB lookup
+- [x] Check `req.session.userId` — if missing, return 401
+- [x] Attach `req.user` from DB lookup
 
 ### 2.6 Admin Middleware (`src/middleware/requireAdmin.js`)
-- [ ] Check `req.user.role === 'admin'` — if not, return 403
+- [x] Check `req.user.role === 'admin'` — if not, return 403
 
 ### 2.7 Frontend Auth Pages
 - [x] `public/auth.html` — login form + register form (toggle between)
 - [x] Register form includes invite code field
 - [x] Client-side validation before submit
-- [x] Redirect to `index.html` on success; show error messages inline on failure
+- [x] Redirect to `inbox.html` on success; show error messages inline on failure
 
 ---
 
 ## Phase 3 — Account Recovery
 
 ### 3.1 Recovery Request (`POST /api/auth/recovery/request`)
-- [ ] Accept `username` + `recovery_email`
-- [ ] Look up user by username; verify `recovery_email` matches (case-insensitive)
-- [ ] If match: generate a secure random token, hash it, store in `recovery_tokens` with 1-hour expiry
-- [ ] Send recovery email via nodemailer using a configured system SMTP account (env vars)
-- [ ] **Always return a generic success message** regardless of whether user was found (prevent enumeration)
+- [x] Accept `username` + `recovery_email`
+- [x] Look up user by username; verify `recovery_email` matches (case-insensitive)
+- [x] If match: generate a secure random token, hash it, store in `recovery_tokens` with 1-hour expiry
+- [x] Send recovery email via nodemailer using a configured system SMTP account (env vars)
+- [x] **Always return a generic success message** regardless of whether user was found (prevent enumeration)
 
 ### 3.2 Recovery Token Validation & Password Reset
-- [ ] `GET /recovery?token=...` — serve `public/recovery.html` with token in URL
-- [ ] `POST /api/auth/recovery/reset` — accept `token` + `new_password`
+- [x] `GET /recovery?token=...` — serve `public/recovery.html` with token in URL
+- [x] `POST /api/auth/recovery/reset` — accept `token` + `new_password`
   - Find matching unused, unexpired token
   - Hash new password, update user
   - Mark token as used
   - Return success
 
 ### 3.3 Frontend Recovery Page
-- [ ] `public/recovery.html` — two states:
+- [x] `public/recovery.html` — two states:
   1. Request form: username + recovery email fields
   2. Reset form: shown when `?token=` is in URL — new password + confirm
 
@@ -313,22 +313,22 @@ Create all tables on startup if they don't exist:
 
 ## Phase 7 — Frontend App Shell
 
-### 7.1 Layout (`public/index.html`, `public/css/layout.css`)
-- [ ] Three-panel layout:
+### 7.1 Layout (`public/inbox.html`, `public/css/layout.css`)
+- [x] Three-panel layout:
   1. **Left sidebar** (~220px): Spindle logo, account list with folder tree, Compose button
   2. **Center panel** (~340px): Email list for selected folder/account
   3. **Right panel** (flex-grow): Email reading pane
-- [ ] Responsive collapse: on narrow viewports, panels slide (sidebar → list → reader)
-- [ ] CSS custom properties for all colors; `[data-theme="dark"]` on `<html>` for dark mode
-- [ ] Smooth transitions on theme change (CSS transition on background-color, color)
+- [x] Responsive collapse: on narrow viewports, panels slide (sidebar → list → reader)
+- [x] CSS custom properties for all colors; `[data-theme="dark"]` on `<html>` for dark mode
+- [x] Smooth transitions on theme change (CSS transition on background-color, color)
 
 ### 7.2 Sidebar (`public/js/sidebar.js`)
-- [ ] Load accounts via `GET /api/accounts` on app init
-- [ ] Render each account with its email address, provider icon, unread count badge
-- [ ] Expandable folder tree per account (Inbox, Sent, Drafts, Archive, Trash, custom)
-- [ ] "All Inboxes" unified view at the top
-- [ ] "+ Add Account" button at bottom → opens Add Account modal
-- [ ] Active folder highlighted
+- [x] Load accounts via `GET /api/accounts` on app init
+- [x] Render each account with its email address, display name, and unread count badge
+- [ ] Expandable folder tree per account (Inbox, Starred, Sent, Drafts, Archive, Trash, custom)
+- [x] "All Inboxes" unified view at the top
+- [x] "+ Add Account" button at bottom → opens Add Account modal
+- [x] Active folder highlighted
 
 ### 7.3 Email List (`public/js/emailList.js`)
 - [ ] Render list of messages (sender name, subject, preview snippet, date, read/unread indicator)

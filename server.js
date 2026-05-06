@@ -17,9 +17,10 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "cdn.quilljs.com"],
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "cdn.quilljs.com", "fonts.googleapis.com"],
       fontSrc: ["'self'", "fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:"],
+      imgSrc: ["'self'", "data:", "https:", "http:"],
       frameSrc: ["'none'"],
     },
   },
@@ -65,12 +66,12 @@ app.use('/api/oauth', require('./src/routes/oauth'));
 // --- Static files ---
 app.use(express.static(path.join(__dirname, 'public')));
 
-// SPA fallback: serve index.html for any non-API, non-asset route
+// SPA fallback: serve inbox.html for any non-API, non-asset route
 app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'inbox.html'));
 });
 
 // --- Start ---

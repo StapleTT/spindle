@@ -41,26 +41,28 @@
   vertical-align: middle;
   flex-shrink: 0;
 }
-.thread-row.unread .pip      { background: var(--fg-bright); }
+.thread-row.unread .pip      { background: var(--accent, var(--fg-bright)); }
 .thread-row.unread .tr-from,
-.thread-row.unread .tr-subj  { color: var(--fg-bright); }
+.thread-row.unread .tr-subj  { color: var(--fg-bright); font-weight: 600; }
 
-/* Load more */
-.load-more-btn {
-  width: 100%;
-  padding: 14px;
-  background: transparent;
-  border: none;
+/* Pagination */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
   border-top: 1px solid var(--line-2);
-  color: var(--fg-dim);
-  font-family: inherit;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: color 0.15s;
+  flex-shrink: 0;
 }
-.load-more-btn:hover { color: var(--fg-bright); }
+.pagination .pg-info {
+  font-size: 11px;
+  color: var(--fg-dim);
+  letter-spacing: 0.08em;
+}
+.pagination .chip:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
 
 /* Skeleton thread rows */
 .thread-row-skel {
@@ -134,7 +136,7 @@
 .msg .msg-body-html {
   width: 100%;
   border: none;
-  min-height: 200px;
+  display: block;
   background: transparent;
   color-scheme: dark;
 }

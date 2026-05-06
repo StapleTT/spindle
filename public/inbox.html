@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spindle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cstyle%3E.s%7Bfill:none;stroke-width:7;stroke-linecap:round;stroke:%23000%7D.f%7Bfill:%23000;stroke:none%7D%40media (prefers-color-scheme:dark)%7B.s%7Bstroke:%23f0f0f0%7D.f%7Bfill:%23f0f0f0%7D%7D%3C/style%3E%3Cpath class='s' d='M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46'/%3E%3Cpath class='s' d='M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54'/%3E%3Cpath class='f' d='M 50 6 L 51.6 50 L 48.4 50 Z'/%3E%3Crect class='f' x='48.6' y='50' width='2.8' height='40'/%3E%3Cellipse class='f' cx='50' cy='92' rx='9' ry='1.8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/email.css">
+</head>
+<body>
+
+<!-- ── App shell ─────────────────────────────────────────────────── -->
+<div class="app-shell">
+
+  <!-- Top bar -->
+  <div class="app-topbar">
+    <div class="tb-left">
+      <button class="icon-btn" id="btn-compose" title="compose (c)">＋</button>
+      <button class="icon-btn" title="search (coming soon)">⌕</button>
+    </div>
+    <div class="tb-center">
+      <span class="spindle-lockup" style="gap:8px">
+        <svg width="17" height="17" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;flex-shrink:0">
+          <path d="M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+          <path d="M 50 6 L 51.6 50 L 48.4 50 Z" fill="currentColor"/>
+          <rect x="48.6" y="50" width="2.8" height="40" fill="currentColor"/>
+          <ellipse cx="50" cy="92" rx="9" ry="1.8" fill="currentColor"/>
+        </svg>
+        <span class="mark-text" style="font-size:13px">spindle</span>
+      </span>
+    </div>
+    <div class="tb-right">
+      <div class="tb-user">logged in as <span class="em" id="tb-username">…</span></div>
+      <button class="icon-btn" id="btn-logout" title="logout">↪</button>
+    </div>
+  </div>
+
+  <!-- Three-panel body -->
+  <div class="app-body" id="app-body">
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <span>// inboxes</span>
+        <button class="sb-add" id="btn-add-account" title="add inbox">+</button>
+      </div>
+      <div class="folder-list" id="inbox-list"></div>
+
+      <div class="sidebar-spacer"></div>
+
+      <div class="sidebar-section">
+        <span>// system</span>
+      </div>
+      <div class="folder-list" id="system-list">
+        <div class="folder" id="sys-compose">
+          <div class="f-name">compose</div>
+          <div class="f-count"><span class="kbd">c</span></div>
+        </div>
+        <div class="folder" id="sys-settings">
+          <div class="f-name">settings</div>
+          <div class="f-count">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Email list panel (hidden until an account is selected) -->
+    <div class="thread-list" id="thread-list-panel" style="display:none">
+      <div class="thread-list-header" id="thread-list-header">
+        <span>// inbox</span>
+        <span>↑↓</span>
+      </div>
+      <div id="thread-list-rows"></div>
+      <div id="thread-list-pagination"></div>
+    </div>
+
+    <!-- Reading pane / empty state -->
+    <div class="content-pane" id="reading-pane"></div>
+
+  </div>
+</div>
+
+<!-- ── Scripts ────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"></script>
+
+<script src="/js/api.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/sidebar.js"></script>
+<script src="/js/emailList.js"></script>
+<script src="/js/reader.js"></script>
+<script src="/js/composer.js"></script>
+<script src="/js/accounts.js"></script>
+<script src="/js/settings.js"></script>
+<script src="/js/admin.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btn-compose').onclick     = () => Composer.open();
+  document.getElementById('btn-logout').onclick      = () => App.logout();
+  document.getElementById('sys-compose').onclick     = () => Composer.open();
+  document.getElementById('sys-settings').onclick    = () => Settings.toggle();
+  document.getElementById('btn-add-account').onclick = () => Accounts.openAddModal();
+});
+</script>
+
+</body>
+</html>

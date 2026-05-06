@@ -18,7 +18,7 @@ db.exec(`
     password_hash TEXT NOT NULL,
     recovery_email TEXT,
     role TEXT DEFAULT 'user',
-    theme TEXT DEFAULT 'light',
+    theme TEXT DEFAULT 'system',
     invite_code_used TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );

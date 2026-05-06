@@ -29,6 +29,8 @@ const App = (() => {
 
     applyTheme(state.user.theme);
     updateDocTitle();
+    const tbUser = document.getElementById('tb-username');
+    if (tbUser) tbUser.textContent = state.user.username;
 
     await loadAccounts();
 
@@ -72,11 +74,18 @@ const App = (() => {
 
   // ── Theme ─────────────────────────────────────────────────────────
   function applyTheme(theme) {
-    document.documentElement.dataset.theme = theme || 'dark';
+    if (!theme || theme === 'system') {
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.dataset.theme = prefersDark ? 'dark' : 'light';
+    } else {
+      document.documentElement.dataset.theme = theme;
+    }
   }
 
   async function toggleTheme() {
-    const next = (state.user.theme === 'light') ? 'dark' : 'light';
+    const current = state.user.theme;
+    // Cycle: system → dark → light → system
+    const next = current === 'system' ? 'dark' : current === 'dark' ? 'light' : 'system';
     try {
       await API.patch('/api/settings/theme', { theme: next });
       state.user.theme = next;
@@ -95,7 +104,7 @@ const App = (() => {
   // ── Logout ───────────────────────────────────────────────────────
   async function logout() {
     try { await API.post('/api/auth/logout', {}); } catch (_) {}
-    location.href = '/login.html';
+    location.href = '/auth.html';
   }
 
   // ── Background refresh (every 60 s) ──────────────────────────────
@@ -135,11 +144,11 @@ document.addEventListener('keydown', (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
 
   switch (e.key) {
-    case 'c': Composer.open(); break;
-    case 'r': Reader.reply(); break;
-    case 'e': Reader.archive(); break;
-    case '#': Reader.deleteMsg(); break;
-    case 'u': Reader.toggleRead(); break;
+    case 'c': e.preventDefault(); Composer.open(); break;
+    case 'r': e.preventDefault(); Reader.reply(); break;
+    case 'e': e.preventDefault(); Reader.archive(); break;
+    case '#': e.preventDefault(); Reader.deleteMsg(); break;
+    case 'u': e.preventDefault(); Reader.toggleRead(); break;
   }
 });
 

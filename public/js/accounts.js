@@ -16,23 +16,15 @@ const Accounts = (() => {
     <circle cx="11" cy="13.5" r="1.2" fill="currentColor" stroke="none"/><circle cx="11" cy="26.5" r="1.2" fill="currentColor" stroke="none"/>
     <line x1="16" y1="13.5" x2="28" y2="13.5"/><line x1="16" y1="26.5" x2="28" y2="26.5"/>
   </svg>`;
-  const ICON_GMAIL = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 12 L20 24 L34 12 M6 12 L6 30 L34 30 L34 12"/>
-  </svg>`;
-  const ICON_OUTLOOK = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5">
-    <ellipse cx="14" cy="20" rx="7" ry="9"/>
-    <path d="M22 13 L34 13 L34 28 L22 28 Z" stroke-linejoin="round"/>
-    <path d="M22 17 L28 21 L34 17" stroke-linejoin="round"/>
-  </svg>`;
-  const ICON_ICLOUD = `<svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
-    <path d="M11 26 C 6 26, 5 18, 11 17 C 12 11, 22 10, 24 16 C 30 16, 32 24, 28 26 Z"/>
-  </svg>`;
+  const ICON_GMAIL   = `<img src="/img/gmail.png"   width="40" height="40" style="object-fit:contain" alt="Gmail">`;
+  const ICON_OUTLOOK = `<img src="/img/outlook.png" width="40" height="40" style="object-fit:contain" alt="Outlook">`;
+  const ICON_ICLOUD  = `<img src="/img/icloud.png"  width="40" height="40" style="object-fit:contain" alt="iCloud Mail">`;
 
   const PROVIDERS = [
     { id: 'imap',    name: 'manual imap / smtp', icon: ICON_IMAP,    enabled: true },
     { id: 'gmail',   name: 'gmail',              icon: ICON_GMAIL,   enabled: false, badge: 'oauth — coming soon' },
     { id: 'outlook', name: 'outlook',            icon: ICON_OUTLOOK, enabled: false, badge: 'oauth — coming soon' },
-    { id: 'icloud',  name: 'icloud',             icon: ICON_ICLOUD,  enabled: false, badge: 'oauth — coming soon' },
+    { id: 'icloud',  name: 'icloud mail',        icon: ICON_ICLOUD,  enabled: false, badge: 'oauth — coming soon' },
   ];
 
   // IMAP presets

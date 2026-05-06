@@ -6,9 +6,11 @@ const EmailList = (() => {
   let _currentAcct   = null;
   let _currentFolder = null;
   let _page          = 1;
-  let _hasMore       = false;
+  let _totalPages    = 1;
   let _loading       = false;
   let _messages      = [];
+
+  const LIMIT = 20;
 
   // ── Load ──────────────────────────────────────────────────────────
   async function load(accountId, folder, page = 1) {
@@ -23,6 +25,8 @@ const EmailList = (() => {
     if (!panel || !list) return;
 
     panel.style.display = 'flex';
+    const body = document.getElementById('app-body');
+    if (body) body.classList.add('has-list');
 
     if (page === 1) {
       list.innerHTML = skeletons();
@@ -30,10 +34,10 @@ const EmailList = (() => {
 
     try {
       const data = await API.get(
-        `/api/email/${accountId}/messages?folder=${encodeURIComponent(folder)}&page=${page}&limit=50`
+        `/api/email/${accountId}/messages?folder=${encodeURIComponent(folder)}&page=${page}&limit=${LIMIT}`
       );
-      _messages = page === 1 ? data.messages : [..._messages, ...data.messages];
-      _hasMore  = data.hasMore || false;
+      _messages   = data.messages;
+      _totalPages = data.total ? Math.ceil(data.total / LIMIT) : (data.hasMore ? page + 1 : page);
 
       // Update unread counts
       if (data.unreadCount !== undefined) {
@@ -48,6 +52,7 @@ const EmailList = (() => {
       }
 
       renderRows(list);
+      renderPagination();
     } catch (e) {
       list.innerHTML = `<div class="empty" style="padding:24px;height:auto">
         <div class="empty-sub">failed to load messages</div>
@@ -66,6 +71,10 @@ const EmailList = (() => {
   function clear() {
     const panel = document.getElementById('thread-list-panel');
     if (panel) panel.style.display = 'none';
+    const body = document.getElementById('app-body');
+    if (body) body.classList.remove('has-list');
+    const pg = document.getElementById('thread-list-pagination');
+    if (pg) pg.innerHTML = '';
   }
 
   // ── Render rows ───────────────────────────────────────────────────
@@ -85,7 +94,7 @@ const EmailList = (() => {
       row.dataset.uid = msg.uid;
       row.innerHTML = `
         <div class="tr-top">
-          <div class="tr-from"><span class="pip"></span>${esc(msg.from || '')}</div>
+          <div class="tr-from"><span class="pip"></span>${esc(msg.from_name || msg.from_addr || '')}</div>
           <div class="tr-time">${esc(formatDate(msg.date))}</div>
         </div>
         <div class="tr-subj">${esc(msg.subject || '(no subject)')}</div>
@@ -94,13 +103,22 @@ const EmailList = (() => {
       container.appendChild(row);
     });
 
-    if (_hasMore) {
-      const more = document.createElement('button');
-      more.className = 'load-more-btn';
-      more.textContent = '[ load more ]';
-      more.onclick = () => load(_currentAcct, _currentFolder, _page + 1);
-      container.appendChild(more);
-    }
+  }
+
+  function renderPagination() {
+    const el = document.getElementById('thread-list-pagination');
+    if (!el) return;
+    if (_totalPages <= 1) { el.innerHTML = ''; return; }
+    el.innerHTML = `
+      <div class="pagination">
+        <button class="chip" id="pg-prev" ${_page <= 1 ? 'disabled' : ''}>[ ← ]</button>
+        <span class="pg-info">page ${_page} / ${_totalPages}</span>
+        <button class="chip" id="pg-next" ${_page >= _totalPages ? 'disabled' : ''}>[ → ]</button>
+      </div>`;
+    const prev = document.getElementById('pg-prev');
+    const next = document.getElementById('pg-next');
+    if (prev) prev.onclick = () => { if (_page > 1) load(_currentAcct, _currentFolder, _page - 1); };
+    if (next) next.onclick = () => { if (_page < _totalPages) load(_currentAcct, _currentFolder, _page + 1); };
   }
 
   function openMessage(msg) {

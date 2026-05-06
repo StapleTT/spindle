@@ -28,7 +28,10 @@ const Reader = (() => {
 
       // Mark as read
       EmailList.markReadInList(uid);
-      try { await API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: true }); } catch (_) {}
+      try {
+        await API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: true });
+        if (_current && _current.data) _current.data.unread = false;
+      } catch (_) {}
     } catch (e) {
       p.innerHTML = `<div class="empty"><div class="empty-sub">failed to load message</div><div class="empty-hint">${esc(e.message)}</div></div>`;
     }
@@ -44,16 +47,12 @@ const Reader = (() => {
 
     let bodyHtml;
     if (msg.html) {
-      // Render HTML in isolated iframe
-      const sanitized = DOMPurify && DOMPurify.sanitize
-        ? DOMPurify.sanitize(msg.html, { FORCE_BODY: true })
-        : esc(msg.html);
       bodyHtml = `
         <div class="msg-images-bar" id="images-bar" style="display:none">
           <span>Remote images blocked.</span>
-          <button onclick="Reader.showImages()">show images</button>
+          <button type="button" id="show-images-btn">show images</button>
         </div>
-        <iframe class="msg-body-html" id="msg-iframe" srcdoc="" sandbox="allow-same-origin" style="width:100%;min-height:300px;border:none;background:transparent"></iframe>`;
+        <iframe class="msg-body-html" id="msg-iframe" sandbox="allow-same-origin" style="width:100%;border:none;background:transparent"></iframe>`;
     } else {
       bodyHtml = `<div class="msg-body">${esc(msg.text || '').replace(/\n/g,'<br>')}</div>`;
     }
@@ -93,19 +92,35 @@ const Reader = (() => {
         const sanitized = typeof DOMPurify !== 'undefined'
           ? DOMPurify.sanitize(msg.html, { FORCE_BODY: true })
           : msg.html;
-        // Block remote images initially
-        const blocked = sanitized.replace(/(<img[^>]+)src=/gi, '$1data-src=');
-        iframe.srcdoc = `<html><head><style>
-          body{font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#d4d4d4;background:transparent;margin:16px}
-          a{color:#aaa}img{max-width:100%;height:auto}
-        </style></head><body>${blocked}</body></html>`;
-        // Show images bar if there were any images
-        if (/<img/i.test(sanitized)) {
+
+        const autoLoad = localStorage.getItem('autoLoadImages') === '1';
+        const hasImages = /<img/i.test(sanitized);
+        const content = autoLoad ? sanitized : sanitized.replace(/(<img[^>]+)\bsrc=/gi, '$1data-src=');
+
+        iframe.onload = () => {
+          try {
+            const h = iframe.contentDocument.documentElement.scrollHeight;
+            iframe.style.height = h + 'px';
+          } catch (_) {}
+        };
+        iframe.srcdoc = iframeDoc(content);
+
+        if (hasImages && !autoLoad) {
           const bar = document.getElementById('images-bar');
           if (bar) bar.style.display = 'flex';
         }
+
+        const showBtn = document.getElementById('show-images-btn');
+        if (showBtn) showBtn.onclick = () => Reader.showImages();
       });
     }
+  }
+
+  function iframeDoc(body) {
+    return `<html><head><style>
+      body{font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#d4d4d4;background:transparent;margin:16px}
+      a{color:#aaa}img{max-width:100%;height:auto}
+    </style></head><body>${body}</body></html>`;
   }
 
   function showImages() {
@@ -115,10 +130,13 @@ const Reader = (() => {
     const sanitized = typeof DOMPurify !== 'undefined'
       ? DOMPurify.sanitize(_current.data.html, { FORCE_BODY: true })
       : _current.data.html;
-    iframe.srcdoc = `<html><head><style>
-      body{font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#d4d4d4;background:transparent;margin:16px}
-      a{color:#aaa}img{max-width:100%;height:auto}
-    </style></head><body>${sanitized}</body></html>`;
+    iframe.onload = () => {
+      try {
+        const h = iframe.contentDocument.documentElement.scrollHeight;
+        iframe.style.height = h + 'px';
+      } catch (_) {}
+    };
+    iframe.srcdoc = iframeDoc(sanitized);
     const bar = document.getElementById('images-bar');
     if (bar) bar.style.display = 'none';
   }
@@ -157,7 +175,7 @@ const Reader = (() => {
   async function toggleRead() {
     if (!_current) return;
     const { accountId, folder, uid, data } = _current;
-    const nowRead = data ? !data.unread : true;
+    const nowRead = data ? data.unread : false;
     try {
       await API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: nowRead });
       if (data) data.unread = !nowRead;
@@ -170,10 +188,11 @@ const Reader = (() => {
 
   async function archive() {
     if (!_current) return;
+    if (!confirm('Archive this message?')) return;
     const { accountId, folder, uid } = _current;
     try {
       await API.post(`/api/email/${accountId}/messages/${uid}/archive`, { folder });
-      Toast.show('Archived');
+      Toast.show('Message archived.');
       showFolderEmpty();
       _current = null;
     } catch (e) { Toast.show(e.message, 'err'); }
@@ -181,10 +200,11 @@ const Reader = (() => {
 
   async function deleteMsg() {
     if (!_current) return;
+    if (!confirm('Move this message to trash?')) return;
     const { accountId, folder, uid } = _current;
     try {
       await API.delete(`/api/email/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`);
-      Toast.show('Deleted');
+      Toast.show('Message deleted.');
       showFolderEmpty();
       _current = null;
     } catch (e) { Toast.show(e.message, 'err'); }
