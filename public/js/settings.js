@@ -170,31 +170,200 @@ const Settings = (() => {
     }
   }
 
-  async function deleteInbox(acct) {
-    const label    = acct.display_name || acct.email_address;
-    const password = prompt(`Enter your password to remove "${label}":`);
-    if (!password) return;
-    try {
-      await API.delete(`/api/accounts/${acct.id}`, { password });
-      Toast.show(`"${label}" removed.`);
-      await App.loadAccounts();
-      renderInboxList();
-    } catch (e) {
-      Toast.show(e.message, 'err');
+  function deleteInbox(acct) {
+    const label = acct.display_name || acct.email_address;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-bg';
+    overlay.innerHTML = `
+      <div class="modal modal-narrow" role="dialog" aria-label="remove inbox">
+        <div class="modal-header">
+          <span>// remove inbox</span>
+          <span class="modal-close" id="di-close">[ esc ]</span>
+        </div>
+        <div class="modal-body" style="gap:20px">
+
+          <div style="font-size:12px;color:var(--fg-dim);line-height:1.7">
+            removing <span style="color:var(--fg-bright)">${esc(label)}</span> will disconnect it from Spindle.
+            your emails are not deleted from the provider.
+          </div>
+
+          <div class="field">
+            <div class="field-label">confirm password</div>
+            <input class="input" id="di-password" type="password" placeholder="your current password" autocomplete="current-password">
+          </div>
+
+          <div id="di-error" style="display:none;font-size:11.5px;color:#d4736c;align-items:center;gap:8px">
+            <span>—</span><span id="di-error-msg"></span>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button class="btn" id="di-cancel" style="width:auto;padding:10px 18px;color:var(--fg-dim)">[ cancel ]</button>
+          <button class="btn" id="di-submit" disabled style="width:auto;padding:10px 18px;opacity:0.45;cursor:not-allowed">
+            [ remove ]
+          </button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const passEl   = document.getElementById('di-password');
+    const submitEl = document.getElementById('di-submit');
+    const errorEl  = document.getElementById('di-error');
+    const errorMsg = document.getElementById('di-error-msg');
+
+    function updateSubmit() {
+      const ready = passEl.value.length > 0;
+      submitEl.disabled = !ready;
+      submitEl.style.opacity = ready ? '1' : '0.45';
+      submitEl.style.cursor  = ready ? 'pointer' : 'not-allowed';
     }
+
+    passEl.addEventListener('input', updateSubmit);
+
+    function closeOverlay() {
+      overlay.remove();
+      document.removeEventListener('keydown', escHandler);
+    }
+
+    function escHandler(e) { if (e.key === 'Escape') closeOverlay(); }
+
+    document.getElementById('di-close').onclick  = closeOverlay;
+    document.getElementById('di-cancel').onclick = closeOverlay;
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
+    document.addEventListener('keydown', escHandler);
+
+    passEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !submitEl.disabled) doRemove(); });
+    submitEl.onclick = doRemove;
+
+    async function doRemove() {
+      if (submitEl.disabled) return;
+      submitEl.disabled = true;
+      submitEl.textContent = '[ removing… ]';
+      errorEl.style.display = 'none';
+
+      try {
+        await API.delete(`/api/accounts/${acct.id}`, { password: passEl.value });
+        closeOverlay();
+        Toast.show(`"${label}" removed.`);
+        await App.loadAccounts();
+        renderInboxList();
+      } catch (e) {
+        errorMsg.textContent = e.message || 'Incorrect password';
+        errorEl.style.display = 'flex';
+        submitEl.disabled = false;
+        submitEl.textContent = '[ remove ]';
+        updateSubmit();
+        passEl.focus();
+      }
+    }
+
+    setTimeout(() => passEl.focus(), 50);
   }
 
   // ── Delete Spindle account ────────────────────────────────────────
-  async function deleteAccount() {
-    const password = prompt('Enter your password to confirm account deletion:');
-    if (!password) return;
-    if (!confirm('This is permanent. Delete your Spindle account and all connected inboxes?')) return;
-    try {
-      await API.delete('/api/settings/account', { password });
-      location.href = '/auth';
-    } catch (e) {
-      Toast.show(e.message || 'Deletion failed', 'err');
+  function deleteAccount() {
+    // Open a dedicated confirmation modal — no native prompts
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-bg';
+    overlay.id = 'delete-account-modal';
+    overlay.innerHTML = `
+      <div class="modal modal-narrow" role="dialog" aria-label="delete account">
+        <div class="modal-header">
+          <span>// delete account</span>
+          <span class="modal-close" id="da-close">[ esc ]</span>
+        </div>
+        <div class="modal-body" style="gap:20px">
+
+          <div style="font-size:12px;color:var(--fg-dim);line-height:1.7;border-left:2px solid rgba(212,115,108,0.5);padding-left:14px">
+            this action is <span style="color:#d4736c">permanent</span> and cannot be undone.<br>
+            your account, all connected inboxes, and all stored credentials will be deleted immediately.
+          </div>
+
+          <label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;font-size:12px;color:var(--fg-dim);line-height:1.6">
+            <input type="checkbox" id="da-confirm-check" style="
+              margin-top:3px;flex-shrink:0;width:14px;height:14px;
+              accent-color:#d4736c;cursor:pointer
+            ">
+            <span>i understand that my account and all associated data will be permanently deleted and cannot be recovered</span>
+          </label>
+
+          <div class="field">
+            <div class="field-label">confirm password</div>
+            <input class="input" id="da-password" type="password" placeholder="your current password" autocomplete="current-password">
+          </div>
+
+          <div id="da-error" style="display:none;font-size:11.5px;color:#d4736c;display:none;align-items:center;gap:8px">
+            <span>—</span><span id="da-error-msg"></span>
+          </div>
+
+        </div>
+        <div class="modal-footer">
+          <button class="btn" id="da-cancel" style="width:auto;padding:10px 18px;color:var(--fg-dim)">[ cancel ]</button>
+          <button class="btn" id="da-submit" disabled style="width:auto;padding:10px 18px;color:#d4736c;border-color:rgba(212,115,108,0.35);opacity:0.45;cursor:not-allowed">
+            [ delete account ]
+          </button>
+        </div>
+      </div>`;
+
+    document.body.appendChild(overlay);
+
+    const checkEl  = document.getElementById('da-confirm-check');
+    const passEl   = document.getElementById('da-password');
+    const submitEl = document.getElementById('da-submit');
+    const errorEl  = document.getElementById('da-error');
+    const errorMsg = document.getElementById('da-error-msg');
+
+    function updateSubmit() {
+      const ready = checkEl.checked && passEl.value.length > 0;
+      submitEl.disabled = !ready;
+      submitEl.style.opacity = ready ? '1' : '0.45';
+      submitEl.style.cursor  = ready ? 'pointer' : 'not-allowed';
     }
+
+    checkEl.addEventListener('change', updateSubmit);
+    passEl.addEventListener('input', updateSubmit);
+
+    function closeOverlay() {
+      overlay.remove();
+      document.removeEventListener('keydown', escHandler);
+    }
+
+    function escHandler(e) { if (e.key === 'Escape') closeOverlay(); }
+
+    document.getElementById('da-close').onclick  = closeOverlay;
+    document.getElementById('da-cancel').onclick = closeOverlay;
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeOverlay(); });
+    document.addEventListener('keydown', escHandler);
+
+    passEl.addEventListener('keydown', e => { if (e.key === 'Enter' && !submitEl.disabled) doDelete(); });
+
+    submitEl.onclick = doDelete;
+
+    async function doDelete() {
+      if (submitEl.disabled) return;
+      const password = passEl.value;
+
+      submitEl.disabled = true;
+      submitEl.textContent = '[ deleting… ]';
+      errorEl.style.display = 'none';
+
+      try {
+        await API.delete('/api/settings/account', { password });
+        location.href = '/auth';
+      } catch (e) {
+        errorMsg.textContent = e.message || 'Deletion failed';
+        errorEl.style.display = 'flex';
+        submitEl.disabled = false;
+        submitEl.innerHTML = '[ delete account ]';
+        updateSubmit();
+        passEl.focus();
+      }
+    }
+
+    // Focus the checkbox first so the user reads the warning
+    setTimeout(() => checkEl.focus(), 50);
   }
 
   return { open, close, toggle, deleteAccount };
