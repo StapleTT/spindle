@@ -37,7 +37,13 @@ app.use(express.urlencoded({ extended: true }));
 const FileStore = require('session-file-store')(session);
 
 app.use(session({
-  store: new FileStore({ path: './data/sessions', ttl: 7 * 24 * 3600, retries: 0 }),
+  store: new FileStore({
+    path: './data/sessions',
+    ttl: 7 * 24 * 3600,
+    retries: 0,
+    // Suppress the EPERM rename-race errors that session-file-store logs on Windows
+    logFn: () => {},
+  }),
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,

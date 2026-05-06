@@ -2,6 +2,7 @@ const router = require('express').Router();
 const bcrypt = require('bcrypt');
 const requireAuth = require('../middleware/requireAuth');
 const db = require('../db/queries');
+const imap = require('../services/imap');
 
 router.use(requireAuth);
 
@@ -33,7 +34,21 @@ router.delete('/account', async (req, res) => {
   const valid = await bcrypt.compare(password, req.user.password_hash);
   if (!valid) return res.status(403).json({ error: 'Incorrect password' });
 
-  db.deleteUser.run(req.user.id);
+  try {
+    // Evict any open IMAP connections for this user's accounts
+    const accounts = db.getEmailAccountsByUser.all(req.user.id);
+    for (const acct of accounts) imap.evict(acct.id);
+
+    // Nullify invite_codes references — those columns have no ON DELETE CASCADE
+    db.clearInviteCodesUsedBy.run(req.user.id);
+    db.clearInviteCodesCreatedBy.run(req.user.id);
+
+    // Delete user — email_accounts and recovery_tokens cascade automatically
+    db.deleteUser.run(req.user.id);
+  } catch (e) {
+    console.error('[settings] account deletion failed:', e);
+    return res.status(500).json({ error: 'Account deletion failed' });
+  }
 
   req.session.destroy(() => {
     res.json({ ok: true });

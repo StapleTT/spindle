@@ -43,6 +43,9 @@ const markInviteCodeUsed = db.prepare(`
 const revokeInviteCode = db.prepare(`
   UPDATE invite_codes SET revoked = 1 WHERE code = ?
 `);
+// Nullify invite_code references before deleting a user (no ON DELETE CASCADE on those columns)
+const clearInviteCodesUsedBy    = db.prepare(`UPDATE invite_codes SET used_by    = NULL WHERE used_by    = ?`);
+const clearInviteCodesCreatedBy = db.prepare(`UPDATE invite_codes SET created_by = NULL WHERE created_by = ?`);
 
 // --- Email Accounts ---
 
@@ -114,6 +117,8 @@ module.exports = {
   insertInviteCode,
   markInviteCodeUsed,
   revokeInviteCode,
+  clearInviteCodesUsedBy,
+  clearInviteCodesCreatedBy,
 
   // Email Accounts
   getEmailAccountsByUser,
