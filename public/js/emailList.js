@@ -66,6 +66,138 @@ const EmailList = (() => {
     }
   }
 
+  async function loadAll() {
+    _currentAcct   = 'all';
+    _currentFolder = 'INBOX';
+    _page          = 1;
+    _loading       = true;
+
+    const panel  = document.getElementById('thread-list-panel');
+    const header = document.getElementById('thread-list-header');
+    const list   = document.getElementById('thread-list-rows');
+    const pg     = document.getElementById('thread-list-pagination');
+    if (!panel || !list) return;
+
+    panel.style.display = 'flex';
+    const body = document.getElementById('app-body');
+    if (body) body.classList.add('has-list');
+
+    if (header) {
+      header.innerHTML = `<span>// all inboxes</span><button class="hdr-refresh-btn" id="hdr-refresh" title="refresh">↺</button>`;
+      const refreshBtn = document.getElementById('hdr-refresh');
+      if (refreshBtn) refreshBtn.onclick = () => loadAll();
+    }
+
+    if (pg) pg.innerHTML = '';
+    list.innerHTML = skeletons();
+
+    try {
+      const accounts = App.accounts;
+      if (accounts.length === 0) {
+        list.innerHTML = `<div class="empty" style="height:200px"><div class="empty-sub">no accounts connected</div></div>`;
+        return;
+      }
+
+      // Fetch INBOX from all accounts in parallel
+      const results = await Promise.allSettled(
+        accounts.map(a =>
+          API.get(`/api/email/${a.id}/messages?folder=INBOX&page=1&limit=20`)
+            .then(d => (d.messages || []).map(m => ({ ...m, _accountId: a.id, _accountName: a.display_name || a.email_address })))
+        )
+      );
+
+      // Merge fulfilled results and sort by date descending
+      const allMsgs = results
+        .filter(r => r.status === 'fulfilled')
+        .flatMap(r => r.value)
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 50);
+
+      _messages = allMsgs;
+      _totalPages = 1;
+
+      renderAllRows(list);
+    } catch (e) {
+      list.innerHTML = `<div class="empty" style="padding:24px;height:auto">
+        <div class="empty-sub">failed to load messages</div>
+        <div class="empty-hint">${esc(e.message)}</div>
+      </div>`;
+    } finally {
+      _loading = false;
+    }
+  }
+
+  // Renders merged rows — includes account name badge on each row
+  function renderAllRows(container) {
+    container.innerHTML = '';
+
+    if (_messages.length === 0) {
+      container.innerHTML = `<div class="empty" style="height:200px"><div class="empty-sub">no messages</div></div>`;
+      return;
+    }
+
+    _messages.forEach(msg => {
+      const row = document.createElement('div');
+      row.className = `thread-row${msg.unread ? ' unread' : ''}`;
+      row.dataset.uid = msg.uid;
+      row.dataset.acctId = msg._accountId;
+      row.innerHTML = `
+        <div class="tr-top">
+          <div class="tr-from"><span class="pip"></span>${esc(msg.from_name || msg.from_addr || '')}</div>
+          <div class="tr-time">${esc(formatDate(msg.date))}</div>
+        </div>
+        <div class="tr-subj">${esc(msg.subject || '(no subject)')}</div>
+        <div class="tr-preview tr-preview-all">
+          <span class="tr-acct-badge">${esc(msg._accountName)}</span>${esc(msg.preview || '')}
+        </div>
+        <div class="tr-actions"></div>`;
+      row.onclick = () => {
+        document.querySelectorAll('#thread-list-rows .thread-row').forEach(r =>
+          r.classList.toggle('active', r.dataset.uid == msg.uid && r.dataset.acctId == msg._accountId));
+        App.activeMsg = { uid: msg.uid, accountId: msg._accountId, folder: 'INBOX' };
+        Reader.loadMessage(msg._accountId, 'INBOX', msg.uid);
+        markReadInList(msg.uid);
+      };
+
+      // Hover actions
+      const readBtn = document.createElement('button');
+      readBtn.className = 'tr-action-btn';
+      const updateReadBtn = () => {
+        readBtn.title       = msg.unread ? 'mark as read' : 'mark as unread';
+        readBtn.textContent = msg.unread ? '✓' : '●';
+      };
+      updateReadBtn();
+      readBtn.onclick = async e => {
+        e.stopPropagation();
+        try {
+          await API.patch(`/api/email/${msg._accountId}/messages/${msg.uid}/read`, { read: msg.unread, folder: 'INBOX' });
+          msg.unread = !msg.unread;
+          row.classList.toggle('unread', msg.unread);
+          updateReadBtn();
+        } catch (err) { Toast.show(err.message, 'err'); }
+      };
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'tr-action-btn tr-action-delete';
+      delBtn.title = 'delete';
+      delBtn.textContent = '✕';
+      delBtn.onclick = async e => {
+        e.stopPropagation();
+        try {
+          await API.delete(`/api/email/${msg._accountId}/messages/${msg.uid}?folder=INBOX`);
+          row.remove();
+          _messages = _messages.filter(m => !(m.uid === msg.uid && m._accountId === msg._accountId));
+          Toast.show('Message deleted.');
+        } catch (err) { Toast.show(err.message, 'err'); }
+      };
+
+      const actions = row.querySelector('.tr-actions');
+      actions.appendChild(readBtn);
+      actions.appendChild(delBtn);
+      container.appendChild(row);
+    });
+  }
+
   async function refresh(accountId, folder) {
     if (_loading || accountId !== _currentAcct || folder !== _currentFolder) return;
 
@@ -241,5 +373,5 @@ const EmailList = (() => {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  return { load, refresh, clear, markReadInList };
+  return { load, loadAll, refresh, clear, markReadInList };
 })();

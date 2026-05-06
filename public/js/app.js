@@ -55,7 +55,7 @@ const App = (() => {
       EmailList.clear();
     }
     if (state.accounts.length > 0 && !state.activeAcct) {
-      selectAccount(state.accounts[0].id);
+      selectAllInboxes();
     } else if (state.accounts.length === 0) {
       EmailList.clear();
       Reader.showEmpty();
@@ -77,6 +77,15 @@ const App = (() => {
     state.activeMsg    = null;
     Sidebar.setActive(accountId, folder);
     EmailList.load(accountId, folder);
+    Reader.showFolderEmpty();
+  }
+
+  function selectAllInboxes() {
+    state.activeAcct   = 'all';
+    state.activeFolder = 'INBOX';
+    state.activeMsg    = null;
+    Sidebar.setActive('all', 'INBOX');
+    EmailList.loadAll();
     Reader.showFolderEmpty();
   }
 
@@ -164,6 +173,7 @@ const App = (() => {
     loadAccounts,
     selectAccount,
     selectFolder,
+    selectAllInboxes,
     toggleTheme,
     toggleImages,
     logout,

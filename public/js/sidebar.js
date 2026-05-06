@@ -11,11 +11,33 @@ const Sidebar = (() => {
 
     inboxList.innerHTML = '';
 
+    // ── All Inboxes card (always shown when there are accounts) ──
+    const allCard = document.createElement('div');
+    allCard.className = 'folder folder-all';
+    allCard.dataset.acctId = 'all';
+    allCard.dataset.folder = 'INBOX';
+
+    const totalUnread = accounts.reduce((sum, a) =>
+      sum + (App.unreadCounts[a.id] || a.unread_count || 0), 0);
+
+    allCard.innerHTML = `
+      <div class="f-name">all inboxes</div>
+      <div class="f-count">${totalUnread || '—'}</div>
+      <div class="f-meta">${accounts.length} account${accounts.length !== 1 ? 's' : ''}</div>`;
+    allCard.onclick = () => App.selectAllInboxes();
+    inboxList.appendChild(allCard);
+
+    // Separator between All Inboxes and individual accounts
+    const sep = document.createElement('div');
+    sep.className = 'folder-sep';
+    inboxList.appendChild(sep);
+
     if (accounts.length === 0) {
-      inboxList.innerHTML = `<div class="folder" style="opacity:.5;cursor:default">
-        <div class="f-name">no accounts</div>
-        <div class="f-meta">add one below</div>
-      </div>`;
+      const empty = document.createElement('div');
+      empty.className = 'folder';
+      empty.style.cssText = 'opacity:.5;cursor:default';
+      empty.innerHTML = `<div class="f-name">no accounts</div><div class="f-meta">add one below</div>`;
+      inboxList.appendChild(empty);
       return;
     }
 
@@ -36,8 +58,13 @@ const Sidebar = (() => {
 
   function setActive(accountId, folder) {
     document.querySelectorAll('#inbox-list .folder').forEach(el => {
-      el.classList.toggle('active',
-        el.dataset.acctId == accountId && (el.dataset.folder || 'INBOX') === folder);
+      const isAll = el.dataset.acctId === 'all';
+      if (isAll) {
+        el.classList.toggle('active', accountId === 'all');
+      } else {
+        el.classList.toggle('active',
+          el.dataset.acctId == accountId && (el.dataset.folder || 'INBOX') === folder);
+      }
     });
     document.querySelectorAll('#system-list .folder').forEach(el => {
       el.classList.remove('active');

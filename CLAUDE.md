@@ -454,6 +454,11 @@ Create all tables on startup if they don't exist:
 - [x] **nginx reverse-proxy support** — `app.set('trust proxy', 1)` so rate-limiting uses real client IPs
 - [x] **Nodemon config** — watches only `src/` + `server.js`; ignores `data/` (sessions/DB) and `public/` to prevent restart loops
 - [x] **`auto_load_images` persisted to DB** — migrated via safe `ALTER TABLE`; read/written via `PATCH /api/settings/images`; no longer stored in `localStorage`
+- [x] **Custom select component** (`CustomSelect` in `api.js`) — fully site-rendered dropdown replacing native `<select>`; keyboard nav (arrows, enter, esc), aria attributes, outside-click to close, borderless variant for compose-row context; used in composer from-picker and IMAP/SMTP security selects
+- [x] **Custom deletion modals** (`settings.js`) — replaced `prompt()`/`confirm()` with inline modals for both account deletion (checkbox acknowledgement + password field, delete button gated on both) and inbox removal (password field only); inline error display, Enter to submit, Esc to close
+- [x] **Account deletion FK constraint fix** (`settings.js`, `queries.js`) — nullify `invite_codes.used_by` and `invite_codes.created_by` before `deleteUser` to avoid FK constraint failure; evict IMAP connections first; wrap in try/catch to return 500 instead of crashing
+- [x] **Session-file-store EPERM noise suppressed** (`server.js`) — `logFn: () => {}` silences Windows atomic-rename race errors from session writes
+- [x] **`PATCH /reorder` route ordering fix** (`accounts.js`) — moved `/reorder` above `/:id` so Express matches it correctly
 
 ---
 
