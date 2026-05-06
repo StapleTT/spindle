@@ -241,7 +241,7 @@ Create all tables on startup if they don't exist:
 - [x] `POST /api/accounts/test` — test IMAP connection; return success/failure with error message
 - [x] `DELETE /api/accounts/:id` — remove account (verify ownership, require password)
 - [x] `PATCH /api/accounts/:id` — update display name
-- [~] `PATCH /api/accounts/reorder` — implemented but has **route ordering bug**: `/reorder` is defined after `/:id`, so Express matches it as id="reorder". Must move `PATCH /reorder` above `PATCH /:id`.
+- [x] `PATCH /api/accounts/reorder` — update sort order for multiple accounts
 
 ### 4.3 Gmail OAuth Flow (`src/services/oauth/gmail.js` + `src/routes/oauth.js`)
 - [x] `GET /api/oauth/gmail/init` — generate Google OAuth URL with scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`; redirect user
@@ -522,7 +522,7 @@ Work through phases in this order. Each phase is independently testable before m
 - [x] **Design prototype inaccessible** — RESOLVED. Design obtained from Claude Design API and implemented. Full bundle in `data/design-dump.txt`.
 - [x] **Gmail/Outlook native API reading** — RESOLVED. `src/services/gmail.js` and `src/services/outlook.js` fully implemented. Email router dispatches based on `account.provider`.
 - [x] **Outlook OAuth** — RESOLVED. `src/services/oauth/outlook.js` implemented with raw fetch (no MSAL). Init + callback routes added to `src/routes/oauth.js`. Outlook tile enabled in add-inbox modal.
-- [!] **`PATCH /reorder` route ordering bug** — In `src/routes/accounts.js`, `PATCH /:id` is defined before `PATCH /reorder`, so a request to `/reorder` is matched by the `/:id` handler with `id = "reorder"`. Move the `/reorder` route above `/:id` to fix.
+- [x] **`PATCH /reorder` route ordering bug** — RESOLVED. Moved `PATCH /reorder` above `PATCH /:id` in `src/routes/accounts.js`.
 - [ ] **Compose send backend** — Frontend compose UI exists; `POST /api/email/:accountId/send` and SMTP service not yet wired up (Phase 6.1/6.2).
 - [ ] **Admin panel** — Routes and UI not yet implemented (Phase 9).
 - [ ] **Attachment support** — Reading and downloading attachments is not in initial scope. `[FUTURE]` placeholder in reader.js.

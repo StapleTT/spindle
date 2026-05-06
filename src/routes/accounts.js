@@ -82,6 +82,17 @@ router.post('/', async (req, res) => {
   res.status(201).json(accounts[accounts.length - 1]);
 });
 
+// PATCH /api/accounts/reorder — update sort_order for multiple accounts
+// Must be defined before /:id so Express doesn't treat "reorder" as an id
+router.patch('/reorder', (req, res) => {
+  const { order } = req.body; // array of { id, sort_order }
+  if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be an array' });
+  for (const { id, sort_order } of order) {
+    db.updateEmailAccountSortOrder.run({ id, sort_order, user_id: req.user.id });
+  }
+  res.json({ ok: true });
+});
+
 // PATCH /api/accounts/:id — update display name
 router.patch('/:id', (req, res) => {
   const account = db.getEmailAccountById.get(req.params.id);
@@ -106,16 +117,6 @@ router.delete('/:id', async (req, res) => {
   if (!valid) return res.status(403).json({ error: 'Incorrect password' });
   imap.evict(account.id);
   db.deleteEmailAccount.run(req.params.id, req.user.id);
-  res.json({ ok: true });
-});
-
-// PATCH /api/accounts/reorder — update sort_order for multiple accounts
-router.patch('/reorder', (req, res) => {
-  const { order } = req.body; // array of { id, sort_order }
-  if (!Array.isArray(order)) return res.status(400).json({ error: 'order must be an array' });
-  for (const { id, sort_order } of order) {
-    db.updateEmailAccountSortOrder.run({ id, sort_order, user_id: req.user.id });
-  }
   res.json({ ok: true });
 });
 
