@@ -7,7 +7,27 @@
       "Bash(cd /tmp)",
       "Bash(gunzip -f spindle_design.gz)",
       "Bash(mkdir spindle_design_extracted)",
-      "Bash(tar -xf spindle_design -C spindle_design_extracted)"
+      "Bash(tar -xf spindle_design -C spindle_design_extracted)",
+      "Bash(winget install *)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(gunzip -c \"C:/Users/Staple/.claude/projects/C--Users-Staple-Documents-spindle/1ae76710-4a5e-44e5-8574-ed7f92955c77/tool-results/webfetch-1778016340624-0b8wm0.bin\")",
+      "Bash(mkdir -p /tmp/spindle-design)",
+      "Bash(tar -xzf \"C:/Users/Staple/.claude/projects/C--Users-Staple-Documents-spindle/1ae76710-4a5e-44e5-8574-ed7f92955c77/tool-results/webfetch-1778016340624-0b8wm0.bin\" -C /tmp/spindle-design)",
+      "Read(//tmp/**)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr *)",
+      "Bash(gh repo *)",
+      "Bash(node -e \"require\\('dotenv'\\).config\\(\\); require\\('./server.js'\\)\")",
+      "Bash(curl -s http://localhost:3000/api/auth/me)",
+      "Bash(kill %1)",
+      "Bash(node --check src/services/imap.js)",
+      "Bash(node --check src/routes/accounts.js)",
+      "Bash(node --check src/routes/email.js)",
+      "PowerShell(gh pr create --title \"Implement inbox UI, IMAP reading, and email action bug fixes\" --body-file \"pr-body.txt\")",
+      "PowerShell(Get-Command gh -ErrorAction SilentlyContinue; where.exe gh 2>$null; [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) -split \";\" | Select-String -Pattern \"github\")"
     ]
   }
 }
