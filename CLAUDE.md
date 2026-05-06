@@ -39,7 +39,7 @@ spindle/
 │   │   ├── auth.js            # Login, register, logout, recovery
 │   │   ├── email.js           # Read, send, actions (mark/archive/delete/etc.)
 │   │   ├── accounts.js        # Add/remove/reorder inbox accounts
-│   │   ├── oauth.js           # Gmail (+ future Outlook) OAuth flows
+│   │   ├── oauth.js           # Gmail + Outlook OAuth flows
 │   │   ├── admin.js           # Admin-only: users, invite codes (STUB)
 │   │   └── settings.js        # User settings (theme, images, delete account)
 │   ├── middleware/
@@ -50,7 +50,7 @@ spindle/
 │   │   ├── smtp.js            # SMTP send via nodemailer
 │   │   ├── oauth/
 │   │   │   ├── gmail.js       # Gmail OAuth2 flow
-│   │   │   └── outlook.js     # Outlook OAuth2 flow (not started)
+│   │   │   └── outlook.js     # Outlook OAuth2 flow + graphFetch helper
 │   │   └── recovery.js        # Password recovery email sender
 │   └── utils/
 │       ├── crypto.js          # AES-256-GCM encryption + token generation
@@ -249,9 +249,9 @@ Create all tables on startup if they don't exist:
 - [x] Token refresh logic: `tokens` event listener on OAuth2 client auto-persists refreshed tokens
 
 ### 4.4 Outlook OAuth Flow (`src/services/oauth/outlook.js`)
-- [ ] `GET /api/oauth/outlook/init` — MSAL redirect to Microsoft login
-- [ ] `GET /api/oauth/outlook/callback` — exchange code for tokens; store; redirect
-- [ ] Token refresh logic using MSAL refresh token
+- [x] `GET /api/oauth/outlook/init` — redirect to Microsoft identity v2 consent screen; CSRF state token stored in session
+- [x] `GET /api/oauth/outlook/callback` — exchange code for tokens; store AES-encrypted tokens; redirect to app
+- [x] Token refresh logic — proactive refresh within 2 min of expiry + 401 retry; new tokens auto-persisted to DB via `updateOAuthTokens`; no MSAL dependency (raw fetch to token endpoint)
 
 ### 4.5 Credential Encryption (`src/utils/crypto.js`)
 - [x] AES-256-GCM encryption/decryption for stored IMAP passwords and OAuth tokens
@@ -272,23 +272,36 @@ Create all tables on startup if they don't exist:
 - [ ] `moveMessage(accountId, fromFolder, toFolder, uid)` — generic move
 
 ### 5.2 Email Routes (`src/routes/email.js`)
-- [ ] `GET /api/email/:accountId/folders` — list folders
+- [x] `GET /api/email/:accountId/folders` — list folders (dispatches to correct service)
 - [x] `GET /api/email/:accountId/messages?folder=INBOX&page=1&limit=20` — paginated message list (20/page, prev/next controls)
 - [x] `GET /api/email/:accountId/messages/:uid?folder=INBOX` — full message fetch; mark as read on open
 - [x] `PATCH /api/email/:accountId/messages/:uid/read` — toggle read/unread
 - [x] `POST /api/email/:accountId/messages/:uid/archive` — archive
 - [x] `DELETE /api/email/:accountId/messages/:uid` — delete (move to trash)
+- [x] `getService(account)` helper — dispatches to `gmailService`, `outlookService`, or `imap` based on `account.provider`
+- [x] `parseUid(account, raw)` helper — returns string UID for Gmail/Outlook, `parseInt` for IMAP
 - [ ] `GET /api/email/unified?page=1&limit=50` — fetch recent messages across all accounts, merge & sort by date
 
-### 5.3 Gmail API Service
-- [ ] Use `googleapis` to call Gmail REST API instead of IMAP for Gmail accounts
-- [ ] Implement same interface as IMAP service (fetchMessages, fetchMessage, markRead, archive, delete)
-- [ ] Handle pagination with `nextPageToken`
+### 5.3 Gmail API Service (`src/services/gmail.js`)
+- [x] Uses `googleapis` (`google.gmail v1`) — no IMAP fallback for Gmail accounts
+- [x] `fetchMessages` — `messages.list` with label filter + cursor-based `pageToken`; page tokens cached in memory map keyed by `${accountId}:${label}:${page}`; parallel `messages.get(format=metadata)` for summaries
+- [x] `fetchMessage` — `messages.get(format=full)`; recursive multipart walk to extract `text/plain` + `text/html`; base64url decoding
+- [x] `markRead` — `messages.modify` add/remove `UNREAD` label
+- [x] `archiveMessage` — `messages.modify` remove `INBOX` label
+- [x] `deleteMessage` — `messages.trash` (recoverable)
+- [x] `getFolders` — `labels.list`; system labels sorted first; `labelHide` entries filtered out
+- [x] Normalised message shape matches IMAP service output (`uid`, `subject`, `from_name`, `from_addr`, `to`, `date`, `unread`, `preview`, `html`, `text`)
 
-### 5.4 Outlook API Service
-- [ ] Use Microsoft Graph API (`https://graph.microsoft.com/v1.0/me/messages`)
-- [ ] Implement same interface as IMAP service
-- [ ] Handle pagination with `@odata.nextLink`
+### 5.4 Outlook API Service (`src/services/outlook.js`)
+- [x] Uses Microsoft Graph API (`https://graph.microsoft.com/v1.0/me`)
+- [x] `fetchMessages` — `mailFolders/{folder}/messages` with `$top`/`$skip` offset pagination and `$count=true`; `ConsistencyLevel: eventual` header
+- [x] `fetchMessage` — requests `body` field; handles `contentType html` vs `text` natively
+- [x] `markRead` — `PATCH /messages/{id}` with `{ isRead }`
+- [x] `archiveMessage` — `POST /messages/{id}/move` to `archive` well-known folder
+- [x] `deleteMessage` — `POST /messages/{id}/move` to `deleteditems` (recoverable)
+- [x] `getFolders` — `mailFolders` list; sorted by well-known folder order then alphabetical
+- [x] Folder name mapping: `INBOX→inbox`, `SENT→sentitems`, `TRASH→deleteditems`, `SPAM→junkemail`, `DRAFTS→drafts`, `ARCHIVE→archive`
+- [x] `graphFetch` helper in `oauth/outlook.js` — proactive token refresh, 401 retry, DB persistence
 
 ### 5.5 Email Sanitization
 - [x] All HTML email bodies must be sanitized with `isomorphic-dompurify` before sending to client
@@ -484,8 +497,8 @@ Work through phases in this order. Each phase is independently testable before m
 2. **Phase 2** — Auth routes + login/register UI ✅
 3. **Phase 3** — Recovery flow ✅
 4. **Phase 7 (partial)** — App shell HTML/CSS layout + `api.js` ✅
-5. **Phase 4** — Account management (IMAP/SMTP ✅; Gmail OAuth ✅; Outlook ⬜)
-6. **Phase 5** — Email reading (IMAP ✅; Gmail/Outlook API ⬜)
+5. **Phase 4** — Account management (IMAP/SMTP ✅; Gmail OAuth ✅; Outlook OAuth ✅)
+6. **Phase 5** — Email reading (IMAP ✅; Gmail API ✅; Outlook Graph API ✅)
 7. **Phase 6** — Compose/send (frontend [~]; backend ⬜)
 8. **Phase 7 (complete)** — Wire up all frontend JS modules ✅ (minus folder tree, thread collapsing)
 9. **Phase 8** — Settings panel ✅
@@ -507,10 +520,13 @@ Work through phases in this order. Each phase is independently testable before m
 ## Known Issues / Decisions Pending
 
 - [x] **Design prototype inaccessible** — RESOLVED. Design obtained from Claude Design API and implemented. Full bundle in `data/design-dump.txt`.
+- [x] **Gmail/Outlook native API reading** — RESOLVED. `src/services/gmail.js` and `src/services/outlook.js` fully implemented. Email router dispatches based on `account.provider`.
+- [x] **Outlook OAuth** — RESOLVED. `src/services/oauth/outlook.js` implemented with raw fetch (no MSAL). Init + callback routes added to `src/routes/oauth.js`. Outlook tile enabled in add-inbox modal.
 - [!] **`PATCH /reorder` route ordering bug** — In `src/routes/accounts.js`, `PATCH /:id` is defined before `PATCH /reorder`, so a request to `/reorder` is matched by the `/:id` handler with `id = "reorder"`. Move the `/reorder` route above `/:id` to fix.
+- [ ] **Compose send backend** — Frontend compose UI exists; `POST /api/email/:accountId/send` and SMTP service not yet wired up (Phase 6.1/6.2).
+- [ ] **Admin panel** — Routes and UI not yet implemented (Phase 9).
 - [ ] **Attachment support** — Reading and downloading attachments is not in initial scope. `[FUTURE]` placeholder in reader.js.
 - [ ] **Search** — Full-text email search not in scope. IMAP SEARCH command available for future implementation.
+- [ ] **IMAP folder listing** — `getFolders` not yet implemented for IMAP accounts; only Gmail and Outlook support the folders endpoint.
 - [~] **Push notifications** — 60s polling implemented as baseline. Real-time would require IMAP IDLE.
 - [ ] **Mobile responsive** — Desktop-first. Basic responsive breakpoints for tablet/mobile as a stretch goal.
-- [ ] **Gmail/Outlook native API reading** — Gmail accounts currently fall back to an IMAP guard error. Full Gmail API and Outlook Graph API email reading not yet implemented (Phase 5.3/5.4).
-- [ ] **Compose send backend** — Frontend compose UI exists; `POST /api/email/:accountId/send` and SMTP service not yet wired up (Phase 6.1/6.2).
