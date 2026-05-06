@@ -1,1 +1,108 @@
-<h1>Spindle</h1>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Spindle — Centralized Mail</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cstyle%3E.s%7Bfill:none;stroke-width:7;stroke-linecap:round;stroke:%23000%7D.f%7Bfill:%23000;stroke:none%7D%40media (prefers-color-scheme:dark)%7B.s%7Bstroke:%23f0f0f0%7D.f%7Bfill:%23f0f0f0%7D%7D%3C/style%3E%3Cpath class='s' d='M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46'/%3E%3Cpath class='s' d='M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54'/%3E%3Cpath class='f' d='M 50 6 L 51.6 50 L 48.4 50 Z'/%3E%3Crect class='f' x='48.6' y='50' width='2.8' height='40'/%3E%3Cellipse class='f' cx='50' cy='92' rx='9' ry='1.8'/%3E%3C/svg%3E">
+  <script>
+    (function() {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
+      mq.addEventListener('change', function(e) {
+        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
+      });
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/home.css">
+</head>
+<body>
+
+<div class="home">
+
+  <!-- Top bar -->
+  <div class="home-topbar">
+    <div class="meta">
+      <span>// spindle.sh</span>
+      <span class="sep">·</span>
+      <span>v0.1.4</span>
+    </div>
+    <div class="status" id="js-status">
+      <span class="dot"></span>
+      <span>all systems nominal</span>
+    </div>
+  </div>
+
+  <!-- Main hero -->
+  <div class="home-main">
+
+    <div class="home-prompt">
+      <span class="cmd">~/spindle&nbsp;$&nbsp;</span><span class="flag">./spindle.sh --serve</span>
+    </div>
+
+    <div class="home-hero">
+      <!-- SpindleMark at 108px, strokeWidth 6.5 -->
+      <svg width="108" height="108" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"
+           style="display:inline-block;vertical-align:middle;flex-shrink:0">
+        <path d="M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46"
+              fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/>
+        <path d="M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54"
+              fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/>
+        <path d="M 50 6 L 51.6 50 L 48.4 50 Z" fill="currentColor"/>
+        <rect x="48.6" y="50" width="2.8" height="40" fill="currentColor"/>
+        <ellipse cx="50" cy="92" rx="9" ry="1.8" fill="currentColor"/>
+      </svg>
+      <div class="word">spindle</div>
+    </div>
+
+    <div class="home-tag">
+      <span class="sep"></span>
+      <span>centralized mail</span>
+      <span class="sep"></span>
+    </div>
+
+    <div class="home-desc">
+      One spool for every inbox you keep. <span class="em">Spindle</span> threads your
+      mail accounts &mdash; <span class="dim">imap, smtp, the works</span> &mdash; into
+      a single, fast, keyboard-driven client.
+      <span class="em">Filed once. Reachable everywhere. Nothing lost in the spool.</span>
+    </div>
+
+    <div class="home-actions">
+      <button class="home-btn primary" id="js-cta">
+        [ sign in ] <span class="ret">↵</span>
+      </button>
+      <a class="home-btn ghost" href="https://github.com/StapleTT/spindle"
+         target="_blank" rel="noopener noreferrer">
+        [ github ] <span class="ret">↗</span>
+      </a>
+    </div>
+
+    <div class="home-version">
+      <span>build 2026.05.06</span>
+      <span class="dot"></span>
+      <span>open source</span>
+      <span class="dot"></span>
+      <span>self-hostable</span>
+    </div>
+
+  </div><!-- /.home-main -->
+
+  <!-- Footer -->
+  <div class="home-footer">
+    <div class="legal">&copy; 2026 spindle mail &middot; built by staple</div>
+    <div class="links">
+      <a href="/privacy-policy">privacy policy</a>
+      <a href="/tos">terms of use</a>
+    </div>
+  </div>
+
+</div><!-- /.home -->
+
+<script src="/js/home.js"></script>
+</body>
+</html>

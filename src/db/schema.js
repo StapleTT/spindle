@@ -62,4 +62,11 @@ db.exec(`
   );
 `);
 
+// Migrations — safe to run on every boot
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN auto_load_images INTEGER DEFAULT 0`);
+} catch (e) {
+  if (!e.message.includes('duplicate column name')) throw e;
+}
+
 module.exports = db;

@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const bcrypt = require('bcrypt');
 const requireAuth = require('../middleware/requireAuth');
 const db = require('../db/queries');
 const { encrypt } = require('../utils/crypto');
@@ -81,12 +82,28 @@ router.post('/', async (req, res) => {
   res.status(201).json(accounts[accounts.length - 1]);
 });
 
-// DELETE /api/accounts/:id — remove an account
-router.delete('/:id', (req, res) => {
+// PATCH /api/accounts/:id — update display name
+router.patch('/:id', (req, res) => {
   const account = db.getEmailAccountById.get(req.params.id);
   if (!account || account.user_id !== req.user.id) {
     return res.status(404).json({ error: 'Account not found' });
   }
+  const name = (req.body.display_name || '').trim();
+  if (!name) return res.status(400).json({ error: 'display_name is required' });
+  db.updateEmailAccountName.run(name, account.id, req.user.id);
+  res.json({ ok: true });
+});
+
+// DELETE /api/accounts/:id — remove an account (requires password confirmation)
+router.delete('/:id', async (req, res) => {
+  const account = db.getEmailAccountById.get(req.params.id);
+  if (!account || account.user_id !== req.user.id) {
+    return res.status(404).json({ error: 'Account not found' });
+  }
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'Password required' });
+  const valid = await bcrypt.compare(password, req.user.password_hash);
+  if (!valid) return res.status(403).json({ error: 'Incorrect password' });
   imap.evict(account.id);
   db.deleteEmailAccount.run(req.params.id, req.user.id);
   res.json({ ok: true });

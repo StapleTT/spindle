@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — Spindle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    (function() {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
+      mq.addEventListener('change', function(e) {
+        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
+      });
+    })();
+  </script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cstyle%3E.s%7Bfill:none;stroke-width:7;stroke-linecap:round;stroke:%23000%7D.f%7Bfill:%23000;stroke:none%7D%40media (prefers-color-scheme:dark)%7B.s%7Bstroke:%23f0f0f0%7D.f%7Bfill:%23f0f0f0%7D%7D%3C/style%3E%3Cpath class='s' d='M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46'/%3E%3Cpath class='s' d='M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54'/%3E%3Cpath class='f' d='M 50 6 L 51.6 50 L 48.4 50 Z'/%3E%3Crect class='f' x='48.6' y='50' width='2.8' height='40'/%3E%3Cellipse class='f' cx='50' cy='92' rx='9' ry='1.8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .doc-shell {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 60px 32px 100px;
+    }
+    .doc-brand {
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      margin-bottom: 48px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .doc-brand a {
+      color: var(--fg-dim);
+      text-decoration: none;
+    }
+    .doc-brand a:hover { color: var(--fg-bright); }
+    .doc-brand .sep { opacity: 0.35; }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--fg-bright);
+      letter-spacing: -0.01em;
+      margin: 0 0 8px;
+    }
+    .doc-date {
+      font-size: 11px;
+      color: var(--fg-dimmer);
+      margin-bottom: 48px;
+    }
+    h2 {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      margin: 40px 0 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-2);
+    }
+    h2 .slash { color: var(--fg-dimmer); margin-right: 6px; }
+    p, li {
+      font-size: 13px;
+      color: var(--fg);
+      line-height: 1.75;
+      margin: 0 0 12px;
+    }
+    ul { padding-left: 20px; margin: 0 0 12px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--fg-dim); text-underline-offset: 3px; }
+    a:hover { color: var(--fg-bright); }
+    .em { color: var(--fg-bright); }
+  </style>
+</head>
+<body>
+<div class="doc-shell">
+
+  <div class="doc-brand">
+    <a href="/inbox">spindle</a>
+    <span class="sep">—</span>
+    <span>privacy policy</span>
+  </div>
+
+  <h1>Privacy Policy</h1>
+  <div class="doc-date">Effective date: May 2025</div>
+
+  <p>
+    Spindle is a self-hosted, personal email client. This policy describes what information
+    Spindle collects, how it is stored, and how it is used when you connect email accounts
+    through the application.
+  </p>
+
+  <h2><span class="slash">//</span>information we collect</h2>
+  <p>Spindle collects only the information required to operate as an email client:</p>
+  <ul>
+    <li><span class="em">Account credentials</span> — your Spindle username and a bcrypt hash of your password. The original password is never stored.</li>
+    <li><span class="em">Email account data</span> — IMAP/SMTP hostnames, ports, and usernames you enter when adding an inbox. Passwords are encrypted with AES-256-GCM before being written to disk.</li>
+    <li><span class="em">OAuth tokens</span> — when you connect a Gmail account, Google issues an access token and a refresh token. Both are encrypted with AES-256-GCM and stored locally in the Spindle database. They are never transmitted to any party other than Google.</li>
+    <li><span class="em">Email content</span> — messages are fetched on demand from your email provider and displayed in the browser. Spindle does not store, cache, or index the body of any email.</li>
+    <li><span class="em">Session data</span> — a session cookie is set to keep you logged in. Session files are stored on the server and expire after seven days.</li>
+  </ul>
+
+  <h2><span class="slash">//</span>how we use your information</h2>
+  <p>All data collected by Spindle is used exclusively to provide the core email-client functionality:</p>
+  <ul>
+    <li>Authenticating you into the application.</li>
+    <li>Connecting to your email providers (via IMAP/SMTP or the Gmail API) to fetch, display, send, and manage your email.</li>
+    <li>Maintaining your session between page loads.</li>
+  </ul>
+  <p>Spindle does not use your data for analytics, advertising, profiling, or any purpose beyond operating the application.</p>
+
+  <h2><span class="slash">//</span>google user data</h2>
+  <p>
+    Spindle's use of data obtained from Google APIs complies with the
+    <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">
+      Google API Services User Data Policy
+    </a>, including the Limited Use requirements.
+  </p>
+  <p>Specifically:</p>
+  <ul>
+    <li>Spindle requests access to your Gmail data solely to read, send, and manage your email within the application.</li>
+    <li>Gmail data is not transferred to third parties except as necessary to provide the email-client service (i.e., communicating directly with Google's servers on your behalf).</li>
+    <li>Gmail data is not used to serve advertisements or for any purpose unrelated to email management.</li>
+    <li>Spindle does not allow humans to read your Gmail data unless you have explicitly shared it or Spindle is legally required to do so.</li>
+    <li>OAuth tokens are stored encrypted on the server running Spindle and are used only to authenticate requests to the Gmail API on your behalf.</li>
+  </ul>
+
+  <h2><span class="slash">//</span>data storage and security</h2>
+  <ul>
+    <li>All data is stored in a SQLite database on the server where Spindle is deployed.</li>
+    <li>Passwords (Spindle account and IMAP) are never stored in plaintext. Spindle account passwords use bcrypt (12 rounds); IMAP passwords use AES-256-GCM encryption.</li>
+    <li>OAuth tokens (access and refresh) are encrypted with AES-256-GCM using a key you control via the <span class="em">ENCRYPTION_KEY</span> environment variable.</li>
+    <li>Because Spindle is self-hosted, the security of the stored data depends on the security of the server you operate it on.</li>
+  </ul>
+
+  <h2><span class="slash">//</span>data sharing</h2>
+  <p>
+    Spindle does not sell, rent, or share your personal data with third parties. The only
+    external services your data touches are the email providers you explicitly connect
+    (e.g., Google for Gmail accounts) — and only to fulfil your requests within the application.
+  </p>
+
+  <h2><span class="slash">//</span>data retention and deletion</h2>
+  <p>
+    Your data is retained for as long as your Spindle account exists. You can delete your
+    account at any time from the settings panel. Deleting your account permanently removes
+    your user record and all associated email account credentials from the database.
+  </p>
+  <p>
+    Revoking Spindle's access to your Google account via
+    <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account Permissions</a>
+    will invalidate the stored OAuth tokens and prevent Spindle from accessing your Gmail
+    until you reconnect.
+  </p>
+
+  <h2><span class="slash">//</span>contact</h2>
+  <p>
+    Spindle is a self-hosted application. If you have questions about this policy or
+    about how your data is handled on a specific deployment, please contact the person
+    or organisation operating that instance.
+  </p>
+
+</div>
+</body>
+</html>

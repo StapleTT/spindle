@@ -28,5 +28,10 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.9"
+  },
+  "nodemonConfig": {
+    "watch": ["server.js", "src/"],
+    "ext": "js,json",
+    "ignore": ["data/", "public/", "node_modules/"]
   }
 }

@@ -25,7 +25,7 @@ const API = (() => {
 
     // Session expired
     if (res.status === 401) {
-      location.href = '/auth.html';
+      location.href = '/auth';
       throw new Error('Not authenticated');
     }
 

@@ -1,7 +1,9 @@
 const router = require('express').Router();
 const requireAuth = require('../middleware/requireAuth');
 const db = require('../db/queries');
-const imap = require('../services/imap');
+const imap           = require('../services/imap');
+const gmailService   = require('../services/gmail');
+const outlookService = require('../services/outlook');
 
 router.use(requireAuth);
 
@@ -12,12 +14,25 @@ function getAccount(accountId, userId) {
   return account;
 }
 
+// Return the appropriate service for an account based on its provider
+function getService(account) {
+  if (account.provider === 'gmail')   return gmailService;
+  if (account.provider === 'outlook') return outlookService;
+  return imap;
+}
+
+// Parse UID — OAuth providers use opaque string IDs; IMAP uses integers
+function parseUid(account, raw) {
+  if (account.provider === 'gmail' || account.provider === 'outlook') return raw;
+  return parseInt(raw, 10);
+}
+
 // GET /api/email/:accountId/folders
 router.get('/:accountId/folders', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
   try {
-    const folders = await imap.getFolders(account);
+    const folders = await getService(account).getFolders(account);
     res.json(folders);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -34,7 +49,7 @@ router.get('/:accountId/messages', async (req, res) => {
   const limit  = Math.min(100, parseInt(req.query.limit) || 50);
 
   try {
-    const result = await imap.fetchMessages(account, folder, page, limit);
+    const result = await getService(account).fetchMessages(account, folder, page, limit);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -47,10 +62,10 @@ router.get('/:accountId/messages/:uid', async (req, res) => {
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const folder = req.query.folder || 'INBOX';
-  const uid    = parseInt(req.params.uid);
+  const uid    = parseUid(account, req.params.uid);
 
   try {
-    const message = await imap.fetchMessage(account, folder, uid);
+    const message = await getService(account).fetchMessage(account, folder, uid);
     res.json(message);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -63,11 +78,11 @@ router.patch('/:accountId/messages/:uid/read', async (req, res) => {
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const folder = req.query.folder || req.body.folder || 'INBOX';
-  const uid    = parseInt(req.params.uid);
+  const uid    = parseUid(account, req.params.uid);
   const read   = req.body.read !== false;
 
   try {
-    await imap.markRead(account, folder, uid, read);
+    await getService(account).markRead(account, folder, uid, read);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -80,10 +95,10 @@ router.post('/:accountId/messages/:uid/archive', async (req, res) => {
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const folder = req.body.folder || 'INBOX';
-  const uid    = parseInt(req.params.uid);
+  const uid    = parseUid(account, req.params.uid);
 
   try {
-    await imap.archiveMessage(account, folder, uid);
+    await getService(account).archiveMessage(account, folder, uid);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -96,10 +111,10 @@ router.delete('/:accountId/messages/:uid', async (req, res) => {
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const folder = req.query.folder || 'INBOX';
-  const uid    = parseInt(req.params.uid);
+  const uid    = parseUid(account, req.params.uid);
 
   try {
-    await imap.deleteMessage(account, folder, uid);
+    await getService(account).deleteMessage(account, folder, uid);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

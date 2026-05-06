@@ -22,9 +22,9 @@ const Accounts = (() => {
 
   const PROVIDERS = [
     { id: 'imap',    name: 'manual imap / smtp', icon: ICON_IMAP,    enabled: true },
-    { id: 'gmail',   name: 'gmail',              icon: ICON_GMAIL,   enabled: false, badge: 'oauth — coming soon' },
-    { id: 'outlook', name: 'outlook',            icon: ICON_OUTLOOK, enabled: false, badge: 'oauth — coming soon' },
-    { id: 'icloud',  name: 'icloud mail',        icon: ICON_ICLOUD,  enabled: false, badge: 'oauth — coming soon' },
+    { id: 'gmail',   name: 'gmail',              icon: ICON_GMAIL,   enabled: true },
+    { id: 'outlook', name: 'outlook',            icon: ICON_OUTLOOK, enabled: true },
+    { id: 'icloud',  name: 'icloud mail',        icon: ICON_ICLOUD,  enabled: false, badge: 'coming soon' },
   ];
 
   // IMAP presets
@@ -73,7 +73,16 @@ const Accounts = (() => {
 
   function wirePicker() {
     document.querySelectorAll('.provider-tile:not(.disabled)').forEach(tile => {
-      tile.onclick = () => showIMAPForm(tile.dataset.provider);
+      tile.onclick = () => {
+        const provider = tile.dataset.provider;
+        if (provider === 'gmail') {
+          window.location.href = '/api/oauth/gmail/init';
+        } else if (provider === 'outlook') {
+          window.location.href = '/api/oauth/outlook/init';
+        } else {
+          showIMAPForm(provider);
+        }
+      };
     });
   }
 
@@ -204,5 +213,59 @@ const Accounts = (() => {
     };
   }
 
-  return { openAddModal, closeModal };
+  // ── OAuth display-name modal ──────────────────────────────────────
+  function showNameModal(acctId, suggestedName, email) {
+    if (_modal) _modal.remove();
+    _modal = document.createElement('div');
+    _modal.className = 'modal-bg';
+    _modal.innerHTML = `
+      <div class="modal modal-narrow" role="dialog" aria-label="name your inbox">
+        <div class="modal-header">
+          <span>// name your inbox</span>
+          <span class="modal-close" id="nm-close">[ esc ]</span>
+        </div>
+        <div class="modal-body" style="gap:18px">
+          <div style="font-size:12px;color:var(--fg-dim);line-height:1.6">
+            <div>${esc(email)}</div>
+          </div>
+          <div class="field">
+            <div class="field-label">display name</div>
+            <input class="input" id="nm-name" value="${esc(suggestedName)}" placeholder="My Gmail" autocomplete="off">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn" id="nm-save">[ save ] <span class="ret">↵</span></button>
+        </div>
+      </div>`;
+    document.body.appendChild(_modal);
+
+    const input = document.getElementById('nm-name');
+    input.focus();
+    input.select();
+
+    const doClose = () => { if (_modal) { _modal.remove(); _modal = null; } };
+    document.getElementById('nm-close').onclick = doClose;
+    _modal.addEventListener('click', e => { if (e.target === _modal) doClose(); });
+
+    const doSave = async () => {
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      const btn = document.getElementById('nm-save');
+      btn.disabled = true; btn.textContent = '[ saving… ]';
+      try {
+        await API.patch(`/api/accounts/${acctId}`, { display_name: name });
+        doClose();
+        await App.loadAccounts();
+        App.selectAccount(Number(acctId));
+      } catch (e) {
+        btn.disabled = false; btn.innerHTML = '[ save ] <span class="ret">↵</span>';
+        Toast.show(e.message, 'err');
+      }
+    };
+
+    document.getElementById('nm-save').onclick = doSave;
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') doSave(); });
+  }
+
+  return { openAddModal, closeModal, showNameModal };
 })();

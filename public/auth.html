@@ -134,7 +134,7 @@ function wireLogin() {
     if (!v) return;
     btn.disabled=true; btn.innerHTML='[ authenticating… ]';
     const res = await post('/api/auth/login',{username:u,password:p});
-    if (res.ok) { await new Promise(r => setTimeout(r, 700)); location.href='/inbox.html'; return; }
+    if (res.ok) { await new Promise(r => setTimeout(r, 700)); location.href='/inbox'; return; }
     btn.disabled=false; btn.innerHTML='[ authenticate ] <span class="ret">↵</span>';
     showErr('l-pe', res.data.error || 'authentication failed');
   }
@@ -220,7 +220,7 @@ function wireReg() {
     const btn=document.getElementById('r-go');
     btn.disabled=true; btn.innerHTML='[ creating account… ]';
     const res=await post('/api/auth/register',{invite_code:ic,username:u,recovery_email:em||undefined,password:p});
-    if(res.ok){location.href='/inbox.html';return;}
+    if(res.ok){location.href='/inbox';return;}
     btn.disabled=false; btn.innerHTML='[ create account ] <span class="ret">↵</span>';
     const msg=res.data.error||'registration failed';
     if(/invite/i.test(msg))        showErr('r-ice',msg);
@@ -285,7 +285,7 @@ function wireRecover() {
 
 /* ── Boot ────────────────────────────────────────────────────────── */
 (async()=>{
-  try { const r=await fetch('/api/auth/me'); if(r.ok){location.href='/inbox.html';return;} } catch(_){}
+  try { const r=await fetch('/api/auth/me'); if(r.ok){location.href='/inbox';return;} } catch(_){}
   // Check for view hint in hash (e.g. auth.html#register)
   const hash = location.hash.replace('#','');
   if (hash === 'register') go('register');

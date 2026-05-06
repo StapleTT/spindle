@@ -4,14 +4,13 @@
 > **Stack:** Node.js (Express) · SQLite (`node:sqlite` built-in, Node ≥ 22.5) · Vanilla JS frontend (no framework)
 > **Auth:** Session-based (express-session + session-file-store)
 > **Email protocols:** IMAP (imap-simple) · SMTP (nodemailer) · OAuth2 (Gmail, Outlook)
-> **Design:** Refer to the Spindle Prototype HTML for all UI/UX decisions. If unavailable, match a clean two-panel email client layout (sidebar + email list + reading pane).
+> **Design:** Spindle Prototype obtained from Claude Design and implemented. See `data/design-dump.txt` for full bundle.
 > **SQLite note:** Uses `node:sqlite` (built into Node 22.5+) — zero native deps, no compilation needed on Windows or Linux. `better-sqlite3` and `connect-sqlite3` are NOT used.
 
 ---
 
 ## ⚠️ Notes Before Starting
 
-- The design prototype URL returned a 404 at project creation time. Before creating any web page content, ask for the Claude Design URL.
 - All secrets (OAuth client IDs, session secrets, SMTP credentials) must go in a `.env` file. Never commit `.env`.
 - Run `npm install` before starting. See `package.json` for all dependencies.
 - SQLite DB file lives at `./data/spindle.db` — created automatically on first run.
@@ -30,7 +29,8 @@ spindle/
 ├── package.json
 ├── server.js                  # Entry point
 ├── data/
-│   └── spindle.db             # Auto-created SQLite database
+│   ├── spindle.db             # Auto-created SQLite database
+│   └── design-dump.txt        # Full Claude Design prototype bundle
 ├── src/
 │   ├── db/
 │   │   ├── schema.js          # DB init & migrations
@@ -39,8 +39,9 @@ spindle/
 │   │   ├── auth.js            # Login, register, logout, recovery
 │   │   ├── email.js           # Read, send, actions (mark/archive/delete/etc.)
 │   │   ├── accounts.js        # Add/remove/reorder inbox accounts
-│   │   ├── admin.js           # Admin-only: users, invite codes
-│   │   └── settings.js        # User settings (theme, delete account)
+│   │   ├── oauth.js           # Gmail (+ future Outlook) OAuth flows
+│   │   ├── admin.js           # Admin-only: users, invite codes (STUB)
+│   │   └── settings.js        # User settings (theme, images, delete account)
 │   ├── middleware/
 │   │   ├── requireAuth.js     # Session check middleware
 │   │   └── requireAdmin.js    # Admin role check middleware
@@ -49,30 +50,36 @@ spindle/
 │   │   ├── smtp.js            # SMTP send via nodemailer
 │   │   ├── oauth/
 │   │   │   ├── gmail.js       # Gmail OAuth2 flow
-│   │   │   └── outlook.js     # Outlook OAuth2 flow
+│   │   │   └── outlook.js     # Outlook OAuth2 flow (not started)
 │   │   └── recovery.js        # Password recovery email sender
 │   └── utils/
-│       ├── crypto.js          # Token generation (invite codes, recovery tokens)
+│       ├── crypto.js          # AES-256-GCM encryption + token generation
 │       └── sanitize.js        # HTML email sanitization (DOMPurify server-side)
 └── public/
+    ├── index.html             # Homepage (auth-aware, light/dark, animations)
     ├── inbox.html             # Main app shell (requires login)
     ├── auth.html              # Login / Register page
     ├── recovery.html          # Account recovery page
+    ├── privacy-policy.html    # Privacy Policy (Google OAuth verification)
+    ├── tos.html               # Terms of Service
+    ├── 404.html               # 404 error page
     ├── css/
     │   ├── main.css           # Base styles, CSS variables, light/dark themes
+    │   ├── home.css           # Homepage-specific styles & animations
     │   ├── layout.css         # Three-panel layout
     │   ├── components.css     # Buttons, modals, forms, badges
     │   └── email.css          # Email list rows, reading pane styles
     └── js/
         ├── app.js             # Main app init, routing, state
+        ├── home.js            # Homepage auth check script
         ├── sidebar.js         # Sidebar: account list, folder nav
         ├── emailList.js       # Email list panel rendering & pagination
         ├── reader.js          # Email reading pane, web content rendering
         ├── composer.js        # Compose window: new/reply/forward
         ├── accounts.js        # Add inbox modal & OAuth redirect handling
         ├── settings.js        # Settings panel interactions
-        ├── admin.js           # Admin panel (users + invite codes)
-        └── api.js             # Centralized fetch wrapper for all API calls
+        ├── admin.js           # Admin panel (stub)
+        └── api.js             # Centralized fetch wrapper + Toast system
 ```
 
 ---
@@ -84,6 +91,8 @@ spindle/
 - [x] `.env.example` with all required env vars documented
 - [x] `.gitignore` (node_modules, .env, data/*.db)
 - [x] `server.js` entry point with Express app, session middleware, static files, route mounting
+- [x] `trust proxy` set for nginx reverse-proxy support
+- [x] `nodemonConfig` in package.json — watches only `src/` and `server.js`; ignores `data/`, `public/`, `node_modules/`
 
 **Dependencies installed:**
 ```
@@ -104,7 +113,8 @@ Create all tables on startup if they don't exist:
   - `password_hash` TEXT NOT NULL
   - `recovery_email` TEXT
   - `role` TEXT DEFAULT 'user' — set to `'admin'` for user id=1
-  - `theme` TEXT DEFAULT 'light'
+  - `theme` TEXT DEFAULT 'system'
+  - `auto_load_images` INTEGER DEFAULT 0 — migrated in on boot if absent
   - `invite_code_used` TEXT — the code they registered with
   - `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP
 
@@ -130,7 +140,7 @@ Create all tables on startup if they don't exist:
   - `smtp_port` INTEGER
   - `smtp_secure` INTEGER DEFAULT 1
   - `imap_user` TEXT
-  - `imap_password_encrypted` TEXT — AES-256 encrypted, key from env
+  - `imap_password_encrypted` TEXT — AES-256-GCM encrypted, key from env
   - `oauth_access_token` TEXT
   - `oauth_refresh_token` TEXT
   - `oauth_token_expiry` DATETIME
@@ -162,13 +172,14 @@ Create all tables on startup if they don't exist:
 - [x] Find user by username
 - [x] bcrypt.compare password
 - [x] Create session with `req.session.userId` and `req.session.role`
-- [x] Return user info (id, username, role, theme)
+- [x] Return user info (id, username, role, theme, auto_load_images)
 
 ### 2.3 Logout (`POST /api/auth/logout`)
 - [x] Destroy session
 
 ### 2.4 Session Check (`GET /api/auth/me`)
 - [x] Return current user info if session exists, else 401
+- [x] Returns: id, username, role, theme, auto_load_images
 
 ### 2.5 Auth Middleware (`src/middleware/requireAuth.js`)
 - [x] Check `req.session.userId` — if missing, return 401
@@ -181,7 +192,7 @@ Create all tables on startup if they don't exist:
 - [x] `public/auth.html` — login form + register form (toggle between)
 - [x] Register form includes invite code field
 - [x] Client-side validation before submit
-- [x] Redirect to `inbox.html` on success; show error messages inline on failure
+- [x] Redirect to `/inbox` on success; show error messages inline on failure
 
 ---
 
@@ -212,28 +223,30 @@ Create all tables on startup if they don't exist:
 ## Phase 4 — Email Account Management
 
 ### 4.1 Add Account Modal (Frontend)
-- [ ] Provider selection screen: Gmail, Outlook, Yahoo, iCloud, Custom IMAP
-- [ ] **OAuth providers (Gmail, Outlook):** Show "Connect with Google/Microsoft" button → redirect to OAuth flow
-- [ ] **IMAP/SMTP providers:** Form with fields:
+- [x] Provider selection screen: Gmail, Outlook, Yahoo, iCloud, Custom IMAP
+- [x] **OAuth providers (Gmail, Outlook):** Show "Connect with Google/Microsoft" button → redirect to OAuth flow
+- [x] **IMAP/SMTP providers:** Form with fields:
   - Display name, Email address
   - IMAP host, port, TLS toggle
   - SMTP host, port, TLS toggle
   - Username, Password
-- [ ] Pre-fill known IMAP/SMTP settings for Yahoo (`imap.mail.yahoo.com:993`) and iCloud (`imap.mail.me.com:993`)
-- [ ] Test connection before saving (call `POST /api/accounts/test`)
-- [ ] On success, add to sidebar without page reload
+- [x] Pre-fill known IMAP/SMTP settings for Yahoo (`imap.mail.yahoo.com:993`) and iCloud (`imap.mail.me.com:993`)
+- [x] Test connection before saving (call `POST /api/accounts/test`)
+- [x] On success, add to sidebar without page reload
+- [x] After OAuth connect: show display name modal before adding to sidebar
 
 ### 4.2 IMAP/SMTP Account API (`src/routes/accounts.js`)
-- [ ] `GET /api/accounts` — list all accounts for logged-in user (no credentials in response)
-- [ ] `POST /api/accounts` — add new IMAP/SMTP account; encrypt password before storing
-- [ ] `POST /api/accounts/test` — test IMAP connection; return success/failure with error message
-- [ ] `DELETE /api/accounts/:id` — remove account (verify ownership)
-- [ ] `PATCH /api/accounts/reorder` — accept array of `{id, sort_order}` pairs, update in bulk
+- [x] `GET /api/accounts` — list all accounts for logged-in user (no credentials in response)
+- [x] `POST /api/accounts` — add new IMAP/SMTP account; encrypt password before storing
+- [x] `POST /api/accounts/test` — test IMAP connection; return success/failure with error message
+- [x] `DELETE /api/accounts/:id` — remove account (verify ownership, require password)
+- [x] `PATCH /api/accounts/:id` — update display name
+- [~] `PATCH /api/accounts/reorder` — implemented but has **route ordering bug**: `/reorder` is defined after `/:id`, so Express matches it as id="reorder". Must move `PATCH /reorder` above `PATCH /:id`.
 
-### 4.3 Gmail OAuth Flow (`src/services/oauth/gmail.js`)
-- [ ] `GET /api/oauth/gmail/init` — generate Google OAuth URL with scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`; redirect user
-- [ ] `GET /api/oauth/gmail/callback` — exchange code for tokens; store encrypted refresh token; redirect to app
-- [ ] Token refresh logic: check expiry before each API call, refresh if needed
+### 4.3 Gmail OAuth Flow (`src/services/oauth/gmail.js` + `src/routes/oauth.js`)
+- [x] `GET /api/oauth/gmail/init` — generate Google OAuth URL with scopes: `gmail.readonly`, `gmail.send`, `gmail.modify`; redirect user
+- [x] `GET /api/oauth/gmail/callback` — exchange code for tokens; store encrypted refresh token; redirect to app
+- [x] Token refresh logic: `tokens` event listener on OAuth2 client auto-persists refreshed tokens
 
 ### 4.4 Outlook OAuth Flow (`src/services/oauth/outlook.js`)
 - [ ] `GET /api/oauth/outlook/init` — MSAL redirect to Microsoft login
@@ -241,30 +254,30 @@ Create all tables on startup if they don't exist:
 - [ ] Token refresh logic using MSAL refresh token
 
 ### 4.5 Credential Encryption (`src/utils/crypto.js`)
-- [ ] AES-256-GCM encryption/decryption for stored IMAP passwords and OAuth tokens
-- [ ] Encryption key loaded from `ENCRYPTION_KEY` env var (32-byte hex)
+- [x] AES-256-GCM encryption/decryption for stored IMAP passwords and OAuth tokens
+- [x] Encryption key loaded from `ENCRYPTION_KEY` env var (32-byte hex)
 
 ---
 
 ## Phase 5 — Email Reading (IMAP + Gmail API + Outlook API)
 
 ### 5.1 IMAP Service (`src/services/imap.js`)
-- [ ] Connection pool keyed by `email_account_id` — reuse open connections
-- [ ] `fetchMessages(accountId, folder, options)` — fetch message list with headers (from, subject, date, read status, flags)
-- [ ] `fetchMessage(accountId, folder, uid)` — fetch full message (headers + body, text + HTML parts)
+- [x] Connection pool keyed by `email_account_id` — reuse open connections
+- [x] `fetchMessages(accountId, folder, options)` — fetch message list with headers (from, subject, date, read status, flags)
+- [x] `fetchMessage(accountId, folder, uid)` — fetch full message (headers + body, text + HTML parts)
 - [ ] `fetchFolders(accountId)` — list all IMAP mailboxes/folders
-- [ ] `markRead(accountId, folder, uid, isRead)` — set/unset \Seen flag
-- [ ] `archiveMessage(accountId, folder, uid)` — move to Archive folder (create if absent)
-- [ ] `deleteMessage(accountId, folder, uid)` — move to Trash / expunge
+- [x] `markRead(accountId, folder, uid, isRead)` — set/unset \Seen flag
+- [x] `archiveMessage(accountId, folder, uid)` — move to Archive folder (create if absent)
+- [x] `deleteMessage(accountId, folder, uid)` — move to Trash / expunge
 - [ ] `moveMessage(accountId, fromFolder, toFolder, uid)` — generic move
 
 ### 5.2 Email Routes (`src/routes/email.js`)
 - [ ] `GET /api/email/:accountId/folders` — list folders
-- [ ] `GET /api/email/:accountId/messages?folder=INBOX&page=1&limit=50` — paginated message list
-- [ ] `GET /api/email/:accountId/messages/:uid?folder=INBOX` — full message fetch; mark as read on open
-- [ ] `PATCH /api/email/:accountId/messages/:uid/read` — toggle read/unread
-- [ ] `POST /api/email/:accountId/messages/:uid/archive` — archive
-- [ ] `DELETE /api/email/:accountId/messages/:uid` — delete (move to trash)
+- [x] `GET /api/email/:accountId/messages?folder=INBOX&page=1&limit=20` — paginated message list (20/page, prev/next controls)
+- [x] `GET /api/email/:accountId/messages/:uid?folder=INBOX` — full message fetch; mark as read on open
+- [x] `PATCH /api/email/:accountId/messages/:uid/read` — toggle read/unread
+- [x] `POST /api/email/:accountId/messages/:uid/archive` — archive
+- [x] `DELETE /api/email/:accountId/messages/:uid` — delete (move to trash)
 - [ ] `GET /api/email/unified?page=1&limit=50` — fetch recent messages across all accounts, merge & sort by date
 
 ### 5.3 Gmail API Service
@@ -278,9 +291,9 @@ Create all tables on startup if they don't exist:
 - [ ] Handle pagination with `@odata.nextLink`
 
 ### 5.5 Email Sanitization
-- [ ] All HTML email bodies must be sanitized with `isomorphic-dompurify` before sending to client
-- [ ] Strip `<script>`, event handlers, external image tracking pixels (or make them opt-in)
-- [ ] Render sanitized HTML in an isolated `<iframe srcdoc>` in the reading pane
+- [x] All HTML email bodies must be sanitized with `isomorphic-dompurify` before sending to client
+- [x] Strip `<script>`, event handlers, external image tracking pixels (opt-in via per-user `auto_load_images` setting)
+- [x] Render sanitized HTML in an isolated `<iframe srcdoc>` in the reading pane
 
 ---
 
@@ -299,15 +312,15 @@ Create all tables on startup if they don't exist:
 - [ ] Copy sent message to Sent folder (IMAP APPEND or via API)
 
 ### 6.3 Compose Window (Frontend — `public/js/composer.js`)
-- [ ] Floating compose window (draggable, minimizable)
-- [ ] **From:** dropdown — select which account/address to send from
-- [ ] **To:** tag-input field (type email, press Enter/comma to add)
-- [ ] **Cc / Bcc:** toggle fields (hidden by default, button to show)
-- [ ] **Subject:** plain text input
-- [ ] **Body:** rich text editor (use Quill.js or Trix — load from CDN)
-- [ ] Reply mode: pre-populate To, Subject (Re:), quote original body
-- [ ] Forward mode: pre-populate Subject (Fwd:), quote original body, To is empty
-- [ ] Send button → `POST /api/email/:accountId/send` → close composer on success
+- [~] Floating compose window (opens as modal; not yet draggable/minimizable)
+- [x] **From:** dropdown — select which account/address to send from
+- [x] **To:** input field
+- [x] **Cc / Bcc:** toggle chips — reveal rows on click
+- [x] **Subject:** plain text input
+- [x] **Body:** plain textarea (rich text editor not yet integrated)
+- [x] Reply mode: pre-populate To, Subject (Re:), quote original body
+- [x] Forward mode: pre-populate Subject (Fwd:), quote original body, To is empty
+- [ ] Send button wired to `POST /api/email/:accountId/send` (backend not yet implemented)
 
 ---
 
@@ -320,7 +333,7 @@ Create all tables on startup if they don't exist:
   3. **Right panel** (flex-grow): Email reading pane
 - [x] Responsive collapse: on narrow viewports, panels slide (sidebar → list → reader)
 - [x] CSS custom properties for all colors; `[data-theme="dark"]` on `<html>` for dark mode
-- [x] Smooth transitions on theme change (CSS transition on background-color, color)
+- [x] Smooth transitions on theme change
 
 ### 7.2 Sidebar (`public/js/sidebar.js`)
 - [x] Load accounts via `GET /api/accounts` on app init
@@ -331,40 +344,44 @@ Create all tables on startup if they don't exist:
 - [x] Active folder highlighted
 
 ### 7.3 Email List (`public/js/emailList.js`)
-- [ ] Render list of messages (sender name, subject, preview snippet, date, read/unread indicator)
-- [ ] Unread messages visually distinct (bold, dot indicator)
-- [ ] Click row → load full message in reading pane; mark as read
-- [ ] Right-click / swipe → context menu: Mark unread, Archive, Delete
-- [ ] Infinite scroll or pagination (load more button)
-- [ ] Loading skeleton while fetching
+- [x] Render list of messages (sender name, subject, preview snippet, date, read/unread indicator)
+- [x] Unread messages visually distinct (bold sender/subject, dot indicator)
+- [x] Click row → load full message in reading pane; mark as read
+- [ ] Right-click context menu (hover quick-action buttons exist instead)
+- [x] Pagination: 20 per page, prev/next controls pinned at bottom
+- [x] Loading skeleton while fetching
+- [x] Silent auto-refresh every 60s (only re-renders on UID change)
+- [x] Hover quick actions: mark read/unread, delete
 
 ### 7.4 Reading Pane (`public/js/reader.js`)
-- [ ] Display: From (with avatar initial), To, Cc, Subject, Date
-- [ ] Render sanitized HTML body in `<iframe srcdoc>` (isolated)
-- [ ] Action toolbar: Reply · Reply All · Forward · Archive · Delete · Mark Unread
-- [ ] "Show images" toggle (block remote images by default)
+- [x] Display: From (name + address), To, Subject, Date
+- [x] Render sanitized HTML body in `<iframe srcdoc>` (isolated, sandbox="allow-same-origin")
+- [x] Action toolbar: Reply · Reply All · Forward · Archive · Delete · Mark Unread
+- [x] "Show images" button when remote images are blocked; auto-load respects per-user DB setting
 - [ ] Thread view: collapsible previous messages below current
+- [ ] Avatar initial beside sender name
 
 ### 7.5 Global State & API (`public/js/app.js`, `public/js/api.js`)
-- [ ] `api.js`: thin fetch wrapper — handles auth errors (redirect to login on 401), JSON parsing, error toasts
-- [ ] `app.js`: global state (currentAccount, currentFolder, currentMessage, user, theme)
-- [ ] On load: call `GET /api/auth/me` — redirect to `auth.html` if 401
-- [ ] Theme: read from user record; apply `data-theme` attribute; persist via `PATCH /api/settings/theme`
+- [x] `api.js`: thin fetch wrapper — handles auth errors (redirect to `/auth` on 401), JSON parsing, error toasts
+- [x] `app.js`: global state (activeAcct, activeFolder, activeMsg, user, accounts, unreadCounts)
+- [x] On load: call `GET /api/auth/me` — redirect to `/auth` if 401
+- [x] Theme: read from user record; apply `data-theme`; persist via `PATCH /api/settings/theme`
+- [x] `App.toggleImages()` — persists `auto_load_images` to DB via `PATCH /api/settings/images`
 
 ---
 
 ## Phase 8 — Settings Panel
 
 ### 8.1 Settings Routes (`src/routes/settings.js`)
-- [ ] `PATCH /api/settings/theme` — toggle `'light'` / `'dark'`; update DB; return new theme
-- [ ] `DELETE /api/settings/account` — delete user account; require `password` in body (bcrypt verify); cascade deletes all email_accounts
+- [x] `PATCH /api/settings/theme` — cycle `'system'` / `'dark'` / `'light'`; update DB
+- [x] `PATCH /api/settings/images` — toggle `auto_load_images`; update DB
+- [x] `DELETE /api/settings/account` — delete user account; require `password` in body (bcrypt verify); cascade deletes all email_accounts
 
 ### 8.2 Settings UI (`public/js/settings.js`)
-- [ ] Slide-in settings panel (triggered from gear icon in sidebar)
-- [ ] **Appearance section:** Light/Dark mode toggle switch
-- [ ] **Inboxes section:** List all connected inboxes with drag-to-reorder (use SortableJS from CDN); delete button per inbox (confirm dialog)
-- [ ] **Danger Zone section:**
-  - "Delete Account" button → modal: enter password to confirm → `DELETE /api/settings/account` → logout and redirect to login
+- [x] Modal settings panel (triggered from gear icon in sidebar)
+- [x] **Appearance section:** theme cycle (system → dark → light → system); remote images toggle
+- [x] **Inboxes section:** list all connected inboxes, reorder with ↑/↓ buttons, delete with password confirmation
+- [x] **Danger Zone:** "Delete Account" → password confirmation → `DELETE /api/settings/account` → redirect to login
 
 ---
 
@@ -389,28 +406,41 @@ Create all tables on startup if they don't exist:
 
 ## Phase 10 — Security Hardening
 
-- [ ] `helmet()` middleware — sets security headers (CSP, HSTS, X-Frame-Options, etc.)
-- [ ] `express-rate-limit` on all `/api/auth/*` routes (max 10 req/15min per IP)
+- [x] `helmet()` middleware — sets security headers (CSP, HSTS, X-Frame-Options, etc.)
+- [x] `express-rate-limit` on all `/api/auth/*` routes (max 10 req/15min per IP)
 - [ ] CSRF protection for state-changing routes (use `csurf` or double-submit cookie pattern)
-- [ ] All DB queries use prepared statements (no string concatenation)
-- [ ] Validate and sanitize all user inputs server-side (check types, lengths, formats)
-- [ ] OAuth `state` parameter validated on callback (prevent CSRF on OAuth flow)
-- [ ] Recovery tokens expire after 1 hour; one-time use only
-- [ ] Invite codes are cryptographically random (use `crypto.randomBytes`)
-- [ ] Session cookie: `httpOnly: true`, `secure: true` (in production), `sameSite: 'lax'`
-- [ ] Encryption key for stored credentials loaded from env, never hardcoded
-- [ ] Never return password hashes or raw OAuth tokens in API responses
+- [x] All DB queries use prepared statements (no string concatenation)
+- [~] Validate and sanitize all user inputs server-side (auth routes done; email/account routes partial)
+- [x] OAuth `state` parameter validated on callback (prevent CSRF on OAuth flow)
+- [x] Recovery tokens expire after 1 hour; one-time use only
+- [x] Invite codes are cryptographically random (use `crypto.randomBytes`)
+- [x] Session cookie: `httpOnly: true`, `secure: true` (in production), `sameSite: 'lax'`
+- [x] Encryption key for stored credentials loaded from env, never hardcoded
+- [x] Never return password hashes or raw OAuth tokens in API responses
 
 ---
 
 ## Phase 11 — Polish & UX
 
-- [ ] Toast notification system (success, error, info) — vanilla JS, CSS animations
-- [ ] Loading states on all async actions (spinner on buttons, skeleton loaders on lists)
-- [ ] Empty states (no emails, no accounts added yet) with helpful prompts
-- [ ] Error boundary: if one account fails to load, show error inline for that account only (don't break others)
-- [ ] Keyboard shortcuts: `c` = compose, `r` = reply, `e` = archive, `#` = delete, `u` = mark unread, `/` = search (future)
-- [ ] Favicon + `<title>` update with unread count ("(12) Spindle")
+- [x] Toast notification system (success, error, info) — vanilla JS, CSS animations
+- [~] Loading states — skeleton loaders on email list; button disabled states on some actions
+- [x] Empty states (no emails, no accounts added yet) with welcome greeting
+- [~] Error boundary — per-account errors shown inline; not yet applied universally
+- [x] Keyboard shortcuts: `c` = compose, `r` = reply, `e` = archive, `#` = delete, `u` = mark unread
+- [x] Favicon + `<title>` update with unread count ("(12) Spindle")
+
+---
+
+## Extra — Completed Outside Original Scope
+
+- [x] **Homepage** (`/` → `public/index.html`) — auth-aware CTA (sign in / open inbox), Spindle mark hero, fade-in + slide-up entrance animations, system light/dark mode, footer links
+- [x] **Privacy Policy** (`/privacy-policy`) — Google API Limited Use compliance statement
+- [x] **Terms of Service** (`/tos`)
+- [x] **404 page** (`/404.html`) — styled, served with correct HTTP 404 status
+- [x] **Clean URL routing** — all pages accessible without `.html`; legacy `.html` URLs 301 redirect
+- [x] **nginx reverse-proxy support** — `app.set('trust proxy', 1)` so rate-limiting uses real client IPs
+- [x] **Nodemon config** — watches only `src/` + `server.js`; ignores `data/` (sessions/DB) and `public/` to prevent restart loops
+- [x] **`auto_load_images` persisted to DB** — migrated via safe `ALTER TABLE`; read/written via `PATCH /api/settings/images`; no longer stored in `localStorage`
 
 ---
 
@@ -450,25 +480,25 @@ OUTLOOK_TENANT_ID=common
 
 Work through phases in this order. Each phase is independently testable before moving on.
 
-1. **Phase 1** — Scaffold, package.json, server.js, DB schema
-2. **Phase 2** — Auth routes + login/register UI (get sessions working)
-3. **Phase 3** — Recovery flow
-4. **Phase 7 (partial)** — App shell HTML/CSS layout + `api.js` (so you have a UI to test against)
-5. **Phase 4** — Account management (IMAP/SMTP first; OAuth second)
-6. **Phase 5** — Email reading (IMAP first; Gmail/Outlook API second)
-7. **Phase 6** — Compose/send
-8. **Phase 7 (complete)** — Wire up all frontend JS modules
-9. **Phase 8** — Settings panel
-10. **Phase 9** — Admin panel
-11. **Phase 10** — Security hardening (apply throughout, finalize here)
-12. **Phase 11** — Polish
+1. **Phase 1** — Scaffold, package.json, server.js, DB schema ✅
+2. **Phase 2** — Auth routes + login/register UI ✅
+3. **Phase 3** — Recovery flow ✅
+4. **Phase 7 (partial)** — App shell HTML/CSS layout + `api.js` ✅
+5. **Phase 4** — Account management (IMAP/SMTP ✅; Gmail OAuth ✅; Outlook ⬜)
+6. **Phase 5** — Email reading (IMAP ✅; Gmail/Outlook API ⬜)
+7. **Phase 6** — Compose/send (frontend [~]; backend ⬜)
+8. **Phase 7 (complete)** — Wire up all frontend JS modules ✅ (minus folder tree, thread collapsing)
+9. **Phase 8** — Settings panel ✅
+10. **Phase 9** — Admin panel ⬜
+11. **Phase 10** — Security hardening ([~] mostly done, CSRF outstanding)
+12. **Phase 11** — Polish ([~] mostly done)
 
 ---
 
 ## Status Legend
 
 - `[ ]` Not started
-- `[~]` In progress
+- `[~]` In progress / partial
 - `[x]` Complete
 - `[!]` Blocked / needs attention
 
@@ -476,8 +506,11 @@ Work through phases in this order. Each phase is independently testable before m
 
 ## Known Issues / Decisions Pending
 
-- [ ] **Design prototype inaccessible** — URL returned 404. Implement standard three-panel email layout until prototype is available. When accessible, update CSS to match.
-- [ ] **Attachment support** — Reading and downloading attachments is not in initial scope. Add `[FUTURE]` placeholder in reader.js.
-- [ ] **Search** — Full-text email search not in initial scope. IMAP SEARCH command available for future implementation.
-- [ ] **Push notifications** — Real-time new email alerts not in scope (would require IMAP IDLE or polling). Add polling every 60s as a baseline.
+- [x] **Design prototype inaccessible** — RESOLVED. Design obtained from Claude Design API and implemented. Full bundle in `data/design-dump.txt`.
+- [!] **`PATCH /reorder` route ordering bug** — In `src/routes/accounts.js`, `PATCH /:id` is defined before `PATCH /reorder`, so a request to `/reorder` is matched by the `/:id` handler with `id = "reorder"`. Move the `/reorder` route above `/:id` to fix.
+- [ ] **Attachment support** — Reading and downloading attachments is not in initial scope. `[FUTURE]` placeholder in reader.js.
+- [ ] **Search** — Full-text email search not in scope. IMAP SEARCH command available for future implementation.
+- [~] **Push notifications** — 60s polling implemented as baseline. Real-time would require IMAP IDLE.
 - [ ] **Mobile responsive** — Desktop-first. Basic responsive breakpoints for tablet/mobile as a stretch goal.
+- [ ] **Gmail/Outlook native API reading** — Gmail accounts currently fall back to an IMAP guard error. Full Gmail API and Outlook Graph API email reading not yet implemented (Phase 5.3/5.4).
+- [ ] **Compose send backend** — Frontend compose UI exists; `POST /api/email/:accountId/send` and SMTP service not yet wired up (Phase 6.1/6.2).

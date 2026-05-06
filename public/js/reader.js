@@ -93,7 +93,7 @@ const Reader = (() => {
           ? DOMPurify.sanitize(msg.html, { FORCE_BODY: true })
           : msg.html;
 
-        const autoLoad = localStorage.getItem('autoLoadImages') === '1';
+        const autoLoad = App.user ? !!App.user.auto_load_images : false;
         const hasImages = /<img/i.test(sanitized);
         const content = autoLoad ? sanitized : sanitized.replace(/(<img[^>]+)\bsrc=/gi, '$1data-src=');
 
@@ -155,8 +155,10 @@ const Reader = (() => {
 
   function showFolderEmpty() {
     const p = pane();
+    const user = App.user;
     if (!p) return;
     p.innerHTML = `<div class="empty">
+      <div class="empty-greet">welcome, <span class="em">${user ? esc(user.username) : 'there'}</span>.</div>
       <div class="empty-sub">select a message to read.</div>
     </div>`;
   }

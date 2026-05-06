@@ -11,6 +11,7 @@ const insertUser = db.prepare(`
   VALUES (@username, @password_hash, @recovery_email, @role, @invite_code_used)
 `);
 const updateUserTheme = db.prepare(`UPDATE users SET theme = ? WHERE id = ?`);
+const updateUserImages = db.prepare(`UPDATE users SET auto_load_images = ? WHERE id = ?`);
 const updateUserPassword = db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`);
 const deleteUser = db.prepare(`DELETE FROM users WHERE id = ?`);
 const getAllUsers = db.prepare(`
@@ -64,6 +65,7 @@ const insertEmailAccount = db.prepare(`
      @imap_host, @imap_port, @imap_secure, @smtp_host, @smtp_port, @smtp_secure,
      @imap_user, @imap_password_encrypted, @oauth_access_token, @oauth_refresh_token, @oauth_token_expiry)
 `);
+const updateEmailAccountName = db.prepare(`UPDATE email_accounts SET display_name = ? WHERE id = ? AND user_id = ?`);
 const deleteEmailAccount = db.prepare(`DELETE FROM email_accounts WHERE id = ? AND user_id = ?`);
 const updateEmailAccountSortOrder = db.prepare(`
   UPDATE email_accounts SET sort_order = @sort_order WHERE id = @id AND user_id = @user_id
@@ -100,6 +102,7 @@ module.exports = {
   countUsers,
   insertUser,
   updateUserTheme,
+  updateUserImages,
   updateUserPassword,
   deleteUser,
   getAllUsers,
@@ -116,6 +119,7 @@ module.exports = {
   getEmailAccountsByUser,
   getEmailAccountById,
   insertEmailAccount,
+  updateEmailAccountName,
   deleteEmailAccount,
   updateEmailAccountSortOrder,
   updateOAuthTokens,

@@ -63,7 +63,7 @@ router.post('/register', async (req, res) => {
     if (err) return res.status(500).json({ error: 'Session error' });
     req.session.userId = result.lastInsertRowid;
     req.session.role = role;
-    res.status(201).json({ id: result.lastInsertRowid, username, role, theme: 'light' });
+    res.status(201).json({ id: result.lastInsertRowid, username, role, theme: 'system', auto_load_images: false });
   });
 });
 
@@ -89,7 +89,7 @@ router.post('/login', async (req, res) => {
     if (err) return res.status(500).json({ error: 'Session error' });
     req.session.userId = user.id;
     req.session.role = user.role;
-    res.json({ id: user.id, username: user.username, role: user.role, theme: user.theme });
+    res.json({ id: user.id, username: user.username, role: user.role, theme: user.theme, auto_load_images: !!user.auto_load_images });
   });
 });
 
@@ -104,8 +104,8 @@ router.post('/logout', (req, res) => {
 
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
-  const { id, username, role, theme } = req.user;
-  res.json({ id, username, role, theme });
+  const { id, username, role, theme, auto_load_images } = req.user;
+  res.json({ id, username, role, theme, auto_load_images: !!auto_load_images });
 });
 
 // ─── Recovery ────────────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ router.post('/recovery/request', async (req, res) => {
           pass: process.env.SYSTEM_SMTP_PASS,
         },
       });
-      const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}/recovery.html?token=${token}`;
+      const resetUrl = `${process.env.APP_URL || 'http://localhost:3000'}/recovery?token=${token}`;
       await transporter.sendMail({
         from: process.env.SYSTEM_FROM_EMAIL || 'Spindle <noreply@spindle.local>',
         to: user.recovery_email,

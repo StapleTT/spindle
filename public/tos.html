@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service — Spindle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    (function() {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
+      mq.addEventListener('change', function(e) {
+        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
+      });
+    })();
+  </script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cstyle%3E.s%7Bfill:none;stroke-width:7;stroke-linecap:round;stroke:%23000%7D.f%7Bfill:%23000;stroke:none%7D%40media (prefers-color-scheme:dark)%7B.s%7Bstroke:%23f0f0f0%7D.f%7Bfill:%23f0f0f0%7D%7D%3C/style%3E%3Cpath class='s' d='M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46'/%3E%3Cpath class='s' d='M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54'/%3E%3Cpath class='f' d='M 50 6 L 51.6 50 L 48.4 50 Z'/%3E%3Crect class='f' x='48.6' y='50' width='2.8' height='40'/%3E%3Cellipse class='f' cx='50' cy='92' rx='9' ry='1.8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .doc-shell {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 60px 32px 100px;
+    }
+    .doc-brand {
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      margin-bottom: 48px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .doc-brand a {
+      color: var(--fg-dim);
+      text-decoration: none;
+    }
+    .doc-brand a:hover { color: var(--fg-bright); }
+    .doc-brand .sep { opacity: 0.35; }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--fg-bright);
+      letter-spacing: -0.01em;
+      margin: 0 0 8px;
+    }
+    .doc-date {
+      font-size: 11px;
+      color: var(--fg-dimmer);
+      margin-bottom: 48px;
+    }
+    h2 {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      margin: 40px 0 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-2);
+    }
+    h2 .slash { color: var(--fg-dimmer); margin-right: 6px; }
+    p, li {
+      font-size: 13px;
+      color: var(--fg);
+      line-height: 1.75;
+      margin: 0 0 12px;
+    }
+    ul { padding-left: 20px; margin: 0 0 12px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--fg-dim); text-underline-offset: 3px; }
+    a:hover { color: var(--fg-bright); }
+    .em { color: var(--fg-bright); }
+  </style>
+</head>
+<body>
+<div class="doc-shell">
+
+  <div class="doc-brand">
+    <a href="/inbox">spindle</a>
+    <span class="sep">—</span>
+    <span>terms of service</span>
+  </div>
+
+  <h1>Terms of Service</h1>
+  <div class="doc-date">Effective date: May 2025</div>
+
+  <p>
+    By installing, deploying, or using Spindle you agree to these terms. Spindle is
+    self-hosted software — these terms govern your use of the application itself, not a
+    cloud service operated by a third party.
+  </p>
+
+  <h2><span class="slash">//</span>description of service</h2>
+  <p>
+    Spindle is an open-source, self-hosted email client that allows you to read, send,
+    and manage email from one or more accounts through a single web interface. All data
+    is stored on the server you operate. Spindle does not provide email hosting or
+    transmission services of its own — it connects to external providers (such as Google
+    Gmail or any IMAP/SMTP server) on your behalf.
+  </p>
+
+  <h2><span class="slash">//</span>acceptable use</h2>
+  <p>You agree to use Spindle only for lawful purposes. You must not:</p>
+  <ul>
+    <li>Use Spindle to send spam, phishing messages, or any unsolicited bulk email.</li>
+    <li>Use Spindle to access email accounts you are not authorised to access.</li>
+    <li>Attempt to circumvent authentication, exploit vulnerabilities, or interfere with the operation of the application or any connected email provider.</li>
+    <li>Use Spindle in violation of the terms of service of any connected email provider (e.g., Google's Terms of Service for Gmail accounts).</li>
+  </ul>
+
+  <h2><span class="slash">//</span>google api services</h2>
+  <p>
+    When you connect a Gmail account, Spindle uses the Google API Services to access
+    your Gmail data on your behalf. Your use of Google services through Spindle is
+    subject to <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Google's Terms of Service</a>.
+    Spindle's use of data received from Google APIs adheres to the
+    <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">
+      Google API Services User Data Policy
+    </a>, including the Limited Use requirements.
+  </p>
+  <p>
+    You are responsible for revoking Spindle's access to your Google account at any time
+    via <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account Permissions</a>
+    if you no longer wish to use the Gmail integration.
+  </p>
+
+  <h2><span class="slash">//</span>your data and privacy</h2>
+  <p>
+    Because Spindle is self-hosted, all data associated with your account — including
+    email credentials, OAuth tokens, and session data — is stored on the server you
+    operate or have been granted access to. The person or organisation running the
+    Spindle instance is responsible for the security of that server and the data on it.
+  </p>
+  <p>
+    For details on what data Spindle stores and how it is handled, see the
+    <a href="/privacy-policy">Privacy Policy</a>.
+  </p>
+
+  <h2><span class="slash">//</span>account responsibility</h2>
+  <p>
+    You are responsible for maintaining the confidentiality of your Spindle credentials
+    and for all activity that occurs under your account. You agree to notify the
+    operator of your Spindle instance immediately if you suspect unauthorised access.
+  </p>
+
+  <h2><span class="slash">//</span>no warranty</h2>
+  <p>
+    Spindle is provided <span class="em">"as is"</span> without warranty of any kind,
+    express or implied, including but not limited to warranties of merchantability,
+    fitness for a particular purpose, or non-infringement. The authors and operators
+    of Spindle do not guarantee that the application will be error-free, uninterrupted,
+    or free of security vulnerabilities.
+  </p>
+
+  <h2><span class="slash">//</span>limitation of liability</h2>
+  <p>
+    To the fullest extent permitted by applicable law, neither the developers of Spindle
+    nor the operator of any Spindle instance shall be liable for any indirect,
+    incidental, special, or consequential damages arising from your use of or inability
+    to use the application, including any loss of data or email access.
+  </p>
+
+  <h2><span class="slash">//</span>changes to these terms</h2>
+  <p>
+    These terms may be updated from time to time. Continued use of a Spindle instance
+    after terms are updated constitutes acceptance of the revised terms. The operator
+    of your instance is responsible for communicating material changes to users.
+  </p>
+
+  <h2><span class="slash">//</span>contact</h2>
+  <p>
+    Spindle is self-hosted software. Questions about these terms or the specific
+    deployment you are using should be directed to the person or organisation operating
+    that instance.
+  </p>
+
+</div>
+</body>
+</html>

@@ -11,6 +11,9 @@ require('./src/db/schema');
 
 const app = express();
 
+// Trust the first proxy (nginx) so X-Forwarded-For is used for real client IPs
+app.set('trust proxy', 1);
+
 // --- Security middleware ---
 app.use(helmet({
   contentSecurityPolicy: {
@@ -63,15 +66,35 @@ app.use('/api/settings', require('./src/routes/settings'));
 app.use('/api/admin', require('./src/routes/admin'));
 app.use('/api/oauth', require('./src/routes/oauth'));
 
-// --- Static files ---
+// --- Redirect legacy .html URLs to clean equivalents (must precede static) ---
+app.get('/inbox.html', (req, res) => {
+  const qs = new URLSearchParams(req.query).toString();
+  res.redirect(301, '/inbox' + (qs ? '?' + qs : ''));
+});
+app.get('/auth.html',           (req, res) => res.redirect(301, '/auth'));
+app.get('/recovery.html', (req, res) => {
+  const qs = new URLSearchParams(req.query).toString();
+  res.redirect(301, '/recovery' + (qs ? '?' + qs : ''));
+});
+app.get('/privacy-policy.html', (req, res) => res.redirect(301, '/privacy-policy'));
+app.get('/tos.html',            (req, res) => res.redirect(301, '/tos'));
+
+// --- Static files (CSS, JS, images, etc.) ---
 app.use(express.static(path.join(__dirname, 'public')));
 
-// SPA fallback: serve inbox.html for any non-API, non-asset route
-app.get('*', (req, res) => {
+// --- Clean URL page routes ---
+app.get('/inbox',          (req, res) => res.sendFile(path.join(__dirname, 'public', 'inbox.html')));
+app.get('/auth',           (req, res) => res.sendFile(path.join(__dirname, 'public', 'auth.html')));
+app.get('/recovery',       (req, res) => res.sendFile(path.join(__dirname, 'public', 'recovery.html')));
+app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));
+app.get('/tos',            (req, res) => res.sendFile(path.join(__dirname, 'public', 'tos.html')));
+
+// 404 handler — must be last
+app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
-  res.sendFile(path.join(__dirname, 'public', 'inbox.html'));
+  res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
 });
 
 // --- Start ---

@@ -2,7 +2,7 @@
  * app.js — Main app init, global state, routing.
  *
  * State shape:
- *   App.user        — { id, username, role, theme }
+ *   App.user        — { id, username, role, theme, auto_load_images }
  *   App.accounts    — array of email account objects
  *   App.activeAcct  — currently selected account id
  *   App.activeFolder— folder name (e.g. 'INBOX')
@@ -34,6 +34,9 @@ const App = (() => {
 
     await loadAccounts();
 
+    // Handle redirect back from an OAuth provider
+    handleOAuthReturn();
+
     // Kick off background inbox polling
     scheduleRefresh();
   }
@@ -46,6 +49,11 @@ const App = (() => {
       state.accounts = [];
     }
     Sidebar.render();
+    // If the active account was deleted, clear the selection so a new one is picked below
+    if (state.activeAcct && !state.accounts.some(a => a.id === state.activeAcct)) {
+      state.activeAcct = null;
+      EmailList.clear();
+    }
     if (state.accounts.length > 0 && !state.activeAcct) {
       selectAccount(state.accounts[0].id);
     } else if (state.accounts.length === 0) {
@@ -82,6 +90,17 @@ const App = (() => {
     }
   }
 
+  async function toggleImages() {
+    const next = !state.user.auto_load_images;
+    try {
+      await API.patch('/api/settings/images', { auto_load_images: next });
+      state.user.auto_load_images = next;
+    } catch (e) {
+      Toast.show(e.message, 'err');
+    }
+    return next;
+  }
+
   async function toggleTheme() {
     const current = state.user.theme;
     // Cycle: system → dark → light → system
@@ -104,7 +123,29 @@ const App = (() => {
   // ── Logout ───────────────────────────────────────────────────────
   async function logout() {
     try { await API.post('/api/auth/logout', {}); } catch (_) {}
-    location.href = '/auth.html';
+    location.href = '/auth';
+  }
+
+  // ── OAuth return handling ─────────────────────────────────────────
+  function handleOAuthReturn() {
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('oauth_success') && !params.has('oauth_error')) return;
+
+    history.replaceState({}, '', '/inbox');
+
+    if (params.has('oauth_error')) {
+      Toast.show(`OAuth error: ${decodeURIComponent(params.get('oauth_error'))}`, 'err');
+      return;
+    }
+
+    const acctId = params.get('acct');
+    const account = acctId ? state.accounts.find(a => a.id == acctId) : null;
+    if (account) {
+      // Prompt for a display name before adding to the sidebar
+      Accounts.showNameModal(acctId, account.display_name, account.email_address);
+    } else {
+      Toast.show('Account connected.', 'ok');
+    }
   }
 
   // ── Background refresh (every 60 s) ──────────────────────────────
@@ -124,6 +165,7 @@ const App = (() => {
     selectAccount,
     selectFolder,
     toggleTheme,
+    toggleImages,
     logout,
     applyTheme,
     updateDocTitle,

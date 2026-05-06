@@ -28,6 +28,15 @@ const EmailList = (() => {
     const body = document.getElementById('app-body');
     if (body) body.classList.add('has-list');
 
+    // Update the header immediately so the correct name shows during the load
+    if (header) {
+      const acct = App.accounts.find(a => a.id === accountId);
+      const name = acct ? (acct.display_name || acct.email_address) : folder;
+      header.innerHTML = `<span>// ${esc(name.toLowerCase())}</span><button class="hdr-refresh-btn" id="hdr-refresh" title="refresh">↺</button>`;
+      const refreshBtn = document.getElementById('hdr-refresh');
+      if (refreshBtn) refreshBtn.onclick = () => load(_currentAcct, _currentFolder, 1);
+    }
+
     if (page === 1) {
       list.innerHTML = skeletons();
     }
@@ -45,12 +54,6 @@ const EmailList = (() => {
         App.updateDocTitle();
       }
 
-      if (header) {
-        const acct = App.accounts.find(a => a.id === accountId);
-        const name = acct ? (acct.display_name || acct.email_address) : folder;
-        header.innerHTML = `<span>// ${esc(name.toLowerCase())} — ${_messages.length}</span><span>↑↓</span>`;
-      }
-
       renderRows(list);
       renderPagination();
     } catch (e) {
@@ -65,7 +68,31 @@ const EmailList = (() => {
 
   async function refresh(accountId, folder) {
     if (_loading || accountId !== _currentAcct || folder !== _currentFolder) return;
-    await load(accountId, folder, 1);
+
+    // Fetch silently — no skeletons, no panel flash
+    try {
+      const data = await API.get(
+        `/api/email/${accountId}/messages?folder=${encodeURIComponent(folder)}&page=${_page}&limit=${LIMIT}`
+      );
+
+      // Always update unread badge / doc title
+      if (data.unreadCount !== undefined) {
+        App.unreadCounts[accountId] = data.unreadCount;
+        App.updateDocTitle();
+      }
+
+      // Only re-render if the set of UIDs changed
+      const newUids = (data.messages || []).map(m => m.uid).join(',');
+      const oldUids = _messages.map(m => m.uid).join(',');
+      if (newUids === oldUids) return;
+
+      _messages   = data.messages;
+      _totalPages = data.total ? Math.ceil(data.total / LIMIT) : (data.hasMore ? _page + 1 : _page);
+
+      const list = document.getElementById('thread-list-rows');
+      if (list) renderRows(list);
+      renderPagination();
+    } catch (_) { /* silent — don't disturb the UI on a background poll failure */ }
   }
 
   function clear() {
@@ -98,8 +125,55 @@ const EmailList = (() => {
           <div class="tr-time">${esc(formatDate(msg.date))}</div>
         </div>
         <div class="tr-subj">${esc(msg.subject || '(no subject)')}</div>
-        <div class="tr-preview">${esc(msg.preview || '')}</div>`;
+        <div class="tr-preview">${esc(msg.preview || '')}</div>
+        <div class="tr-actions"></div>`;
       row.onclick = () => openMessage(msg);
+
+      // ── Hover action: toggle read/unread ──────────────────────────
+      const readBtn = document.createElement('button');
+      readBtn.className = 'tr-action-btn';
+      const updateReadBtn = () => {
+        readBtn.title     = msg.unread ? 'mark as read' : 'mark as unread';
+        readBtn.textContent = msg.unread ? '✓' : '●';
+      };
+      updateReadBtn();
+      readBtn.onclick = async e => {
+        e.stopPropagation();
+        const targetRead = msg.unread; // true = mark read, false = mark unread
+        try {
+          await API.patch(
+            `/api/email/${_currentAcct}/messages/${msg.uid}/read`,
+            { read: targetRead, folder: _currentFolder }
+          );
+          msg.unread = !targetRead;
+          row.classList.toggle('unread', msg.unread);
+          updateReadBtn();
+        } catch (err) { Toast.show(err.message, 'err'); }
+      };
+
+      // ── Hover action: delete ──────────────────────────────────────
+      const delBtn = document.createElement('button');
+      delBtn.className = 'tr-action-btn tr-action-delete';
+      delBtn.title = 'delete';
+      delBtn.textContent = '✕';
+      delBtn.onclick = async e => {
+        e.stopPropagation();
+        try {
+          await API.delete(
+            `/api/email/${_currentAcct}/messages/${msg.uid}?folder=${encodeURIComponent(_currentFolder)}`
+          );
+          row.remove();
+          _messages = _messages.filter(m => m.uid !== msg.uid);
+          // Clear reading pane if this message is currently open
+          const active = App.activeMsg;
+          if (active && active.uid == msg.uid) Reader.showFolderEmpty();
+          Toast.show('Message deleted.');
+        } catch (err) { Toast.show(err.message, 'err'); }
+      };
+
+      const actions = row.querySelector('.tr-actions');
+      actions.appendChild(readBtn);
+      actions.appendChild(delBtn);
       container.appendChild(row);
     });
 

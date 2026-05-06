@@ -23,6 +23,14 @@ function buildConfig(account, password) {
 }
 
 async function getConnection(account) {
+  if (!account.imap_password_encrypted) {
+    const provider = account.provider || 'oauth';
+    throw new Error(
+      `${provider.charAt(0).toUpperCase() + provider.slice(1)} accounts use the web API rather than IMAP — ` +
+      `full read support coming soon.`
+    );
+  }
+
   if (pool.has(account.id)) {
     try {
       // imap-simple exposes the underlying imap client on .imap

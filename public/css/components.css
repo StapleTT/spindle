@@ -474,6 +474,50 @@
 }
 .select option { background: var(--bg-2); }
 
+/* ─── Settings inbox list ────────────────────────────────────────────────── */
+.st-inbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-2);
+}
+.st-inbox-row:last-child { border-bottom: none; }
+.st-inbox-name {
+  flex: 1;
+  font-size: 12px;
+  color: var(--fg-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.st-inbox-provider {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--fg-dimmer);
+  flex-shrink: 0;
+}
+.st-inbox-btns {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.st-reorder-btn, .st-remove-btn {
+  background: none;
+  border: 1px solid var(--line-2);
+  color: var(--fg-dim);
+  font-family: inherit;
+  font-size: 11px;
+  padding: 2px 7px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: color 0.1s, border-color 0.1s;
+}
+.st-reorder-btn:hover:not(:disabled) { color: var(--fg-bright); border-color: var(--line); }
+.st-reorder-btn:disabled { opacity: 0.22; cursor: default; }
+.st-remove-btn:hover { color: #d4736c; border-color: rgba(212,115,108,0.5); }
+
 /* ─── Settings / Admin panel ─────────────────────────────────────────────── */
 .settings-panel {
   position: fixed;
