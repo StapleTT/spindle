@@ -114,13 +114,16 @@ const Search = (() => {
     if (body) body.classList.add('has-list');
     if (pg) pg.innerHTML = '';
 
-    // Visually highlight the selected account without touching Sidebar's internal
+    // Visually highlight the selected scope without touching Sidebar's internal
     // state or App.activeAcct (which would confuse subsequent navigation).
-    // Direct DOM update: just toggle the active class on account rows.
-    if (accountId !== 'all') {
+    // Direct DOM update: toggle active class on account rows for both the
+    // specific-account and 'all' cases so the previous selection is always cleared.
+    {
       const acctStr = String(accountId);
       document.querySelectorAll('#inbox-list .folder[data-acct-id]').forEach(el => {
         el.classList.toggle('active', el.dataset.acctId === acctStr);
+        // Remove folder-open highlight when a different account is now "active"
+        if (el.dataset.acctId !== acctStr) el.classList.remove('folder-open');
       });
       document.querySelectorAll('#inbox-list .folder-tree-item, #system-list .folder').forEach(el =>
         el.classList.remove('active'));

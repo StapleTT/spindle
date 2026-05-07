@@ -183,11 +183,10 @@
   flex-shrink: 0;
 }
 
-/* Account row when its folder tree is expanded (no left-border accent —
-   the active folder-tree-item carries that instead) */
+/* Account row when its folder tree is expanded */
 .folder.folder-open {
   background: var(--bg-subtle);
-  border-left-color: transparent;
+  border-left-color: var(--fg-bright);
 }
 
 /* ── Folder tree sub-items ─────────────────────────────────────────── */
