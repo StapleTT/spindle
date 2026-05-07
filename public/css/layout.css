@@ -118,6 +118,40 @@
   flex-shrink: 0;
 }
 
+/* Account row when its folder tree is expanded (no left-border accent —
+   the active folder-tree-item carries that instead) */
+.folder.folder-open {
+  background: rgba(255,255,255,0.03);
+  border-left-color: transparent;
+}
+
+/* ── Folder tree sub-items ─────────────────────────────────────────── */
+.folder-tree-item {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  padding: 5px 16px 5px 30px;
+  cursor: pointer;
+  font-size: 11.5px;
+  border-left: 2px solid transparent;
+  transition: background 0.1s;
+  align-items: baseline;
+}
+.folder-tree-item:hover { background: rgba(255,255,255,0.02); }
+.folder-tree-item.active {
+  background: rgba(255,255,255,0.04);
+  border-left-color: var(--fg-bright);
+}
+.folder-tree-item .ft-name  { color: var(--fg); }
+.folder-tree-item .ft-count { color: var(--fg-dim); font-size: 10.5px; }
+
+.folder-tree-loading {
+  padding: 5px 16px 5px 30px;
+  font-size: 11px;
+  color: var(--fg-dimmer);
+  letter-spacing: 0.04em;
+}
+
 /* Account badge on merged inbox rows */
 .tr-acct-badge {
   display: inline-block;

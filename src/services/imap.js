@@ -73,23 +73,58 @@ async function testConnection(accountConfig) {
 
 // ── Folder listing ─────────────────────────────────────────────────────────
 
+// Common folders in display-priority order (matched case-insensitively)
+const FOLDER_PRIORITY = [
+  'inbox', 'starred', 'sent', 'sent mail', 'sent items',
+  'drafts', 'draft', 'archive', 'all mail',
+  'trash', 'deleted', 'deleted items', 'junk', 'spam', 'junk mail',
+];
+
 async function getFolders(account) {
   const conn = await getConnection(account);
-  return new Promise((resolve, reject) => {
+
+  // Build the folder list from the box tree
+  const folders = await new Promise((resolve, reject) => {
     conn.imap.getBoxes((err, boxes) => {
       if (err) return reject(err);
-      const names = [];
+      const list = [];
+
       function walk(tree, prefix) {
         for (const [name, box] of Object.entries(tree)) {
-          const full = prefix ? `${prefix}${box.delimiter}${name}` : name;
-          names.push(full);
+          const full = prefix ? `${prefix}${box.delimiter || '/'}${name}` : name;
+          const noSelect = (box.attribs || []).some(
+            a => a.toLowerCase() === '\\noselect'
+          );
+          if (!noSelect) {
+            const parts = full.split(/[/.]/).filter(Boolean);
+            const displayName = parts[parts.length - 1] || full;
+            const lower = displayName.toLowerCase();
+            list.push({
+              id:   full,
+              name: displayName,
+              type: FOLDER_PRIORITY.includes(lower) ? 'system' : 'user',
+            });
+          }
           if (box.children) walk(box.children, full);
         }
       }
+
       walk(boxes, '');
-      resolve(names);
+
+      list.sort((a, b) => {
+        const ai = FOLDER_PRIORITY.indexOf(a.name.toLowerCase());
+        const bi = FOLDER_PRIORITY.indexOf(b.name.toLowerCase());
+        if (ai !== -1 && bi !== -1) return ai - bi;
+        if (ai !== -1) return -1;
+        if (bi !== -1) return  1;
+        return a.name.localeCompare(b.name);
+      });
+
+      resolve(list);
     });
   });
+
+  return folders.map(f => ({ ...f, unread: 0 }));
 }
 
 // ── From header parser ─────────────────────────────────────────────────────

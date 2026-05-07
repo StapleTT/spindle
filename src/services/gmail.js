@@ -214,9 +214,20 @@ async function deleteMessage(account, folder, uid) {
   await gmail.users.messages.trash({ userId: 'me', id: uid });
 }
 
+// System label IDs that are not navigable mailboxes and should never appear.
+const GMAIL_SKIP = new Set([
+  'UNREAD', 'IMPORTANT', 'CHAT', 'SCHEDULED',
+  'CATEGORY_SOCIAL', 'CATEGORY_UPDATES', 'CATEGORY_FORUMS',
+  'CATEGORY_PROMOTIONS', 'CATEGORY_PERSONAL',
+  'NOTES', // Apple Notes sync label
+]);
+
+// Priority order for the main system labels in the sidebar
+const GMAIL_PRIORITY = ['INBOX', 'STARRED', 'SENT', 'DRAFT', 'ALLMAIL', 'TRASH', 'SPAM'];
+
 /**
- * List all visible Gmail labels as normalised folder objects.
- * System labels (INBOX, SENT, etc.) come first.
+ * List all navigable Gmail labels as normalised folder objects.
+ * System labels come first; labelListVisibility only applies to user labels.
  */
 async function getFolders(account) {
   const auth  = getClient(account);
@@ -225,15 +236,35 @@ async function getFolders(account) {
   const res    = await gmail.users.labels.list({ userId: 'me' });
   const labels = res.data.labels || [];
 
-  return labels
-    .filter(l => l.labelListVisibility !== 'labelHide')
-    .sort((a, b) => {
-      // System labels first, then alphabetical
-      if (a.type === 'system' && b.type !== 'system') return -1;
-      if (a.type !== 'system' && b.type === 'system') return  1;
-      return a.name.localeCompare(b.name);
-    })
-    .map(l => ({ id: l.id, name: l.name, type: l.type || 'user' }));
+  const visible = labels.filter(l => {
+    if (GMAIL_SKIP.has(l.id)) return false;
+    if (/[_-]star$/i.test(l.id)) return false;
+    if (l.type === 'system') return true;
+    return l.labelListVisibility !== 'labelHide';
+  });
+
+  visible.sort((a, b) => {
+    const ai = GMAIL_PRIORITY.indexOf(a.id);
+    const bi = GMAIL_PRIORITY.indexOf(b.id);
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return  1;
+    if (a.type === 'system' && b.type !== 'system') return -1;
+    if (a.type !== 'system' && b.type === 'system') return  1;
+    return a.name.localeCompare(b.name);
+  });
+
+  // labels.list doesn't reliably return messagesUnread for system labels;
+  // fetch each label individually to get accurate counts.
+  const withCounts = await Promise.all(
+    visible.map(l =>
+      gmail.users.labels.get({ userId: 'me', id: l.id })
+        .then(r => ({ ...l, unread: r.data.messagesUnread || 0 }))
+        .catch(() => ({ ...l, unread: 0 }))
+    )
+  );
+
+  return withCounts.map(l => ({ id: l.id, name: l.name, type: l.type || 'user', unread: l.unread }));
 }
 
 // ── Unread count ───────────────────────────────────────────────────────────
@@ -251,4 +282,38 @@ async function getUnreadCount(account) {
   return res.data.resultSizeEstimate || 0;
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount };
+/**
+ * Send an email via the Gmail API.
+ * Builds an RFC 2822 MIME message, base64url-encodes it, and uses
+ * users.messages.send to deliver via the user's Gmail account.
+ *
+ * @param {object} account  — email_accounts row from DB
+ * @param {object} opts     — { to, cc, bcc, subject, text, replyTo }
+ */
+async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}) {
+  const auth  = getClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  // Omit From — Gmail API injects it automatically from the authenticated account.
+  // Including it risks a mismatch rejection (error 69585).
+  const lines = [
+    `To: ${to || ''}`,
+  ];
+  if (cc)      lines.push(`Cc: ${cc}`);
+  if (bcc)     lines.push(`Bcc: ${bcc}`);
+  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
+  lines.push(`Subject: ${subject || '(no subject)'}`);
+  lines.push('MIME-Version: 1.0');
+  lines.push('Content-Type: text/plain; charset=UTF-8');
+  lines.push('');
+  lines.push(text || '');
+
+  const raw = Buffer.from(lines.join('\r\n')).toString('base64url');
+
+  await gmail.users.messages.send({
+    userId:      'me',
+    requestBody: { raw },
+  });
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };

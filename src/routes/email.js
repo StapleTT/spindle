@@ -4,6 +4,7 @@ const db = require('../db/queries');
 const imap           = require('../services/imap');
 const gmailService   = require('../services/gmail');
 const outlookService = require('../services/outlook');
+const smtpService    = require('../services/smtp');
 
 router.use(requireAuth);
 
@@ -127,6 +128,30 @@ router.delete('/:accountId/messages/:uid', async (req, res) => {
 
   try {
     await getService(account).deleteMessage(account, folder, uid);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/email/:accountId/send
+router.post('/:accountId/send', async (req, res) => {
+  const account = getAccount(req.params.accountId, req.user.id);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  const { to, cc, bcc, subject, body, replyTo } = req.body;
+  if (!to || !to.trim()) return res.status(400).json({ error: 'Recipient (to) is required' });
+
+  const opts = { to, cc, bcc, subject, text: body, replyTo };
+
+  try {
+    if (account.provider === 'gmail') {
+      await gmailService.sendMessage(account, opts);
+    } else if (account.provider === 'outlook') {
+      await outlookService.sendMessage(account, opts);
+    } else {
+      await smtpService.sendEmail(account, opts);
+    }
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

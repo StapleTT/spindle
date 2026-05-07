@@ -7,11 +7,12 @@ Spindle is a self-hosted, centralized email client that lets you manage multiple
 ## Features
 
 - **Multi-account inbox** — connect as many email accounts as you want; read them individually or through a unified All Inboxes view
+- **Folder trees** — browse any folder or label per account (Inbox, Sent, Drafts, Archive, Trash, Spam, custom labels); loads on first selection and caches for the session; per-folder unread counts
 - **OAuth 2.0 for Gmail & Outlook** — one-click connect with no password stored; tokens are encrypted at rest
 - **IMAP/SMTP for everything else** — iCloud, Yahoo, and any standard mail server; credentials are AES-256-GCM encrypted
-- **Compose, reply, forward** — full compose window with Cc/Bcc, reply-all, and forward support
+- **Compose, reply, forward** — full compose window with Cc/Bcc, reply-all, and forward support; sends via Gmail API, Microsoft Graph, or SMTP depending on account type
 - **Invite-only registration** — accounts require a valid `XXXX-XXXX-XXXX` invite code; the admin panel generates and revokes codes
-- **Admin panel** — manage users (toggle roles, delete accounts), issue and revoke invite codes, all from within the app
+- **Admin panel** — manage users (toggle roles, pause accounts, delete), issue and revoke invite codes, all from within the app
 - **Dark/light/system theme** — respects your OS preference by default, overrideable per account
 - **Keyboard shortcuts** — `c` compose · `r` reply · `e` archive · `#` delete · `u` mark unread
 
@@ -166,4 +167,4 @@ server {
 npm run dev   # starts with nodemon; watches src/ and server.js only
 ```
 
-The database is created automatically at `./data/spindle.db` on first run. Session files are stored in `./data/sessions/`.
+The database is created automatically at `./data/spindle.db` on first run. Sessions are stored in the same SQLite database — no session files are written to disk.

@@ -1,0 +1,20 @@
+Contact: mailto:talankm@pm.me
+Expires: 2027-05-06T00:00:00.000Z
+Policy: https://spindle.app/security-policy
+Preferred-Languages: en
+
+# Spindle — Self-Hosted Email Client
+#
+# If you have discovered a security vulnerability in Spindle, please report it
+# responsibly by emailing the contact above. Include a description of the issue,
+# steps to reproduce, and any relevant environment details.
+#
+# We ask that you:
+#   - Give us reasonable time to investigate and patch before public disclosure
+#   - Do not access, modify, or exfiltrate data belonging to other users
+#   - Do not perform denial-of-service attacks against any instance
+#
+# There is no bug bounty program at this time. We appreciate responsible
+# disclosure and will credit researchers in release notes where appropriate.
+#
+# This file follows RFC 9116: https://www.rfc-editor.org/rfc/rfc9116

@@ -186,38 +186,42 @@ async function deleteMessage(account, folder, uid) {
   await checkResponse(res, 'deleteMessage');
 }
 
+// Display-name priority list for sorting (English names; covers personal + M365 accounts).
+// wellKnownName is intentionally not requested — it's unavailable on personal Outlook accounts.
+const OUTLOOK_DISPLAY_PRIORITY = [
+  'inbox', 'starred', 'sent items', 'sent mail', 'sent',
+  'drafts', 'draft', 'archive', 'deleted items', 'junk email', 'spam', 'junk',
+];
+
 /**
  * List all mail folders, system folders first then alphabetical.
  */
 async function getFolders(account) {
-  const params = new URLSearchParams({
-    $select:  'id,displayName,totalItemCount,unreadItemCount,wellKnownName',
-    $top:     100,
-  });
-
-  const url = `${GRAPH}/mailFolders?${params}`;
+  // wellKnownName is excluded — it is unavailable on personal Outlook/Hotmail accounts
+  // and causes the request to fail. unreadItemCount is available on all account types.
+  const url = `${GRAPH}/mailFolders?$select=id,displayName,unreadItemCount&$top=100`;
   const res  = await graphFetch(account, url);
   await checkResponse(res, 'getFolders');
 
   const data    = await res.json();
   const folders = data.value || [];
 
-  // Well-known folders come first, user folders alphabetical after
-  const WELL_KNOWN_ORDER = ['inbox','sentitems','drafts','archive','deleteditems','junkemail'];
-
   folders.sort((a, b) => {
-    const ai = WELL_KNOWN_ORDER.indexOf(a.wellKnownName || '');
-    const bi = WELL_KNOWN_ORDER.indexOf(b.wellKnownName || '');
+    const al = (a.displayName || '').toLowerCase();
+    const bl = (b.displayName || '').toLowerCase();
+    const ai = OUTLOOK_DISPLAY_PRIORITY.indexOf(al);
+    const bi = OUTLOOK_DISPLAY_PRIORITY.indexOf(bl);
     if (ai !== -1 && bi !== -1) return ai - bi;
     if (ai !== -1) return -1;
     if (bi !== -1) return  1;
-    return (a.displayName || '').localeCompare(b.displayName || '');
+    return al.localeCompare(bl);
   });
 
   return folders.map(f => ({
-    id:   f.id,
-    name: f.displayName,
-    type: f.wellKnownName ? 'system' : 'user',
+    id:     f.id,
+    name:   f.displayName,
+    type:   OUTLOOK_DISPLAY_PRIORITY.includes((f.displayName || '').toLowerCase()) ? 'system' : 'user',
+    unread: f.unreadItemCount || 0,
   }));
 }
 
@@ -231,4 +235,50 @@ async function getUnreadCount(account) {
   return data.unreadItemCount || 0;
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount };
+/**
+ * Send an email via the Microsoft Graph API (POST /me/sendMail).
+ *
+ * @param {object} account  — email_accounts row from DB
+ * @param {object} opts     — { to, cc, bcc, subject, text, replyTo }
+ */
+async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}) {
+  function toRecipientList(str) {
+    if (!str) return [];
+    return str.split(',').map(s => s.trim()).filter(Boolean).map(addr => {
+      const m = addr.match(/^(.*?)\s*<([^>]+)>\s*$/);
+      return m
+        ? { emailAddress: { name: m[1].trim(), address: m[2].trim() } }
+        : { emailAddress: { address: addr } };
+    });
+  }
+
+  const message = {
+    subject: subject || '(no subject)',
+    body: {
+      contentType: 'Text',
+      content:     text || '',
+    },
+    from: {
+      emailAddress: {
+        name:    account.display_name || '',
+        address: account.email_address,
+      },
+    },
+    toRecipients:  toRecipientList(to),
+    ccRecipients:  toRecipientList(cc),
+    bccRecipients: toRecipientList(bcc),
+    ...(replyTo ? { replyTo: toRecipientList(replyTo) } : {}),
+  };
+
+  const url = `${GRAPH}/sendMail`;
+  const res  = await graphFetch(account, url, {
+    method: 'POST',
+    body:   JSON.stringify({ message }),
+  });
+
+  if (!res.ok && res.status !== 202) {
+    await checkResponse(res, 'sendMessage');
+  }
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };

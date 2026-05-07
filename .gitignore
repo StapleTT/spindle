@@ -5,3 +5,5 @@ data/*.db-shm
 data/*.db-wal
 data/sessions/
 data/*.txt
+CLAUDE.md
+.claude/
