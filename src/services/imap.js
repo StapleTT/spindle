@@ -297,4 +297,49 @@ async function fetchThread(account, threadId) {
   return [];
 }
 
-module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount, fetchThread };
+/**
+ * Search messages in a folder using IMAP SEARCH criteria.
+ * field: 'all' | 'from' | 'to' | 'subject'
+ * Searches INBOX by default (IMAP requires an open mailbox; opening all folders is too slow).
+ */
+async function searchMessages(account, query, field, folder = 'INBOX', page = 1, limit = 20) {
+  const conn = await getConnection(account);
+  await conn.openBox(folder);
+
+  const q = query.trim();
+  let criteria;
+  if (field === 'from')         criteria = [['FROM', q]];
+  else if (field === 'to')      criteria = [['TO', q]];
+  else if (field === 'subject') criteria = [['SUBJECT', q]];
+  else                          criteria = [['TEXT', q]]; // headers + body
+
+  const raw = await conn.search(criteria, {
+    bodies: ['HEADER.FIELDS (FROM SUBJECT DATE)'],
+    markSeen: false,
+  });
+
+  if (raw.length === 0) return { messages: [], total: 0 };
+
+  raw.sort((a, b) => b.attributes.uid - a.attributes.uid);
+
+  const start = (page - 1) * limit;
+  const slice = raw.slice(start, start + limit);
+
+  const messages = slice.map(msg => {
+    const header  = msg.parts[0]?.body || {};
+    const { from_name, from_addr } = parseFrom(header.from?.[0] || '');
+    const subject = (header.subject?.[0] || '').trim();
+    const date    = header.date?.[0] ? new Date(header.date[0]) : null;
+    return {
+      uid:       msg.attributes.uid,
+      from_name, from_addr, subject,
+      date:      date?.toISOString() || null,
+      preview:   '',
+      unread:    !msg.attributes.flags.includes('\\Seen'),
+    };
+  });
+
+  return { messages, total: raw.length };
+}
+
+module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount, fetchThread, searchMessages };

@@ -377,4 +377,53 @@ async function fetchThread(account, threadId) {
   return (res.data.messages || []).map(normaliseFullMessage);
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread };
+/**
+ * Search messages across all labels using Gmail's q parameter.
+ * field: 'all' | 'from' | 'to' | 'subject'
+ * Gmail q supports operators: from:, to:, subject: and free text.
+ */
+async function searchMessages(account, query, field, _folder, page, limit) {
+  const auth  = getClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const raw = query.trim();
+  let q;
+  if (field === 'from')         q = `from:${raw}`;
+  else if (field === 'to')      q = `to:${raw}`;
+  else if (field === 'subject') q = `subject:${raw}`;
+  else                          q = raw;
+
+  // Gmail pagination is cursor-based; for simplicity use pageToken cache keyed by query
+  const cacheKey = `search:${account.id}:${q}:${page}`;
+  const prevKey  = `search:${account.id}:${q}:${page - 1}`;
+  const pageToken = page > 1 ? _pageTokens.get(prevKey) : undefined;
+
+  const listRes = await gmail.users.messages.list({
+    userId:     'me',
+    q,
+    maxResults: limit,
+    ...(pageToken ? { pageToken } : {}),
+  });
+
+  if (listRes.data.nextPageToken) {
+    _pageTokens.set(cacheKey, listRes.data.nextPageToken);
+  }
+
+  const ids   = listRes.data.messages || [];
+  const total = listRes.data.resultSizeEstimate || ids.length;
+
+  const messages = await Promise.all(
+    ids.map(({ id }) =>
+      gmail.users.messages.get({
+        userId:          'me',
+        id,
+        format:          'metadata',
+        metadataHeaders: ['From', 'To', 'Subject', 'Date'],
+      }).then(r => normaliseMetadata(r.data))
+    )
+  );
+
+  return { messages, total };
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread, searchMessages };

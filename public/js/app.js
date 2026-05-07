@@ -244,6 +244,7 @@ document.addEventListener('keydown', (e) => {
     case 'e': e.preventDefault(); Reader.archive(); break;
     case '#': e.preventDefault(); Reader.deleteMsg(); break;
     case 'u': e.preventDefault(); Reader.toggleRead(); break;
+    case '/': e.preventDefault(); Search.open(); break;
   }
 });
 

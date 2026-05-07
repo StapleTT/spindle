@@ -158,6 +158,61 @@ router.post('/:accountId/messages/:uid/move', async (req, res) => {
   }
 });
 
+// GET /api/email/:accountId/search?q=...&field=all|from|to|subject&folder=INBOX&page=1&limit=20
+// accountId may be 'all' to search across every account belonging to the user
+router.get('/:accountId/search', async (req, res) => {
+  const { q, field = 'all', folder, page: pageStr, limit: limitStr } = req.query;
+  if (!q || !q.trim()) return res.status(400).json({ error: 'q is required' });
+
+  const sanitizedQ      = String(q).substring(0, 500);
+  const sanitizedField  = ['all', 'from', 'to', 'subject'].includes(field) ? field : 'all';
+  const sanitizedFolder = sanitizeFolder(folder || 'INBOX');
+  const page            = Math.max(1, parseInt(pageStr) || 1);
+  const limit           = Math.min(50, parseInt(limitStr) || 20);
+
+  // ── All accounts ───────────────────────────────────────────────────────────
+  if (req.params.accountId === 'all') {
+    const db = require('../db/queries');
+    const accounts = db.getEmailAccountsByUser.all(req.user.id);
+    const results  = await Promise.allSettled(
+      accounts.map(async account => {
+        const svc  = getService(account);
+        if (typeof svc.searchMessages !== 'function') return [];
+        const data = await svc.searchMessages(account, sanitizedQ, sanitizedField, sanitizedFolder, 1, limit);
+        return (data.messages || []).map(m => ({
+          ...m,
+          _accountId:   account.id,
+          _accountName: account.display_name || account.email_address,
+        }));
+      })
+    );
+
+    const messages = results
+      .filter(r => r.status === 'fulfilled')
+      .flatMap(r => r.value)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, limit);
+
+    return res.json({ messages, total: messages.length });
+  }
+
+  // ── Single account ─────────────────────────────────────────────────────────
+  const account = getAccount(req.params.accountId, req.user.id);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  const svc = getService(account);
+  if (typeof svc.searchMessages !== 'function') {
+    return res.status(501).json({ error: 'Search not supported for this provider' });
+  }
+
+  try {
+    const data = await svc.searchMessages(account, sanitizedQ, sanitizedField, sanitizedFolder, page, limit);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/email/:accountId/threads/:threadId?folder=INBOX
 router.get('/:accountId/threads/:threadId', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);

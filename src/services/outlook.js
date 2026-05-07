@@ -327,4 +327,33 @@ async function fetchThread(account, conversationId) {
   }));
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread };
+/**
+ * Search messages via Graph API using $search (KQL queries).
+ * Searches across all folders (Graph /me/messages endpoint is folder-agnostic).
+ * field: 'all' | 'from' | 'to' | 'subject'
+ */
+async function searchMessages(account, query, field, _folder, page, limit) {
+  const raw = query.trim();
+  let kql;
+  if (field === 'from')         kql = `from:${raw}`;
+  else if (field === 'to')      kql = `to:${raw}`;
+  else if (field === 'subject') kql = `subject:${raw}`;
+  else                          kql = raw;
+
+  const skip = (page - 1) * limit;
+  const sel  = 'id,conversationId,subject,from,toRecipients,receivedDateTime,isRead,bodyPreview';
+  const url  = `${GRAPH}/messages?$search=${encodeURIComponent(JSON.stringify(kql))}&$top=${limit}&$skip=${skip}&$count=true&$select=${sel}`;
+
+  const res = await graphFetch(account, url, {
+    headers: { 'ConsistencyLevel': 'eventual' },
+  });
+  await checkResponse(res, 'searchMessages');
+  const data = await res.json();
+
+  const messages = (data.value || []).map(normaliseMetadata);
+  const total    = data['@odata.count'] ?? messages.length;
+
+  return { messages, total };
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread, searchMessages };

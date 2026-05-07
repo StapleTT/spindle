@@ -31,7 +31,7 @@
   <div class="app-topbar">
     <div class="tb-left">
       <button class="icon-btn" id="btn-compose" title="compose (c)">＋</button>
-      <button class="icon-btn" title="search (coming soon)">⌕</button>
+      <button class="icon-btn" id="btn-search" title="search (/)">⌕</button>
     </div>
     <div class="tb-center">
       <span class="spindle-lockup" style="gap:8px">
@@ -48,6 +48,20 @@
     <div class="tb-right">
       <div class="tb-user">logged in as <span class="em" id="tb-username">…</span></div>
       <button class="icon-btn" id="btn-logout" title="logout">↪</button>
+    </div>
+  </div>
+
+  <!-- Search panel (hidden by default; toggles below top bar) -->
+  <div class="search-panel" id="search-panel" style="display:none">
+    <input type="text" class="search-input" id="search-q"
+           placeholder="search mail…" autocomplete="off" spellcheck="false">
+    <div class="search-controls">
+      <span class="search-label">in</span>
+      <div id="search-acct-wrap"></div>
+      <span class="search-label">field</span>
+      <div id="search-field-wrap"></div>
+      <button class="chip search-btn" id="search-submit">search</button>
+      <button class="icon-btn search-close-btn" id="search-close" title="close (Esc)">✕</button>
     </div>
   </div>
 
@@ -111,10 +125,12 @@
 <script src="/js/accounts.js"></script>
 <script src="/js/settings.js"></script>
 <script src="/js/admin.js"></script>
+<script src="/js/search.js"></script>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-compose').onclick     = () => Composer.open();
+  document.getElementById('btn-search').onclick      = () => Search.toggle();
   document.getElementById('btn-logout').onclick      = () => App.logout();
   document.getElementById('sys-compose').onclick     = () => Composer.open();
   document.getElementById('sys-admin').onclick       = () => Admin.toggle();
