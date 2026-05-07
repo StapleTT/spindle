@@ -11,7 +11,7 @@ const Reader = (() => {
 
   // ── Load & display message ────────────────────────────────────────
   async function loadMessage(accountId, folder, uid) {
-    _current = { accountId, folder, uid, data: null };
+    _current = { accountId, folder, folderName: App.activeFolderName || '', uid, data: null };
     const p = pane();
     if (!p) return;
 
@@ -70,8 +70,7 @@ const Reader = (() => {
           <button class="chip" onclick="Composer.openReplyAll(Reader.current)">[ reply all ]</button>
           <button class="chip" onclick="Reader.forward()">[ forward ]</button>
           <button class="chip" id="read-toggle" onclick="Reader.toggleRead()">[ mark unread ]</button>
-          <button class="chip" onclick="Reader.archive()">[ archive ]</button>
-          <button class="chip" onclick="Reader.deleteMsg()">[ delete ]</button>
+          ${_folderActions(_current)}
         </div>
       </div>
       <div class="thread-msgs">
@@ -221,6 +220,42 @@ const Reader = (() => {
     } catch (e) { Toast.show(e.message, 'err'); }
   }
 
+  async function restoreMsg() {
+    if (!_current) return;
+    const { accountId, folder, uid } = _current;
+    try {
+      await API.post(`/api/email/${accountId}/messages/${uid}/restore`, { folder });
+      Toast.show('Moved to inbox.');
+      showFolderEmpty();
+      _current = null;
+    } catch (e) { Toast.show(e.message, 'err'); }
+  }
+
+  // Classify the current folder so the toolbar shows the right actions.
+  // Gmail uses label IDs (TRASH, ALLMAIL); IMAP and Outlook are matched by name.
+  function _folderKind(cur) {
+    const id   = (cur.folder     || '').toUpperCase();
+    const name = (cur.folderName || '').toLowerCase().trim();
+    if (id === 'TRASH')   return 'trash';
+    if (id === 'ALLMAIL') return 'archive';
+    if (/^(trash|deleted|deleted items|deleted messages)$/.test(name)) return 'trash';
+    if (/^(archive|all mail|archived)$/.test(name))                    return 'archive';
+    return 'normal';
+  }
+
+  function _folderActions(cur) {
+    const kind = _folderKind(cur);
+    if (kind === 'trash') {
+      return `<button class="chip" onclick="Reader.restoreMsg()">[ move to inbox ]</button>`;
+    }
+    if (kind === 'archive') {
+      return `<button class="chip" onclick="Reader.restoreMsg()">[ move to inbox ]</button>
+              <button class="chip" onclick="Reader.deleteMsg()">[ delete ]</button>`;
+    }
+    return `<button class="chip" onclick="Reader.archive()">[ archive ]</button>
+            <button class="chip" onclick="Reader.deleteMsg()">[ delete ]</button>`;
+  }
+
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
@@ -234,6 +269,7 @@ const Reader = (() => {
     toggleRead,
     archive,
     deleteMsg,
+    restoreMsg,
     showImages,
     get current() { return _current ? _current.data : null; },
   };

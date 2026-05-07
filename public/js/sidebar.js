@@ -98,7 +98,7 @@ const Sidebar = (() => {
           fi.innerHTML = `
             <div class="ft-name">${esc(folder.name.toLowerCase())}</div>
             <div class="ft-count">${count}</div>`;
-          fi.onclick = () => App.selectFolder(acct.id, folder.id);
+          fi.onclick = () => App.selectFolder(acct.id, folder.id, folder.name);
           inboxList.appendChild(fi);
         });
       }

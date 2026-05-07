@@ -205,6 +205,23 @@ async function archiveMessage(account, folder, uid) {
 }
 
 /**
+ * Restore a message to the inbox (remove TRASH label if present, add INBOX).
+ */
+async function restoreMessage(account, folder, uid) {
+  const auth  = getClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  await gmail.users.messages.modify({
+    userId: 'me',
+    id:     uid,
+    requestBody: {
+      addLabelIds:    ['INBOX'],
+      removeLabelIds: ['TRASH'],
+    },
+  });
+}
+
+/**
  * Move a message to trash (recoverable; does not permanently delete).
  */
 async function deleteMessage(account, folder, uid) {
@@ -242,6 +259,12 @@ async function getFolders(account) {
     if (l.type === 'system') return true;
     return l.labelListVisibility !== 'labelHide';
   });
+
+  // Gmail sometimes omits ALLMAIL from labels.list despite it being a standard
+  // system label — add it explicitly so the archive folder always shows.
+  if (!visible.some(l => l.id === 'ALLMAIL')) {
+    visible.push({ id: 'ALLMAIL', name: 'All Mail', type: 'system' });
+  }
 
   visible.sort((a, b) => {
     const ai = GMAIL_PRIORITY.indexOf(a.id);
@@ -313,4 +336,4 @@ async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}
   });
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };

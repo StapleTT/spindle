@@ -118,6 +118,22 @@ router.post('/:accountId/messages/:uid/archive', async (req, res) => {
   }
 });
 
+// POST /api/email/:accountId/messages/:uid/restore
+router.post('/:accountId/messages/:uid/restore', async (req, res) => {
+  const account = getAccount(req.params.accountId, req.user.id);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  const folder = req.body.folder || 'INBOX';
+  const uid    = parseUid(account, req.params.uid);
+
+  try {
+    await getService(account).restoreMessage(account, folder, uid);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DELETE /api/email/:accountId/messages/:uid?folder=INBOX
 router.delete('/:accountId/messages/:uid', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);

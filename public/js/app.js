@@ -11,12 +11,13 @@
 
 const App = (() => {
   const state = {
-    user:          null,
-    accounts:      [],
-    activeAcct:    null,
-    activeFolder:  'INBOX',
-    activeMsg:     null,
-    unreadCounts:  {}, // { accountId: count }
+    user:             null,
+    accounts:         [],
+    activeAcct:       null,
+    activeFolder:     'INBOX',
+    activeFolderName: '',
+    activeMsg:        null,
+    unreadCounts:     {}, // { accountId: count }
   };
 
   // ── Boot ─────────────────────────────────────────────────────────
@@ -73,19 +74,21 @@ const App = (() => {
   function selectAccount(accountId, folder) {
     const f = folder || 'INBOX';
     if (state.activeAcct === accountId && state.activeFolder === f) return;
-    state.activeAcct   = accountId;
-    state.activeFolder = f;
-    state.activeMsg    = null;
+    state.activeAcct       = accountId;
+    state.activeFolder     = f;
+    state.activeFolderName = '';
+    state.activeMsg        = null;
     Sidebar.setActive(accountId, f);
     EmailList.load(accountId, f);
     Reader.showFolderEmpty();
   }
 
-  function selectFolder(accountId, folder) {
+  function selectFolder(accountId, folder, folderName) {
     if (state.activeAcct === accountId && state.activeFolder === folder) return;
-    state.activeAcct   = accountId;
-    state.activeFolder = folder;
-    state.activeMsg    = null;
+    state.activeAcct       = accountId;
+    state.activeFolder     = folder;
+    state.activeFolderName = folderName || '';
+    state.activeMsg        = null;
     Sidebar.setActive(accountId, folder);
     EmailList.load(accountId, folder);
     Reader.showFolderEmpty();
@@ -93,9 +96,10 @@ const App = (() => {
 
   function selectAllInboxes() {
     if (state.activeAcct === 'all') return;
-    state.activeAcct   = 'all';
-    state.activeFolder = 'INBOX';
-    state.activeMsg    = null;
+    state.activeAcct       = 'all';
+    state.activeFolder     = 'INBOX';
+    state.activeFolderName = '';
+    state.activeMsg        = null;
     Sidebar.setActive('all', 'INBOX');
     EmailList.loadAll();
     Reader.showFolderEmpty();
@@ -219,7 +223,8 @@ const App = (() => {
     get user()        { return state.user; },
     get accounts()    { return state.accounts; },
     get activeAcct()  { return state.activeAcct; },
-    get activeFolder(){ return state.activeFolder; },
+    get activeFolder()     { return state.activeFolder; },
+    get activeFolderName() { return state.activeFolderName; },
     get activeMsg()   { return state.activeMsg; },
     set activeMsg(v)  { state.activeMsg = v; },
     get unreadCounts(){ return state.unreadCounts; },

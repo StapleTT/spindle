@@ -175,6 +175,18 @@ async function archiveMessage(account, folder, uid) {
 }
 
 /**
+ * Restore a message to the inbox.
+ */
+async function restoreMessage(account, folder, uid) {
+  const url = `${GRAPH}/messages/${encodeURIComponent(uid)}/move`;
+  const res  = await graphFetch(account, url, {
+    method: 'POST',
+    body:   JSON.stringify({ destinationId: 'inbox' }),
+  });
+  await checkResponse(res, 'restoreMessage');
+}
+
+/**
  * Move a message to Deleted Items (recoverable delete).
  */
 async function deleteMessage(account, folder, uid) {
@@ -281,4 +293,4 @@ async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}
   }
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };
