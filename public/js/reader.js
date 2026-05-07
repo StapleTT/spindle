@@ -24,14 +24,29 @@ const Reader = (() => {
         `/api/email/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`
       );
       _current.data = data;
-      render(data);
 
-      // Mark as read
+      // Mark as read (fire-and-forget)
       EmailList.markReadInList(uid);
-      try {
-        await API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: true });
-        if (_current && _current.data) _current.data.unread = false;
-      } catch (_) {}
+      API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: true })
+        .then(() => { if (_current?.data) _current.data.unread = false; })
+        .catch(() => {});
+
+      // If the provider returns a threadId, try to fetch all messages in the thread
+      if (data.threadId) {
+        try {
+          const thread = await API.get(
+            `/api/email/${accountId}/threads/${encodeURIComponent(data.threadId)}?folder=${encodeURIComponent(folder)}`
+          );
+          if (Array.isArray(thread) && thread.length > 1) {
+            renderThread(thread, uid);
+            return;
+          }
+        } catch (_) {
+          // Thread fetch failed — fall through to single-message view
+        }
+      }
+
+      render(data);
     } catch (e) {
       p.innerHTML = `<div class="empty"><div class="empty-sub">failed to load message</div><div class="empty-hint">${esc(e.message)}</div></div>`;
     }
@@ -252,6 +267,126 @@ const Reader = (() => {
     }
     return `<button class="chip" onclick="Reader.archive()">[ archive ]</button>
             <button class="chip" onclick="Reader.deleteMsg()">[ delete ]</button>`;
+  }
+
+  // ── Thread view ───────────────────────────────────────────────────────────
+  function renderThread(messages, currentUid) {
+    const p = pane();
+    if (!p) return;
+
+    // Use the selected message for header/toolbar; fall back to latest
+    const current = messages.find(m => m.uid == currentUid) || messages[messages.length - 1];
+
+    p.innerHTML = `<div class="thread-view">
+      <div class="thread-header">
+        <div class="th-subj">${esc(current.subject || '(no subject)')}</div>
+        <div class="th-meta">
+          <span class="em">${messages.length} messages</span>
+        </div>
+        <div class="th-actions" id="msg-actions">
+          <button class="chip" onclick="Reader.reply()">[ reply ]</button>
+          <button class="chip" onclick="Composer.openReplyAll(Reader.current)">[ reply all ]</button>
+          <button class="chip" onclick="Reader.forward()">[ forward ]</button>
+          <button class="chip" id="read-toggle" onclick="Reader.toggleRead()">[ mark unread ]</button>
+          ${_folderActions(_current)}
+        </div>
+      </div>
+      <div class="thread-msgs" id="thread-msgs-list"></div>
+    </div>`;
+
+    const container = document.getElementById('thread-msgs-list');
+    messages.forEach((msg, idx) => {
+      const isSelected = msg.uid == currentUid;
+      const isNewest   = idx === messages.length - 1;
+      const expanded   = isSelected || isNewest;
+      container.appendChild(_buildMsgEl(msg, expanded));
+    });
+  }
+
+  function _buildMsgEl(msg, expanded) {
+    const el = document.createElement('div');
+    el.className = `msg ${expanded ? 'msg-expanded' : 'msg-collapsed'}`;
+    if (expanded) {
+      _renderExpanded(el, msg);
+    } else {
+      _renderCollapsed(el, msg);
+    }
+    return el;
+  }
+
+  function _renderCollapsed(el, msg) {
+    const from = msg.from_name ? esc(msg.from_name) : esc(msg.from_addr || '');
+    el.innerHTML = `
+      <div class="msg-summary">
+        <span class="msg-from">${from}</span>
+        <span class="msg-summary-preview">${esc(msg.preview || '')}</span>
+        <span class="msg-summary-date">${esc(_fmtDate(msg.date))}</span>
+      </div>`;
+    el.onclick = () => {
+      el.classList.replace('msg-collapsed', 'msg-expanded');
+      _renderExpanded(el, msg);
+    };
+  }
+
+  function _renderExpanded(el, msg) {
+    const from    = msg.from_name ? esc(msg.from_name) : esc(msg.from_addr || '');
+    const dateStr = msg.date ? new Date(msg.date).toLocaleString() : '';
+    const iframeId = `tmsg-iframe-${String(msg.uid).replace(/[^a-z0-9]/gi, '')}`;
+
+    let bodyHtml;
+    if (msg.html) {
+      bodyHtml = `<iframe class="msg-body-html" id="${iframeId}" sandbox="allow-same-origin allow-popups" style="width:100%;border:none;background:transparent"></iframe>`;
+    } else {
+      bodyHtml = `<div class="msg-body">${esc(msg.text || '').replace(/\n/g,'<br>')}</div>`;
+    }
+
+    el.innerHTML = `
+      <div class="msg-head msg-head-clickable">
+        <div><span class="msg-from">${from}</span>&nbsp;·&nbsp;${esc(dateStr)}</div>
+        ${msg.to ? `<div class="msg-head-to">to ${esc(msg.to)}</div>` : ''}
+      </div>
+      ${bodyHtml}`;
+
+    // Click the header to collapse
+    el.querySelector('.msg-head-clickable').onclick = () => {
+      el.classList.replace('msg-expanded', 'msg-collapsed');
+      _renderCollapsed(el, msg);
+    };
+
+    // Inject HTML body into iframe
+    if (msg.html) {
+      requestAnimationFrame(() => {
+        const iframe = document.getElementById(iframeId);
+        if (!iframe) return;
+        const sanitized = typeof DOMPurify !== 'undefined'
+          ? DOMPurify.sanitize(msg.html, { FORCE_BODY: true })
+          : msg.html;
+        const autoLoad = App.user ? !!App.user.auto_load_images : false;
+        const content = autoLoad
+          ? sanitized
+          : sanitized.replace(/(<img[^>]+)\bsrc=/gi, '$1data-src=');
+        iframe.onload = () => {
+          try {
+            const h = iframe.contentDocument.documentElement.scrollHeight;
+            iframe.style.height = h + 'px';
+          } catch (_) {}
+        };
+        iframe.srcdoc = iframeDoc(content);
+      });
+    }
+  }
+
+  function _fmtDate(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d)) return dateStr;
+    const now  = new Date();
+    const diff = now - d;
+    const days = Math.floor(diff / 86400000);
+    if (days === 0) return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    if (days === 1) return 'yesterday';
+    if (days < 7)  return d.toLocaleDateString([], { weekday: 'short' });
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
   }
 
   function esc(s) {

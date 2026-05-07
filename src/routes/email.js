@@ -151,6 +151,22 @@ router.post('/:accountId/messages/:uid/move', async (req, res) => {
   }
 });
 
+// GET /api/email/:accountId/threads/:threadId?folder=INBOX
+router.get('/:accountId/threads/:threadId', async (req, res) => {
+  const account = getAccount(req.params.accountId, req.user.id);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  const { threadId } = req.params;
+  const folder = req.query.folder || 'INBOX';
+
+  try {
+    const messages = await getService(account).fetchThread(account, threadId, folder);
+    res.json(messages);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DELETE /api/email/:accountId/messages/:uid?folder=INBOX
 router.delete('/:accountId/messages/:uid', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);

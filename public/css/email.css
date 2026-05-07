@@ -211,6 +211,57 @@
 }
 .msg-images-bar button:hover { color: var(--fg-bright); }
 
+/* ─── Thread message states ─────────────────────────────────────────────── */
+.msg-collapsed {
+  padding: 9px 18px;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+.msg-collapsed:hover { background: var(--bg-hover); }
+
+.msg-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  overflow: hidden;
+}
+.msg-summary .msg-from {
+  color: var(--fg-bright);
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 100px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.msg-summary-preview {
+  color: var(--fg-dim);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.msg-summary-date {
+  color: var(--fg-dim);
+  font-size: 11px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.msg-head-clickable {
+  cursor: pointer;
+}
+.msg-head-clickable:hover .msg-from { opacity: 0.75; }
+
+.msg-head-to {
+  font-size: 10.5px;
+  color: var(--fg-dim);
+  margin-top: 3px;
+}
+
 /* ─── Context menu ───────────────────────────────────────────────────────── */
 .ctx-menu {
   position: fixed;

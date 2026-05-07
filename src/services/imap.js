@@ -290,4 +290,11 @@ async function getUnreadCount(account) {
   return uids.length;
 }
 
-module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount };
+/**
+ * IMAP does not natively support threading; return empty to fall back to single-message view.
+ */
+async function fetchThread(account, threadId) {
+  return [];
+}
+
+module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount, fetchThread };

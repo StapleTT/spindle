@@ -94,6 +94,7 @@ function normaliseMetadata(msg) {
   const from = parseFrom(h.from);
   return {
     uid:       msg.id,
+    threadId:  msg.threadId,
     subject:   h.subject  || '(no subject)',
     from:      h.from     || '',
     from_name: from.name,
@@ -362,4 +363,18 @@ async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}
   });
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };
+/**
+ * Fetch all messages in a Gmail thread (oldest first).
+ */
+async function fetchThread(account, threadId) {
+  const auth  = getClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+  const res = await gmail.users.threads.get({
+    userId: 'me',
+    id:     threadId,
+    format: 'full',
+  });
+  return (res.data.messages || []).map(normaliseFullMessage);
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread };

@@ -61,6 +61,7 @@ function normaliseMetadata(msg) {
 
   return {
     uid:       msg.id,
+    threadId:  msg.conversationId,
     subject:   msg.subject || '(no subject)',
     from:      from.addr ? `${from.name} <${from.addr}>` : '',
     from_name: from.name,
@@ -139,7 +140,7 @@ async function fetchMessages(account, folder, page, limit) {
  */
 async function fetchMessage(account, folder, uid) {
   const params = new URLSearchParams({
-    $select: 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,body',
+    $select: 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,body,conversationId',
   });
 
   const url = `${GRAPH}/messages/${encodeURIComponent(uid)}?${params}`;
@@ -305,4 +306,25 @@ async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}
   }
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };
+/**
+ * Fetch all messages in an Outlook conversation by conversationId (oldest first).
+ * Searches across all folders so both sent and received messages appear.
+ */
+async function fetchThread(account, conversationId) {
+  const params = new URLSearchParams({
+    '$filter':  `conversationId eq '${conversationId}'`,
+    '$orderby': 'receivedDateTime asc',
+    '$top':     '50',
+    '$select':  'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,body,bodyPreview,conversationId',
+  });
+  const url = `${GRAPH}/messages?${params}`;
+  const res  = await graphFetch(account, url);
+  await checkResponse(res, 'fetchThread');
+  const data = await res.json();
+  return (data.value || []).map(msg => ({
+    ...normaliseFullMessage(msg),
+    threadId: msg.conversationId,
+  }));
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread };
