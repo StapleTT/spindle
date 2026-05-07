@@ -127,9 +127,11 @@ async function fetchMessages(account, folder, page, limit) {
 
   const pageToken = page > 1 ? _pageTokens.get(prevKey) : undefined;
 
+  // ALLMAIL is not a valid labelIds filter in messages.list; omitting labelIds
+  // returns all messages, which is the correct behaviour for the archive view.
   const listRes = await gmail.users.messages.list({
     userId:     'me',
-    labelIds:   [label],
+    ...(label !== 'ALLMAIL' ? { labelIds: [label] } : {}),
     maxResults: limit,
     ...(pageToken ? { pageToken } : {}),
   });
@@ -287,7 +289,14 @@ async function getFolders(account) {
     )
   );
 
-  return withCounts.map(l => ({ id: l.id, name: l.name, type: l.type || 'user', unread: l.unread }));
+  // Rename ALLMAIL to "Archive" for consistency with Outlook/IMAP naming and
+  // because that's the action users trigger; "All Mail" is a Gmail-internal term.
+  return withCounts.map(l => ({
+    id:     l.id,
+    name:   l.id === 'ALLMAIL' ? 'Archive' : l.name,
+    type:   l.type || 'user',
+    unread: l.unread,
+  }));
 }
 
 // ── Unread count ───────────────────────────────────────────────────────────
