@@ -205,7 +205,7 @@ const EmailList = (() => {
           await API.delete(`/api/email/${msg._accountId}/messages/${msg.uid}?folder=INBOX`);
           row.remove();
           _messages = _messages.filter(m => !(m.uid === msg.uid && m._accountId === msg._accountId));
-          Toast.show('Message deleted.');
+          Toast.show('Moved to Trash.');
         } catch (err) { Toast.show(err.message, 'err'); }
       };
 
@@ -331,7 +331,7 @@ const EmailList = (() => {
           // Clear reading pane if this message is currently open
           const active = App.activeMsg;
           if (active && active.uid == msg.uid) Reader.showFolderEmpty();
-          Toast.show('Message deleted.');
+          Toast.show('Moved to Trash.');
         } catch (err) { Toast.show(err.message, 'err'); }
       };
 
@@ -462,7 +462,7 @@ const EmailList = (() => {
       el.onmousedown = async ev => {
         ev.stopPropagation();
         _ctxClose();
-        await _ctxMove(msg, acctId, folder, el.dataset.folder);
+        await _ctxMove(msg, acctId, folder, el.dataset.folder, el.textContent.trim());
       };
     });
 
@@ -537,7 +537,7 @@ const EmailList = (() => {
           _messages = _messages.filter(m => m.uid !== msg.uid);
           const active = App.activeMsg;
           if (active && active.uid == msg.uid) Reader.showFolderEmpty();
-          Toast.show('Archived.');
+          Toast.show('Moved to Archive.');
         } catch (err) { Toast.show(err.message, 'err'); }
         break;
       }
@@ -552,14 +552,14 @@ const EmailList = (() => {
           _messages = _messages.filter(m => m.uid !== msg.uid);
           const active = App.activeMsg;
           if (active && active.uid == msg.uid) Reader.showFolderEmpty();
-          Toast.show('Message deleted.');
+          Toast.show('Moved to Trash.');
         } catch (err) { Toast.show(err.message, 'err'); }
         break;
       }
     }
   }
 
-  async function _ctxMove(msg, acctId, fromFolder, toFolder) {
+  async function _ctxMove(msg, acctId, fromFolder, toFolder, toFolderName) {
     try {
       await API.post(`/api/email/${acctId}/messages/${msg.uid}/move`,
         { fromFolder, toFolder });
@@ -568,7 +568,7 @@ const EmailList = (() => {
       _messages = _messages.filter(m => m.uid !== msg.uid);
       const active = App.activeMsg;
       if (active && active.uid == msg.uid) Reader.showFolderEmpty();
-      Toast.show('Moved.');
+      Toast.show(`Moved to ${toFolderName || toFolder}.`);
     } catch (err) { Toast.show(err.message, 'err'); }
   }
 

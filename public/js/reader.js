@@ -198,11 +198,10 @@ const Reader = (() => {
 
   async function archive() {
     if (!_current) return;
-    if (!confirm('Archive this message?')) return;
     const { accountId, folder, uid } = _current;
     try {
       await API.post(`/api/email/${accountId}/messages/${uid}/archive`, { folder });
-      Toast.show('Message archived.');
+      Toast.show('Moved to Archive.');
       showFolderEmpty();
       _current = null;
     } catch (e) { Toast.show(e.message, 'err'); }
@@ -210,11 +209,10 @@ const Reader = (() => {
 
   async function deleteMsg() {
     if (!_current) return;
-    if (!confirm('Move this message to trash?')) return;
     const { accountId, folder, uid } = _current;
     try {
       await API.delete(`/api/email/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`);
-      Toast.show('Message deleted.');
+      Toast.show('Moved to Trash.');
       showFolderEmpty();
       _current = null;
     } catch (e) { Toast.show(e.message, 'err'); }
