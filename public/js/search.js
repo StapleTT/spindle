@@ -114,6 +114,11 @@ const Search = (() => {
     if (body) body.classList.add('has-list');
     if (pg) pg.innerHTML = '';
 
+    // Highlight the selected account in the sidebar (without triggering a load)
+    if (accountId !== 'all') {
+      Sidebar.setActive(accountId, 'INBOX');
+    }
+
     // Update header
     if (header) {
       header.innerHTML = `<span>// search results</span><button class="hdr-refresh-btn" id="hdr-search-again" title="search again">↺</button>`;

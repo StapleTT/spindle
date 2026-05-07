@@ -327,10 +327,18 @@ async function fetchThread(account, conversationId) {
   }));
 }
 
+// In-memory cache of @odata.nextLink for Outlook search pagination.
+// $search does not support $skip, so we follow nextLink cursors instead.
+// Key: `search:${accountId}:${kql}:${page}` → nextLink URL for page+1
+const _searchNextLinks = new Map();
+
 /**
  * Search messages via Graph API using $search (KQL queries).
  * Searches across all folders (Graph /me/messages endpoint is folder-agnostic).
  * field: 'all' | 'from' | 'to' | 'subject'
+ *
+ * NOTE: Graph API does not support $skip with $search.
+ * Pagination uses @odata.nextLink cursors cached in memory.
  */
 async function searchMessages(account, query, field, _folder, page, limit) {
   const raw = query.trim();
@@ -340,15 +348,25 @@ async function searchMessages(account, query, field, _folder, page, limit) {
   else if (field === 'subject') kql = `subject:${raw}`;
   else                          kql = raw;
 
-  const skip = (page - 1) * limit;
-  const sel  = 'id,conversationId,subject,from,toRecipients,receivedDateTime,isRead,bodyPreview';
-  const url  = `${GRAPH}/messages?$search=${encodeURIComponent(JSON.stringify(kql))}&$top=${limit}&$skip=${skip}&$count=true&$select=${sel}`;
+  const sel     = 'id,conversationId,subject,from,toRecipients,receivedDateTime,isRead,bodyPreview';
+  const prevKey = `search:${account.id}:${kql}:${page - 1}`;
+  const thisKey = `search:${account.id}:${kql}:${page}`;
+
+  // For page > 1 use the cached nextLink; for page 1 build a fresh URL
+  const url = page > 1 && _searchNextLinks.has(prevKey)
+    ? _searchNextLinks.get(prevKey)
+    : `${GRAPH}/messages?$search=${encodeURIComponent(JSON.stringify(kql))}&$top=${limit}&$select=${sel}`;
 
   const res = await graphFetch(account, url, {
     headers: { 'ConsistencyLevel': 'eventual' },
   });
   await checkResponse(res, 'searchMessages');
   const data = await res.json();
+
+  // Cache the nextLink so page+1 can follow it
+  if (data['@odata.nextLink']) {
+    _searchNextLinks.set(thisKey, data['@odata.nextLink']);
+  }
 
   const messages = (data.value || []).map(normaliseMetadata);
   const total    = data['@odata.count'] ?? messages.length;
