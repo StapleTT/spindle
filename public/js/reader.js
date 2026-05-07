@@ -52,7 +52,7 @@ const Reader = (() => {
           <span>Remote images blocked.</span>
           <button type="button" id="show-images-btn">show images</button>
         </div>
-        <iframe class="msg-body-html" id="msg-iframe" sandbox="allow-same-origin" style="width:100%;border:none;background:transparent"></iframe>`;
+        <iframe class="msg-body-html" id="msg-iframe" sandbox="allow-same-origin allow-popups" style="width:100%;border:none;background:transparent"></iframe>`;
     } else {
       bodyHtml = `<div class="msg-body">${esc(msg.text || '').replace(/\n/g,'<br>')}</div>`;
     }
@@ -117,7 +117,7 @@ const Reader = (() => {
   }
 
   function iframeDoc(body) {
-    return `<html><head><style>
+    return `<html><head><base target="_blank"><style>
       body{font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#d4d4d4;background:transparent;margin:16px}
       a{color:#aaa}img{max-width:100%;height:auto}
     </style></head><body>${body}</body></html>`;
