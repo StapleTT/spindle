@@ -273,13 +273,10 @@ async function getUnreadCount(account) {
   const auth  = getClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
 
-  const res = await gmail.users.messages.list({
-    userId:    'me',
-    labelIds:  ['INBOX', 'UNREAD'],
-    maxResults: 1,
-  });
-  // resultSizeEstimate is a fast approximate count from Google
-  return res.data.resultSizeEstimate || 0;
+  // labels.get returns the real messagesUnread count; messages.list
+  // resultSizeEstimate is capped at ~200 by the API.
+  const res = await gmail.users.labels.get({ userId: 'me', id: 'INBOX' });
+  return res.data.messagesUnread || 0;
 }
 
 /**
