@@ -187,6 +187,18 @@ async function restoreMessage(account, folder, uid) {
 }
 
 /**
+ * Move a message to any folder by Graph folder ID or well-known name.
+ */
+async function moveMessage(account, fromFolder, toFolder, uid) {
+  const url = `${GRAPH}/messages/${encodeURIComponent(uid)}/move`;
+  const res  = await graphFetch(account, url, {
+    method: 'POST',
+    body:   JSON.stringify({ destinationId: toFolder }),
+  });
+  await checkResponse(res, 'moveMessage');
+}
+
+/**
  * Move a message to Deleted Items (recoverable delete).
  */
 async function deleteMessage(account, folder, uid) {
@@ -293,4 +305,4 @@ async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}
   }
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };

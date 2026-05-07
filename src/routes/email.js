@@ -134,6 +134,23 @@ router.post('/:accountId/messages/:uid/restore', async (req, res) => {
   }
 });
 
+// POST /api/email/:accountId/messages/:uid/move
+router.post('/:accountId/messages/:uid/move', async (req, res) => {
+  const account = getAccount(req.params.accountId, req.user.id);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  const { fromFolder, toFolder } = req.body;
+  if (!toFolder) return res.status(400).json({ error: 'toFolder is required' });
+  const uid = parseUid(account, req.params.uid);
+
+  try {
+    await getService(account).moveMessage(account, fromFolder || 'INBOX', toFolder, uid);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // DELETE /api/email/:accountId/messages/:uid?folder=INBOX
 router.delete('/:accountId/messages/:uid', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);

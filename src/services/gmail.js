@@ -207,6 +207,23 @@ async function archiveMessage(account, folder, uid) {
 }
 
 /**
+ * Move a message from one label to another by swapping label IDs.
+ */
+async function moveMessage(account, fromFolder, toFolder, uid) {
+  const auth  = getClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+  const fromLabel = folderToLabel(fromFolder);
+  const toLabel   = folderToLabel(toFolder);
+
+  const body = { addLabelIds: [], removeLabelIds: [] };
+  if (toLabel && toLabel !== fromLabel) body.addLabelIds.push(toLabel);
+  // Don't remove ALLMAIL — it's a view, not a real label
+  if (fromLabel && fromLabel !== 'ALLMAIL') body.removeLabelIds.push(fromLabel);
+
+  await gmail.users.messages.modify({ userId: 'me', id: uid, requestBody: body });
+}
+
+/**
  * Restore a message to the inbox (remove TRASH label if present, add INBOX).
  */
 async function restoreMessage(account, folder, uid) {
@@ -345,4 +362,4 @@ async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}
   });
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage };

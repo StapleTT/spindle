@@ -261,6 +261,12 @@ async function restoreMessage(account, folder, uid) {
   await conn.moveMessage(String(uid), 'INBOX');
 }
 
+async function moveMessage(account, fromFolder, toFolder, uid) {
+  const conn = await getConnection(account);
+  await conn.openBox(fromFolder);
+  await conn.moveMessage(String(uid), toFolder);
+}
+
 async function deleteMessage(account, folder, uid) {
   const conn = await getConnection(account);
   await conn.openBox(folder);
@@ -284,4 +290,4 @@ async function getUnreadCount(account) {
   return uids.length;
 }
 
-module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, deleteMessage, evict, getUnreadCount };
+module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount };

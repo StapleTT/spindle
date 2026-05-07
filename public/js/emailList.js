@@ -162,6 +162,7 @@ const EmailList = (() => {
           adjustUnreadCount(msg._accountId, -1);
         }
       };
+      row.oncontextmenu = e => showContextMenu(e, msg, msg._accountId, 'INBOX');
 
       // Hover actions
       const readBtn = document.createElement('button');
@@ -278,6 +279,7 @@ const EmailList = (() => {
         <div class="tr-preview">${esc(msg.preview || '')}</div>
         <div class="tr-actions"></div>`;
       row.onclick = () => openMessage(msg);
+      row.oncontextmenu = e => showContextMenu(e, msg, _currentAcct, _currentFolder);
 
       // ── Hover action: toggle read/unread ──────────────────────────
       const readBtn = document.createElement('button');
@@ -392,6 +394,182 @@ const EmailList = (() => {
     App.unreadCounts[accountId] = Math.max(0, (App.unreadCounts[accountId] || 0) + delta);
     Sidebar.render();
     App.updateDocTitle();
+  }
+
+  // ── Context menu ──────────────────────────────────────────────────
+  let _ctxEl   = null;
+  let _ctxOpen = false;
+
+  function _ctxEnsure() {
+    if (_ctxEl) return;
+    _ctxEl = document.createElement('div');
+    _ctxEl.className = 'ctx-menu';
+    _ctxEl.style.display = 'none';
+    document.body.appendChild(_ctxEl);
+
+    // Close on outside click or Escape
+    document.addEventListener('mousedown', e => {
+      if (_ctxOpen && !_ctxEl.contains(e.target)) _ctxClose();
+    }, true);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && _ctxOpen) _ctxClose();
+    });
+  }
+
+  function _ctxClose() {
+    if (_ctxEl) _ctxEl.style.display = 'none';
+    _ctxOpen = false;
+  }
+
+  function showContextMenu(e, msg, acctId, folder) {
+    e.preventDefault();
+    e.stopPropagation();
+    _ctxEnsure();
+
+    const isUnread = msg.unread;
+    // Filter folders: exclude current folder, Trash, and Gmail ALLMAIL (archive view)
+    const folders = Sidebar.getCachedFolders(acctId).filter(f =>
+      f.id !== folder &&
+      !['TRASH', 'ALLMAIL'].includes(f.id.toUpperCase())
+    );
+
+    _ctxEl.innerHTML = `
+      <div class="ctx-item" data-action="open">open</div>
+      <div class="ctx-item" data-action="reply">reply</div>
+      <div class="ctx-sep"></div>
+      <div class="ctx-item" data-action="toggle-read">${isUnread ? 'mark as read' : 'mark as unread'}</div>
+      <div class="ctx-item" data-action="archive">archive</div>
+      <div class="ctx-item ctx-item-del" data-action="delete">delete</div>
+      ${folders.length ? `
+      <div class="ctx-sep"></div>
+      <div class="ctx-item ctx-has-sub">move to folder
+        <div class="ctx-sub">
+          ${folders.map(f => `<div class="ctx-sub-item" data-folder="${esc(f.id)}">${esc(f.name.toLowerCase())}</div>`).join('')}
+        </div>
+      </div>` : ''}`;
+
+    // Wire up action items
+    _ctxEl.querySelectorAll('[data-action]').forEach(el => {
+      el.onmousedown = async ev => {
+        ev.stopPropagation();
+        _ctxClose();
+        await _ctxExec(el.dataset.action, msg, acctId, folder);
+      };
+    });
+
+    // Wire up submenu folder items
+    _ctxEl.querySelectorAll('.ctx-sub-item').forEach(el => {
+      el.onmousedown = async ev => {
+        ev.stopPropagation();
+        _ctxClose();
+        await _ctxMove(msg, acctId, folder, el.dataset.folder);
+      };
+    });
+
+    // Position — keep inside viewport
+    _ctxEl.style.display = 'block';
+    _ctxEl.style.left = '0px';
+    _ctxEl.style.top  = '0px';
+    const mw = _ctxEl.offsetWidth;
+    const mh = _ctxEl.offsetHeight;
+    let x = e.clientX, y = e.clientY;
+    if (x + mw > window.innerWidth  - 8) x = window.innerWidth  - mw - 8;
+    if (y + mh > window.innerHeight - 8) y = window.innerHeight - mh - 8;
+    _ctxEl.style.left = `${x}px`;
+    _ctxEl.style.top  = `${y}px`;
+    _ctxOpen = true;
+  }
+
+  function _ctxRow(uid, acctId) {
+    // In the all-inboxes view rows have data-acct-id; in single-account view they don't.
+    const byBoth = document.querySelector(
+      `#thread-list-rows .thread-row[data-uid="${uid}"][data-acct-id="${acctId}"]`
+    );
+    return byBoth || document.querySelector(`#thread-list-rows .thread-row[data-uid="${uid}"]`);
+  }
+
+  async function _ctxExec(action, msg, acctId, folder) {
+    switch (action) {
+
+      case 'open': {
+        document.querySelectorAll('#thread-list-rows .thread-row').forEach(r =>
+          r.classList.toggle('active', r.dataset.uid == msg.uid));
+        App.activeMsg = { uid: msg.uid, accountId: acctId, folder };
+        Reader.loadMessage(acctId, folder, msg.uid);
+        if (msg.unread) { markReadInList(msg.uid); adjustUnreadCount(acctId, -1); }
+        break;
+      }
+
+      case 'reply': {
+        try {
+          const data = await API.get(
+            `/api/email/${acctId}/messages/${msg.uid}?folder=${encodeURIComponent(folder)}`
+          );
+          Composer.openReply(data, acctId);
+        } catch (err) { Toast.show(err.message, 'err'); }
+        break;
+      }
+
+      case 'toggle-read': {
+        const wasUnread  = msg.unread;
+        const targetRead = wasUnread; // true → mark read
+        msg.unread = !wasUnread;
+        const row = _ctxRow(msg.uid, acctId);
+        if (row) row.classList.toggle('unread', msg.unread);
+        adjustUnreadCount(acctId, wasUnread ? -1 : 1);
+        try {
+          await API.patch(`/api/email/${acctId}/messages/${msg.uid}/read`,
+            { read: targetRead, folder });
+        } catch (err) {
+          msg.unread = wasUnread;
+          if (row) row.classList.toggle('unread', msg.unread);
+          adjustUnreadCount(acctId, wasUnread ? 1 : -1);
+          Toast.show(err.message, 'err');
+        }
+        break;
+      }
+
+      case 'archive': {
+        try {
+          await API.post(`/api/email/${acctId}/messages/${msg.uid}/archive`, { folder });
+          const row = _ctxRow(msg.uid, acctId);
+          if (row) row.remove();
+          _messages = _messages.filter(m => m.uid !== msg.uid);
+          const active = App.activeMsg;
+          if (active && active.uid == msg.uid) Reader.showFolderEmpty();
+          Toast.show('Archived.');
+        } catch (err) { Toast.show(err.message, 'err'); }
+        break;
+      }
+
+      case 'delete': {
+        try {
+          await API.delete(
+            `/api/email/${acctId}/messages/${msg.uid}?folder=${encodeURIComponent(folder)}`
+          );
+          const row = _ctxRow(msg.uid, acctId);
+          if (row) row.remove();
+          _messages = _messages.filter(m => m.uid !== msg.uid);
+          const active = App.activeMsg;
+          if (active && active.uid == msg.uid) Reader.showFolderEmpty();
+          Toast.show('Message deleted.');
+        } catch (err) { Toast.show(err.message, 'err'); }
+        break;
+      }
+    }
+  }
+
+  async function _ctxMove(msg, acctId, fromFolder, toFolder) {
+    try {
+      await API.post(`/api/email/${acctId}/messages/${msg.uid}/move`,
+        { fromFolder, toFolder });
+      const row = _ctxRow(msg.uid, acctId);
+      if (row) row.remove();
+      _messages = _messages.filter(m => m.uid !== msg.uid);
+      const active = App.activeMsg;
+      if (active && active.uid == msg.uid) Reader.showFolderEmpty();
+      Toast.show('Moved.');
+    } catch (err) { Toast.show(err.message, 'err'); }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────

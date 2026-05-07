@@ -150,9 +150,15 @@ const Sidebar = (() => {
       el.classList.remove('active'));
   }
 
+  // Return the cached folder list for an account (used by context menu).
+  function getCachedFolders(accountId) {
+    const cached = _folders.get(String(accountId));
+    return Array.isArray(cached) ? cached : [];
+  }
+
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  return { render, setActive };
+  return { render, setActive, getCachedFolders };
 })();
