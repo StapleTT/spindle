@@ -11,10 +11,14 @@ const Sidebar = (() => {
   // Used to decide whether setActive() needs a full re-render or just a CSS update.
   let _renderedAcct = null;
 
+  // Override active account/folder used by renderFor() (e.g. search).
+  // null = use App state. Cleared by setActive() when normal navigation resumes.
+  let _renderOpts = null;
+
   // ── Render ─────────────────────────────────────────────────────────
   function render() {
-    const activeAcct   = App.activeAcct;
-    const activeFolder = App.activeFolder;
+    const activeAcct   = _renderOpts ? _renderOpts.activeAcct   : App.activeAcct;
+    const activeFolder = _renderOpts ? _renderOpts.activeFolder : App.activeFolder;
     _renderedAcct = String(activeAcct);
 
     const accounts  = App.accounts;
@@ -131,8 +135,21 @@ const Sidebar = (() => {
       });
   }
 
+  // ── renderFor ───────────────────────────────────────────────────────
+  // Render the sidebar as if accountId/folder were active, without changing
+  // App state. Used by search to expand the searched account's folder tree.
+  // The override persists across _startLoad callbacks so folders that finish
+  // loading while in search mode still render against the search account.
+  function renderFor(accountId, folder) {
+    _renderOpts = { activeAcct: accountId, activeFolder: folder || 'INBOX' };
+    render();
+  }
+
   // ── Active state ────────────────────────────────────────────────────
   function setActive(accountId, folder) {
+    // Normal navigation — clear any search override so render() uses App state.
+    _renderOpts = null;
+
     // Switching accounts (or to/from 'all') requires a full re-render to
     // show or hide the folder tree.
     if (String(accountId) !== _renderedAcct) {
@@ -160,5 +177,5 @@ const Sidebar = (() => {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  return { render, setActive, getCachedFolders };
+  return { render, renderFor, setActive, getCachedFolders };
 })();
