@@ -2,16 +2,21 @@
 
 :root {
   /* Dark theme (default — the design is intentionally dark-first) */
-  --bg:        #0a0a0a;
-  --bg-2:      #111111;
-  --bg-3:      #161616;
-  --line:      rgba(255,255,255,0.10);
-  --line-2:    rgba(255,255,255,0.06);
-  --fg:        #d4d4d4;
-  --fg-dim:    #888888;
-  --fg-dimmer: #555555;
-  --fg-bright: #f0f0f0;
-  --keyword:   #ffffff;
+  --bg:          #0a0a0a;
+  --bg-2:        #111111;
+  --bg-3:        #161616;
+  --line:        rgba(255,255,255,0.10);
+  --line-2:      rgba(255,255,255,0.06);
+  --line-hover:  rgba(255,255,255,0.30);
+  --line-active: rgba(255,255,255,0.35);
+  --bg-hover:    rgba(255,255,255,0.02);
+  --bg-subtle:   rgba(255,255,255,0.03);
+  --bg-active:   rgba(255,255,255,0.04);
+  --fg:          #d4d4d4;
+  --fg-dim:      #888888;
+  --fg-dimmer:   #555555;
+  --fg-bright:   #f0f0f0;
+  --keyword:     #ffffff;
 
   /* Spacing tokens — overridden by density variants */
   --pad-x:       24px;
@@ -36,16 +41,21 @@
 
 /* Light theme override (for settings toggle) */
 [data-theme="light"] {
-  --bg:        #f5f1ea;
-  --bg-2:      #ede9e1;
-  --bg-3:      #e5e0d8;
-  --line:      rgba(0,0,0,0.10);
-  --line-2:    rgba(0,0,0,0.06);
-  --fg:        #333333;
-  --fg-dim:    #777777;
-  --fg-dimmer: #aaaaaa;
-  --fg-bright: #111111;
-  --keyword:   #000000;
+  --bg:          #f5f1ea;
+  --bg-2:        #ede9e1;
+  --bg-3:        #e5e0d8;
+  --line:        rgba(0,0,0,0.10);
+  --line-2:      rgba(0,0,0,0.06);
+  --line-hover:  rgba(0,0,0,0.30);
+  --line-active: rgba(0,0,0,0.25);
+  --bg-hover:    rgba(0,0,0,0.02);
+  --bg-subtle:   rgba(0,0,0,0.03);
+  --bg-active:   rgba(0,0,0,0.04);
+  --fg:          #333333;
+  --fg-dim:      #777777;
+  --fg-dimmer:   #aaaaaa;
+  --fg-bright:   #111111;
+  --keyword:     #000000;
 }
 
 /* Base reset */

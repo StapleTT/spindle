@@ -95,9 +95,9 @@
   align-items: baseline;
   transition: background 0.1s;
 }
-.folder:hover { background: rgba(255,255,255,0.02); }
+.folder:hover { background: var(--bg-hover); }
 .folder.active {
-  background: rgba(255,255,255,0.04);
+  background: var(--bg-active);
   border-left-color: var(--fg-bright);
 }
 .folder .f-name  { color: var(--fg-bright); }
@@ -121,7 +121,7 @@
 /* Account row when its folder tree is expanded (no left-border accent —
    the active folder-tree-item carries that instead) */
 .folder.folder-open {
-  background: rgba(255,255,255,0.03);
+  background: var(--bg-subtle);
   border-left-color: transparent;
 }
 
@@ -137,9 +137,9 @@
   transition: background 0.1s;
   align-items: baseline;
 }
-.folder-tree-item:hover { background: rgba(255,255,255,0.02); }
+.folder-tree-item:hover { background: var(--bg-hover); }
 .folder-tree-item.active {
-  background: rgba(255,255,255,0.04);
+  background: var(--bg-active);
   border-left-color: var(--fg-bright);
 }
 .folder-tree-item .ft-name  { color: var(--fg); }

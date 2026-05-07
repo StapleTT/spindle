@@ -11,8 +11,8 @@
   transition: background 0.1s;
   position: relative;
 }
-.thread-row:hover  { background: rgba(255,255,255,0.02); }
-.thread-row.active { background: rgba(255,255,255,0.04); }
+.thread-row:hover  { background: var(--bg-hover); }
+.thread-row.active { background: var(--bg-active); }
 
 .thread-row .tr-top {
   display: flex;

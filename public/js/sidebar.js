@@ -87,7 +87,7 @@ const Sidebar = (() => {
             folder.id === activeFolder ||
             (activeFolder === 'INBOX' && folder.name.toLowerCase() === 'inbox');
           const isInbox = folder.name.toLowerCase() === 'inbox';
-          const rawCount = (isInbox && folder.unread === 0)
+          const rawCount = isInbox
             ? (App.unreadCounts[acct.id] || 0)
             : folder.unread;
           const count = rawCount > 0 ? rawCount : '';

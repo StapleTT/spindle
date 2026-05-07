@@ -210,8 +210,8 @@
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 .btn:hover:not(:disabled) {
-  border-color: rgba(255,255,255,0.35);
-  background: rgba(255,255,255,0.03);
+  border-color: var(--line-active);
+  background: var(--bg-subtle);
 }
 .btn:disabled { color: var(--fg-dimmer); cursor: not-allowed; }
 .btn .ret     { color: var(--fg-dim); font-size: 12px; }
@@ -243,7 +243,7 @@
   font-size: 14px;
   transition: border-color 0.15s, color 0.15s;
 }
-.icon-btn:hover { border-color: rgba(255,255,255,0.3); color: var(--fg-bright); }
+.icon-btn:hover { border-color: var(--line-hover); color: var(--fg-bright); }
 
 /* Chip button */
 .chip {
@@ -258,8 +258,8 @@
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
 }
-.chip:hover     { color: var(--fg-bright); border-color: rgba(255,255,255,0.3); }
-.chip.active    { color: var(--fg-bright); border-color: rgba(255,255,255,0.35); }
+.chip:hover     { color: var(--fg-bright); border-color: var(--line-hover); }
+.chip.active    { color: var(--fg-bright); border-color: var(--line-active); }
 
 /* ─── Spindle logo ───────────────────────────────────────────────────────── */
 .spindle-lockup {
@@ -416,7 +416,7 @@
 }
 .provider-tile:nth-child(2n)  { border-right: none; }
 .provider-tile:nth-last-child(-n+2) { border-bottom: none; }
-.provider-tile:hover:not(.disabled) { background: rgba(255,255,255,0.03); }
+.provider-tile:hover:not(.disabled) { background: var(--bg-subtle); }
 .provider-tile.disabled { cursor: not-allowed; opacity: 0.5; }
 .provider-tile .p-icon { width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: var(--fg); }
 .provider-tile .p-name { font-size: 13px; color: var(--fg-bright); }
