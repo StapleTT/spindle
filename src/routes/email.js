@@ -28,6 +28,12 @@ function parseUid(account, raw) {
   return parseInt(raw, 10);
 }
 
+// Sanitize a folder/label string: strip null bytes, cap length
+function sanitizeFolder(f) {
+  if (!f || typeof f !== 'string') return 'INBOX';
+  return f.replace(/\0/g, '').substring(0, 200);
+}
+
 // GET /api/email/:accountId/unread — lightweight unread count for sidebar badges
 router.get('/:accountId/unread', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
@@ -57,7 +63,7 @@ router.get('/:accountId/messages', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = req.query.folder || 'INBOX';
+  const folder = sanitizeFolder(req.query.folder || 'INBOX');
   const page   = Math.max(1, parseInt(req.query.page)  || 1);
   const limit  = Math.min(100, parseInt(req.query.limit) || 50);
 
@@ -74,7 +80,7 @@ router.get('/:accountId/messages/:uid', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = req.query.folder || 'INBOX';
+  const folder = sanitizeFolder(req.query.folder || 'INBOX');
   const uid    = parseUid(account, req.params.uid);
 
   try {
@@ -90,7 +96,7 @@ router.patch('/:accountId/messages/:uid/read', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = req.query.folder || req.body.folder || 'INBOX';
+  const folder = sanitizeFolder(req.query.folder || req.body.folder || 'INBOX');
   const uid    = parseUid(account, req.params.uid);
   const read   = req.body.read !== false;
 
@@ -107,7 +113,7 @@ router.post('/:accountId/messages/:uid/archive', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = req.body.folder || 'INBOX';
+  const folder = sanitizeFolder(req.body.folder || 'INBOX');
   const uid    = parseUid(account, req.params.uid);
 
   try {
@@ -123,7 +129,7 @@ router.post('/:accountId/messages/:uid/restore', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = req.body.folder || 'INBOX';
+  const folder = sanitizeFolder(req.body.folder || 'INBOX');
   const uid    = parseUid(account, req.params.uid);
 
   try {
@@ -139,12 +145,13 @@ router.post('/:accountId/messages/:uid/move', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const { fromFolder, toFolder } = req.body;
-  if (!toFolder) return res.status(400).json({ error: 'toFolder is required' });
+  const fromFolder = sanitizeFolder(req.body.fromFolder || 'INBOX');
+  const toFolder   = sanitizeFolder(req.body.toFolder);
+  if (!req.body.toFolder) return res.status(400).json({ error: 'toFolder is required' });
   const uid = parseUid(account, req.params.uid);
 
   try {
-    await getService(account).moveMessage(account, fromFolder || 'INBOX', toFolder, uid);
+    await getService(account).moveMessage(account, fromFolder, toFolder, uid);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -157,7 +164,7 @@ router.get('/:accountId/threads/:threadId', async (req, res) => {
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const { threadId } = req.params;
-  const folder = req.query.folder || 'INBOX';
+  const folder = sanitizeFolder(req.query.folder || 'INBOX');
 
   try {
     const messages = await getService(account).fetchThread(account, threadId, folder);
@@ -172,7 +179,7 @@ router.delete('/:accountId/messages/:uid', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = req.query.folder || 'INBOX';
+  const folder = sanitizeFolder(req.query.folder || 'INBOX');
   const uid    = parseUid(account, req.params.uid);
 
   try {

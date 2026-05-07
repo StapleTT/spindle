@@ -89,6 +89,9 @@ app.use(session({
   },
 }));
 
+// --- CSRF protection ---
+app.use(require('./src/middleware/csrf'));
+
 // --- Rate limiting for auth routes ---
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

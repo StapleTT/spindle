@@ -24,6 +24,7 @@ const App = (() => {
   async function init() {
     try {
       state.user = await API.get('/api/auth/me');
+      if (state.user.csrfToken) API.setCSRF(state.user.csrfToken);
     } catch {
       return; // API.get redirects to login on 401
     }

@@ -7,12 +7,14 @@
  */
 
 const API = (() => {
+  let _csrf = null;
+
   async function request(method, url, body) {
-    const opts = {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-    };
+    const headers = { 'Content-Type': 'application/json' };
+    if (_csrf && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      headers['X-CSRF-Token'] = _csrf;
+    }
+    const opts = { method, headers, credentials: 'same-origin' };
     if (body !== undefined) opts.body = JSON.stringify(body);
 
     let res;
@@ -40,10 +42,11 @@ const API = (() => {
   }
 
   return {
-    get:    (url)          => request('GET',    url),
-    post:   (url, body)    => request('POST',   url, body),
-    patch:  (url, body)    => request('PATCH',  url, body),
-    delete: (url, body)    => request('DELETE', url, body),
+    setCSRF: (token) => { _csrf = token; },
+    get:    (url)       => request('GET',    url),
+    post:   (url, body) => request('POST',   url, body),
+    patch:  (url, body) => request('PATCH',  url, body),
+    delete: (url, body) => request('DELETE', url, body),
   };
 })();
 

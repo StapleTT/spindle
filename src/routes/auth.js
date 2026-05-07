@@ -112,7 +112,11 @@ router.post('/logout', (req, res) => {
 // GET /api/auth/me
 router.get('/me', requireAuth, (req, res) => {
   const { id, username, role, theme, auto_load_images } = req.user;
-  res.json({ id, username, role, theme, auto_load_images: !!auto_load_images });
+  res.json({
+    id, username, role, theme,
+    auto_load_images: !!auto_load_images,
+    csrfToken: req.session.csrfToken || null,
+  });
 });
 
 // ─── Recovery ────────────────────────────────────────────────────────────────
