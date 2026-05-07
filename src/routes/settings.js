@@ -39,7 +39,11 @@ router.delete('/account', async (req, res) => {
     const accounts = db.getEmailAccountsByUser.all(req.user.id);
     for (const acct of accounts) imap.evict(acct.id);
 
-    // Nullify invite_codes references — those columns have no ON DELETE CASCADE
+    // Revoke the invite code this user consumed so it can never be reused
+    if (req.user.invite_code_used) {
+      db.revokeInviteCode.run(req.user.invite_code_used);
+    }
+    // Nullify invite_codes FK references — those columns have no ON DELETE CASCADE
     db.clearInviteCodesUsedBy.run(req.user.id);
     db.clearInviteCodesCreatedBy.run(req.user.id);
 

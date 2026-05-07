@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const db = require('../db/schema');
 const q = require('../db/queries');
 const requireAuth = require('../middleware/requireAuth');
-const { randomToken, hashToken } = require('../utils/crypto');
+const { randomToken, hashToken, INVITE_CODE_REGEX } = require('../utils/crypto');
 
 const BCRYPT_ROUNDS = 12;
 
@@ -25,8 +25,8 @@ router.post('/register', async (req, res) => {
   if (!username || !password || !invite_code) {
     return res.status(400).json({ error: 'username, password, and invite_code are required' });
   }
-  if (typeof username !== 'string' || username.length < 2 || username.length > 32) {
-    return res.status(400).json({ error: 'Username must be 2–32 characters' });
+  if (typeof username !== 'string' || username.length < 2 || username.length > 15) {
+    return res.status(400).json({ error: 'Username must be 2–15 characters' });
   }
   if (!passwordStrong(password)) {
     return res.status(400).json({
@@ -34,6 +34,9 @@ router.post('/register', async (req, res) => {
     });
   }
 
+  if (!INVITE_CODE_REGEX.test(invite_code)) {
+    return res.status(400).json({ error: 'Invalid invite code format' });
+  }
   const code = q.getInviteCode.get(invite_code);
   if (!code || code.revoked || code.used_by) {
     return res.status(400).json({ error: 'Invalid or already-used invite code' });

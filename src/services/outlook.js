@@ -221,4 +221,14 @@ async function getFolders(account) {
   }));
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders };
+// ── Unread count ───────────────────────────────────────────────────────────
+
+async function getUnreadCount(account) {
+  const url = `${GRAPH}/mailFolders/inbox?$select=unreadItemCount`;
+  const res  = await graphFetch(account, url);
+  await checkResponse(res, 'getUnreadCount');
+  const data = await res.json();
+  return data.unreadItemCount || 0;
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount };

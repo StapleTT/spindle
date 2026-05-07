@@ -278,6 +278,7 @@ Create all tables on startup if they don't exist:
 - [x] `PATCH /api/email/:accountId/messages/:uid/read` — toggle read/unread
 - [x] `POST /api/email/:accountId/messages/:uid/archive` — archive
 - [x] `DELETE /api/email/:accountId/messages/:uid` — delete (move to trash)
+- [x] `GET /api/email/:accountId/unread` — lightweight unread count for sidebar badges; dispatches to per-service `getUnreadCount`
 - [x] `getService(account)` helper — dispatches to `gmailService`, `outlookService`, or `imap` based on `account.provider`
 - [x] `parseUid(account, raw)` helper — returns string UID for Gmail/Outlook, `parseInt` for IMAP
 - [ ] `GET /api/email/unified?page=1&limit=50` — fetch recent messages across all accounts, merge & sort by date
@@ -290,6 +291,7 @@ Create all tables on startup if they don't exist:
 - [x] `archiveMessage` — `messages.modify` remove `INBOX` label
 - [x] `deleteMessage` — `messages.trash` (recoverable)
 - [x] `getFolders` — `labels.list`; system labels sorted first; `labelHide` entries filtered out
+- [x] `getUnreadCount` — `messages.list` with `INBOX`+`UNREAD` labels, `maxResults:1`; returns `resultSizeEstimate`
 - [x] Normalised message shape matches IMAP service output (`uid`, `subject`, `from_name`, `from_addr`, `to`, `date`, `unread`, `preview`, `html`, `text`)
 
 ### 5.4 Outlook API Service (`src/services/outlook.js`)
@@ -300,6 +302,7 @@ Create all tables on startup if they don't exist:
 - [x] `archiveMessage` — `POST /messages/{id}/move` to `archive` well-known folder
 - [x] `deleteMessage` — `POST /messages/{id}/move` to `deleteditems` (recoverable)
 - [x] `getFolders` — `mailFolders` list; sorted by well-known folder order then alphabetical
+- [x] `getUnreadCount` — `GET /mailFolders/inbox?$select=unreadItemCount`; reads `unreadItemCount` directly from folder object
 - [x] Folder name mapping: `INBOX→inbox`, `SENT→sentitems`, `TRASH→deleteditems`, `SPAM→junkemail`, `DRAFTS→drafts`, `ARCHIVE→archive`
 - [x] `graphFetch` helper in `oauth/outlook.js` — proactive token refresh, 401 retry, DB persistence
 
@@ -365,6 +368,10 @@ Create all tables on startup if they don't exist:
 - [x] Loading skeleton while fetching
 - [x] Silent auto-refresh every 60s (only re-renders on UID change)
 - [x] Hover quick actions: mark read/unread, delete
+- [x] Clicking the already-active inbox does nothing (early-return guard in `selectAccount`, `selectFolder`, `selectAllInboxes`)
+- [x] Mark read/unread is optimistic — UI updates instantly, reverts on API error
+- [x] `adjustUnreadCount(accountId, delta)` — local ±1 update to `App.unreadCounts` + sidebar re-render on every read state change
+- [x] `markUnreadInList(uid)` — mirror of `markReadInList` for toggling back to unread from reader toolbar
 
 ### 7.4 Reading Pane (`public/js/reader.js`)
 - [x] Display: From (name + address), To, Subject, Date
@@ -380,6 +387,8 @@ Create all tables on startup if they don't exist:
 - [x] On load: call `GET /api/auth/me` — redirect to `/auth` if 401
 - [x] Theme: read from user record; apply `data-theme`; persist via `PATCH /api/settings/theme`
 - [x] `App.toggleImages()` — persists `auto_load_images` to DB via `PATCH /api/settings/images`
+- [x] `App.refreshUnreadCounts()` — parallel `GET /api/email/:id/unread` for all accounts via `Promise.allSettled`; updates `App.unreadCounts`, re-renders sidebar, updates doc title; called on boot and every 60s
+- [x] `inbox.html` has early inline theme-detection script (same as `auth.html`) — sets `data-theme` before first paint so no light-mode flash on load
 
 ---
 
@@ -401,11 +410,11 @@ Create all tables on startup if they don't exist:
 ## Phase 9 — Admin Panel
 
 ### 9.1 Admin Routes (`src/routes/admin.js`)
-- [ ] All routes protected by `requireAdmin` middleware
-- [ ] `GET /api/admin/users` — list all users: id, username, role, created_at, invite_code_used
-- [ ] `GET /api/admin/invite-codes` — list all codes: code, created_at, used_by username (or null), revoked status
-- [ ] `POST /api/admin/invite-codes` — generate new invite code (random 12-char alphanumeric); store with `created_by = req.user.id`
-- [ ] `DELETE /api/admin/invite-codes/:code` — revoke code (set `revoked = 1`)
+- [x] All routes protected by `requireAuth` + `requireAdmin` middleware
+- [x] `GET /api/admin/users` — list all users: id, username, role, created_at, invite_code_used
+- [x] `GET /api/admin/invite-codes` — list all codes: code, created_at, used_by username (or null), revoked status
+- [x] `POST /api/admin/invite-codes` — generate new invite code in `XXXX-XXXX-XXXX` hex format; store with `created_by = req.user.id`
+- [x] `DELETE /api/admin/invite-codes/:code` — revoke code (set `revoked = 1`); blocked if code already used
 
 ### 9.2 Admin UI (`public/js/admin.js`)
 - [ ] Admin section only rendered if `user.role === 'admin'` (server enforces; client just hides UI)
@@ -459,6 +468,13 @@ Create all tables on startup if they don't exist:
 - [x] **Account deletion FK constraint fix** (`settings.js`, `queries.js`) — nullify `invite_codes.used_by` and `invite_codes.created_by` before `deleteUser` to avoid FK constraint failure; evict IMAP connections first; wrap in try/catch to return 500 instead of crashing
 - [x] **Session-file-store EPERM noise suppressed** (`server.js`) — `logFn: () => {}` silences Windows atomic-rename race errors from session writes
 - [x] **`PATCH /reorder` route ordering fix** (`accounts.js`) — moved `/reorder` above `/:id` so Express matches it correctly
+- [x] **Unread count badges** — `getUnreadCount` added to all three services (IMAP: `SEARCH UNSEEN`; Gmail: `resultSizeEstimate`; Outlook: `unreadItemCount` on folder); proactive fetch on boot + every 60s; local ±1 delta on mark read/unread; sidebar always re-renders with active state preserved
+- [x] **Sidebar active state preserved on render** — `Sidebar.render()` now calls `setActive(App.activeAcct, App.activeFolder)` internally so all callers get consistent state
+- [x] **Invite code format enforced as `XXXX-XXXX-XXXX` hex** — `INVITE_CODE_REGEX` exported from `crypto.js`; registration rejects malformed codes before DB lookup; `randomInviteCode()` rewritten to produce hex format via `crypto.randomBytes`
+- [x] **Invite code input formatting** (`auth.html`) — `keydown` blocks non-hex characters; `input` normalises, uppercases, and auto-inserts dashes while preserving cursor position; `paste` strips dashes/garbage and reformats regardless of clipboard format
+- [x] **Invite code invalidated on account deletion** (`settings.js`) — `revokeInviteCode` is called before `clearInviteCodesUsedBy` so the consumed code is permanently marked `revoked=1` and cannot be reused if the user is later deleted
+- [x] **Username 15-character limit** — backend rejects usernames > 15 chars; `maxlength="15"` on the register input prevents over-length input and paste
+- [x] **Default theme follows system preference** — early inline `prefers-color-scheme` detection script added to `inbox.html` `<head>` (same pattern as `auth.html`); eliminates light-mode flash before `App.init()` resolves
 
 ---
 

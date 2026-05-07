@@ -236,4 +236,19 @@ async function getFolders(account) {
     .map(l => ({ id: l.id, name: l.name, type: l.type || 'user' }));
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders };
+// ── Unread count ───────────────────────────────────────────────────────────
+
+async function getUnreadCount(account) {
+  const auth  = getClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.messages.list({
+    userId:    'me',
+    labelIds:  ['INBOX', 'UNREAD'],
+    maxResults: 1,
+  });
+  // resultSizeEstimate is a fast approximate count from Google
+  return res.data.resultSizeEstimate || 0;
+}
+
+module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, getFolders, getUnreadCount };

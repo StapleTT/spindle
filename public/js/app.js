@@ -34,6 +34,9 @@ const App = (() => {
 
     await loadAccounts();
 
+    // Fetch unread counts for all accounts immediately after loading
+    await refreshUnreadCounts();
+
     // Handle redirect back from an OAuth provider
     handleOAuthReturn();
 
@@ -63,15 +66,18 @@ const App = (() => {
   }
 
   function selectAccount(accountId, folder) {
+    const f = folder || 'INBOX';
+    if (state.activeAcct === accountId && state.activeFolder === f) return;
     state.activeAcct   = accountId;
-    state.activeFolder = folder || 'INBOX';
+    state.activeFolder = f;
     state.activeMsg    = null;
-    Sidebar.setActive(accountId, state.activeFolder);
-    EmailList.load(accountId, state.activeFolder);
+    Sidebar.setActive(accountId, f);
+    EmailList.load(accountId, f);
     Reader.showFolderEmpty();
   }
 
   function selectFolder(accountId, folder) {
+    if (state.activeAcct === accountId && state.activeFolder === folder) return;
     state.activeAcct   = accountId;
     state.activeFolder = folder;
     state.activeMsg    = null;
@@ -81,6 +87,7 @@ const App = (() => {
   }
 
   function selectAllInboxes() {
+    if (state.activeAcct === 'all') return;
     state.activeAcct   = 'all';
     state.activeFolder = 'INBOX';
     state.activeMsg    = null;
@@ -157,6 +164,28 @@ const App = (() => {
     }
   }
 
+  // ── Unread counts ─────────────────────────────────────────────────
+  async function refreshUnreadCounts() {
+    if (state.accounts.length === 0) return;
+    const results = await Promise.allSettled(
+      state.accounts.map(a =>
+        API.get(`/api/email/${a.id}/unread`)
+          .then(data => ({ id: a.id, count: data.unreadCount || 0 }))
+      )
+    );
+    let changed = false;
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        state.unreadCounts[r.value.id] = r.value.count;
+        changed = true;
+      }
+    }
+    if (changed) {
+      Sidebar.render();
+      updateDocTitle();
+    }
+  }
+
   // ── Background refresh (every 60 s) ──────────────────────────────
   function scheduleRefresh() {
     setInterval(async () => {
@@ -165,12 +194,15 @@ const App = (() => {
         // Refresh the active account's folder silently
         await EmailList.refresh(state.activeAcct, state.activeFolder);
       } catch (_) {}
+      // Also refresh all unread counts in the background
+      refreshUnreadCounts().catch(() => {});
     }, 60_000);
   }
 
   return {
     init,
     loadAccounts,
+    refreshUnreadCounts,
     selectAccount,
     selectFolder,
     selectAllInboxes,

@@ -52,6 +52,7 @@ const EmailList = (() => {
       if (data.unreadCount !== undefined) {
         App.unreadCounts[accountId] = data.unreadCount;
         App.updateDocTitle();
+        Sidebar.render();
       }
 
       renderRows(list);
@@ -156,7 +157,10 @@ const EmailList = (() => {
           r.classList.toggle('active', r.dataset.uid == msg.uid && r.dataset.acctId == msg._accountId));
         App.activeMsg = { uid: msg.uid, accountId: msg._accountId, folder: 'INBOX' };
         Reader.loadMessage(msg._accountId, 'INBOX', msg.uid);
-        markReadInList(msg.uid);
+        if (msg.unread) {
+          markReadInList(msg.uid);
+          adjustUnreadCount(msg._accountId, -1);
+        }
       };
 
       // Hover actions
@@ -169,12 +173,25 @@ const EmailList = (() => {
       updateReadBtn();
       readBtn.onclick = async e => {
         e.stopPropagation();
+        const wasUnread  = msg.unread;
+        const targetRead = wasUnread;
+
+        // ── Optimistic update ─────────────────────────────────────
+        msg.unread = !wasUnread;
+        row.classList.toggle('unread', msg.unread);
+        updateReadBtn();
+        adjustUnreadCount(msg._accountId, wasUnread ? -1 : 1);
+
         try {
-          await API.patch(`/api/email/${msg._accountId}/messages/${msg.uid}/read`, { read: msg.unread, folder: 'INBOX' });
-          msg.unread = !msg.unread;
+          await API.patch(`/api/email/${msg._accountId}/messages/${msg.uid}/read`, { read: targetRead, folder: 'INBOX' });
+        } catch (err) {
+          // Revert on failure
+          msg.unread = wasUnread;
           row.classList.toggle('unread', msg.unread);
           updateReadBtn();
-        } catch (err) { Toast.show(err.message, 'err'); }
+          adjustUnreadCount(msg._accountId, wasUnread ? 1 : -1);
+          Toast.show(err.message, 'err');
+        }
       };
 
       const delBtn = document.createElement('button');
@@ -211,6 +228,7 @@ const EmailList = (() => {
       if (data.unreadCount !== undefined) {
         App.unreadCounts[accountId] = data.unreadCount;
         App.updateDocTitle();
+        Sidebar.render();
       }
 
       // Only re-render if the set of UIDs changed
@@ -271,16 +289,28 @@ const EmailList = (() => {
       updateReadBtn();
       readBtn.onclick = async e => {
         e.stopPropagation();
-        const targetRead = msg.unread; // true = mark read, false = mark unread
+        const wasUnread  = msg.unread;
+        const targetRead = wasUnread; // true = mark read, false = mark unread
+
+        // ── Optimistic update ─────────────────────────────────────
+        msg.unread = !wasUnread;
+        row.classList.toggle('unread', msg.unread);
+        updateReadBtn();
+        adjustUnreadCount(_currentAcct, wasUnread ? -1 : 1);
+
         try {
           await API.patch(
             `/api/email/${_currentAcct}/messages/${msg.uid}/read`,
             { read: targetRead, folder: _currentFolder }
           );
-          msg.unread = !targetRead;
+        } catch (err) {
+          // Revert on failure
+          msg.unread = wasUnread;
           row.classList.toggle('unread', msg.unread);
           updateReadBtn();
-        } catch (err) { Toast.show(err.message, 'err'); }
+          adjustUnreadCount(_currentAcct, wasUnread ? 1 : -1);
+          Toast.show(err.message, 'err');
+        }
       };
 
       // ── Hover action: delete ──────────────────────────────────────
@@ -335,8 +365,11 @@ const EmailList = (() => {
     App.activeMsg = { uid: msg.uid, accountId: _currentAcct, folder: _currentFolder };
     Reader.loadMessage(_currentAcct, _currentFolder, msg.uid);
 
-    // Optimistically mark as read in list
-    markReadInList(msg.uid);
+    // Optimistically mark as read in list and update sidebar count
+    if (msg.unread) {
+      markReadInList(msg.uid);
+      adjustUnreadCount(_currentAcct, -1);
+    }
   }
 
   function markReadInList(uid) {
@@ -344,6 +377,21 @@ const EmailList = (() => {
     if (row) row.classList.remove('unread');
     const msg = _messages.find(m => m.uid == uid);
     if (msg) msg.unread = false;
+  }
+
+  function markUnreadInList(uid) {
+    const row = document.querySelector(`#thread-list-rows .thread-row[data-uid="${uid}"]`);
+    if (row) row.classList.add('unread');
+    const msg = _messages.find(m => m.uid == uid);
+    if (msg) msg.unread = true;
+  }
+
+  // Adjust sidebar unread count for an account by delta (+1 or -1) and re-render
+  function adjustUnreadCount(accountId, delta) {
+    if (!accountId || accountId === 'all') return;
+    App.unreadCounts[accountId] = Math.max(0, (App.unreadCounts[accountId] || 0) + delta);
+    Sidebar.render();
+    App.updateDocTitle();
   }
 
   // ── Helpers ───────────────────────────────────────────────────────
@@ -373,5 +421,5 @@ const EmailList = (() => {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
-  return { load, loadAll, refresh, clear, markReadInList };
+  return { load, loadAll, refresh, clear, markReadInList, markUnreadInList };
 })();

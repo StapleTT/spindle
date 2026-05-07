@@ -27,6 +27,18 @@ function parseUid(account, raw) {
   return parseInt(raw, 10);
 }
 
+// GET /api/email/:accountId/unread — lightweight unread count for sidebar badges
+router.get('/:accountId/unread', async (req, res) => {
+  const account = getAccount(req.params.accountId, req.user.id);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+  try {
+    const count = await getService(account).getUnreadCount(account);
+    res.json({ unreadCount: count });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/email/:accountId/folders
 router.get('/:accountId/folders', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);

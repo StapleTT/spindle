@@ -152,7 +152,7 @@ function regHTML() {
     ${secLabel('account details')}
     <div class="card">
       ${fld('invite code', `<input class="input" id="r-ic" placeholder="XXXX-XXXX-XXXX" autocomplete="off">`, 'r-ice')}
-      ${fld('username',    `<input class="input" id="r-u"  placeholder="choose a username" autocomplete="off">`, 'r-ue')}
+      ${fld('username',    `<input class="input" id="r-u"  placeholder="choose a username" maxlength="15" autocomplete="off">`, 'r-ue')}
       ${fld('recovery email',
         `<input class="input" id="r-em" type="email" placeholder="for account recovery only" autocomplete="off">`,
         'r-eme', true)}
@@ -195,7 +195,53 @@ function updateReqs(p) {
   [['len','rq-len'],['upper','rq-up'],['num','rq-num'],['sym','rq-sym']].forEach(([k,id])=>{
     const el=document.getElementById(id); if(el)el.classList.toggle('met',r[k]); });
 }
+/* ── Invite code input — XXXX-XXXX-XXXX formatting ──────────────── */
+function formatHex(raw) {
+  // Strip non-hex, uppercase, cap at 12 chars, then insert dashes
+  const hex = raw.replace(/[^0-9A-Fa-f]/g, '').toUpperCase().slice(0, 12);
+  const p = [hex.slice(0,4), hex.slice(4,8), hex.slice(8,12)].filter(s => s.length);
+  return p.join('-');
+}
+function wireInviteCode(el) {
+  // Block non-hex characters at the keystroke level
+  el.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey) return;       // allow Ctrl+C/V/A/Z etc.
+    if (e.key.length > 1) return;             // allow Backspace, Delete, Arrows, Tab…
+    if (!/^[0-9A-Fa-f]$/.test(e.key)) { e.preventDefault(); return; }
+    // Block if already at the 12-hex-char limit (14 chars with dashes)
+    const hexLen = el.value.replace(/[^0-9A-Fa-f]/g, '').length;
+    if (hexLen >= 12) e.preventDefault();
+  });
+
+  // After every input, normalise and auto-insert dashes; preserve cursor
+  el.addEventListener('input', () => {
+    const start = el.selectionStart;
+    const raw   = el.value;
+    const formatted = formatHex(raw);
+    if (formatted === raw) return;
+    // Count hex chars before cursor in raw value, then find matching position in formatted
+    const hexBefore = raw.slice(0, start).replace(/[^0-9A-Fa-f]/g, '').length;
+    el.value = formatted;
+    let pos = formatted.length, seen = 0;
+    for (let i = 0; i < formatted.length; i++) {
+      if (/[0-9A-F]/.test(formatted[i])) seen++;
+      if (seen === hexBefore) { pos = i + 1; break; }
+    }
+    el.setSelectionRange(pos, pos);
+  });
+
+  // Paste: strip dashes (or accept them), extract hex, reformat
+  el.addEventListener('paste', e => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    el.value = formatHex(text);
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
+  });
+}
+
 function wireReg() {
+  wireInviteCode(document.getElementById('r-ic'));
   [['r-p','r-pt'],['r-cp','r-cpt']].forEach(([inp,tog])=>{
     const i=document.getElementById(inp), t=document.getElementById(tog);
     t.onclick=()=>{const s=i.type==='text';i.type=s?'password':'text';t.textContent=s?'show':'hide';};

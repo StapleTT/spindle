@@ -42,12 +42,17 @@ function hashToken(token) {
 }
 
 /**
- * Generate a random alphanumeric invite code of the given length.
+ * Invite code format: XXXX-XXXX-XXXX where X is an uppercase hex digit (0-9, A-F).
+ * Example: 74E7-10C0-0CAF
  */
-function randomInviteCode(length = 12) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous 0/O/I/1
-  const bytes = crypto.randomBytes(length);
-  return Array.from(bytes).map(b => chars[b % chars.length]).join('');
+const INVITE_CODE_REGEX = /^[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}$/;
+
+/**
+ * Generate a cryptographically random invite code in XXXX-XXXX-XXXX hex format.
+ */
+function randomInviteCode() {
+  const hex = () => crypto.randomBytes(2).toString('hex').toUpperCase();
+  return `${hex()}-${hex()}-${hex()}`;
 }
 
-module.exports = { encrypt, decrypt, randomToken, hashToken, randomInviteCode };
+module.exports = { encrypt, decrypt, randomToken, hashToken, randomInviteCode, INVITE_CODE_REGEX };

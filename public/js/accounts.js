@@ -5,6 +5,8 @@
 
 const Accounts = (() => {
   let _modal = null;
+  let _imapSecSelect = null; // CustomSelect instance
+  let _smtpSecSelect = null; // CustomSelect instance
 
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -49,6 +51,8 @@ const Accounts = (() => {
 
   function closeModal() {
     if (_modal) { _modal.remove(); _modal = null; }
+    _imapSecSelect = null;
+    _smtpSecSelect = null;
   }
 
   // ── Picker step ───────────────────────────────────────────────────
@@ -102,8 +106,19 @@ const Accounts = (() => {
       wirePicker();
     };
     document.getElementById('ap-connect').onclick = submitIMAPForm;
-    // Test connection button
     document.getElementById('ap-test').onclick = testConnection;
+
+    // Initialise custom selects for IMAP/SMTP security
+    const secOptions = [
+      { value: '1',        label: 'SSL / TLS' },
+      { value: 'starttls', label: 'STARTTLS'  },
+      { value: '0',        label: 'None'       },
+    ];
+    _imapSecSelect = CustomSelect.create(secOptions, '1');
+    document.getElementById('ap-imap-sec').appendChild(_imapSecSelect.el);
+
+    _smtpSecSelect = CustomSelect.create(secOptions, 'starttls');
+    document.getElementById('ap-smtp-sec').appendChild(_smtpSecSelect.el);
   }
 
   function buildIMAPFormHTML(preset) {
@@ -124,12 +139,7 @@ const Accounts = (() => {
         <div class="field"><div class="field-label">host</div>${inp('ap-imap-host','imap.example.com',preset.imap_host||'')}</div>
         <div class="field-row">
           <div class="field"><div class="field-label">port</div>${inp('ap-imap-port','993',preset.imap_port||'993')}</div>
-          <div class="field"><div class="field-label">security</div>
-            <select class="select" id="ap-imap-sec">
-              <option value="1">SSL/TLS</option>
-              <option value="starttls">STARTTLS</option>
-              <option value="0">None</option>
-            </select></div>
+          <div class="field"><div class="field-label">security</div><div id="ap-imap-sec"></div></div>
         </div>
       </div>
       <div class="modal-section-label"><span class="slash">//</span>smtp <span class="sub">outgoing</span></div>
@@ -137,12 +147,7 @@ const Accounts = (() => {
         <div class="field"><div class="field-label">host</div>${inp('ap-smtp-host','smtp.example.com',preset.smtp_host||'')}</div>
         <div class="field-row">
           <div class="field"><div class="field-label">port</div>${inp('ap-smtp-port','587',preset.smtp_port||'587')}</div>
-          <div class="field"><div class="field-label">security</div>
-            <select class="select" id="ap-smtp-sec">
-              <option value="starttls">STARTTLS</option>
-              <option value="1">SSL/TLS</option>
-              <option value="0">None</option>
-            </select></div>
+          <div class="field"><div class="field-label">security</div><div id="ap-smtp-sec"></div></div>
         </div>
       </div>
     </div>
@@ -195,8 +200,8 @@ const Accounts = (() => {
     if (!imapHost) { Toast.show('IMAP host required', 'err'); return null; }
     if (!smtpHost) { Toast.show('SMTP host required', 'err'); return null; }
 
-    const imapSec = document.getElementById('ap-imap-sec').value;
-    const smtpSec = document.getElementById('ap-smtp-sec').value;
+    const imapSec = _imapSecSelect ? _imapSecSelect.getValue() : '1';
+    const smtpSec = _smtpSecSelect ? _smtpSecSelect.getValue() : 'starttls';
 
     return {
       display_name:  document.getElementById('ap-dname').value.trim() || email,

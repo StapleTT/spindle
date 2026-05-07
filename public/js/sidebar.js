@@ -54,6 +54,9 @@ const Sidebar = (() => {
       item.onclick = () => App.selectAccount(acct.id, 'INBOX');
       inboxList.appendChild(item);
     });
+
+    // Re-apply active highlight so callers don't have to do it manually
+    if (App.activeAcct) setActive(App.activeAcct, App.activeFolder);
   }
 
   function setActive(accountId, folder) {

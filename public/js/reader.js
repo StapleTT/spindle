@@ -177,14 +177,23 @@ const Reader = (() => {
   async function toggleRead() {
     if (!_current) return;
     const { accountId, folder, uid, data } = _current;
-    const nowRead = data ? data.unread : false;
+    const wasUnread = data ? data.unread : false;
     try {
-      await API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: nowRead });
-      if (data) data.unread = !nowRead;
+      await API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: wasUnread, folder });
+      if (data) data.unread = !wasUnread;
       const btn = document.getElementById('read-toggle');
-      if (btn) btn.innerHTML = nowRead ? '[ mark unread ]' : '[ mark read ]';
-      EmailList.markReadInList(uid);
-      Toast.show(nowRead ? 'Marked as read' : 'Marked as unread');
+      if (btn) btn.innerHTML = data.unread ? '[ mark unread ]' : '[ mark read ]';
+      if (wasUnread) {
+        EmailList.markReadInList(uid);
+      } else {
+        EmailList.markUnreadInList(uid);
+      }
+      // Update sidebar badge
+      const delta = wasUnread ? -1 : 1;
+      App.unreadCounts[accountId] = Math.max(0, (App.unreadCounts[accountId] || 0) + delta);
+      Sidebar.render();
+      App.updateDocTitle();
+      Toast.show(wasUnread ? 'Marked as read.' : 'Marked as unread.');
     } catch (e) { Toast.show(e.message, 'err'); }
   }
 

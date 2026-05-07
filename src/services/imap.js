@@ -234,4 +234,13 @@ async function deleteMessage(account, folder, uid) {
   }
 }
 
-module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, evict };
+// ── Unread count ───────────────────────────────────────────────────────────
+
+async function getUnreadCount(account) {
+  const conn = await getConnection(account);
+  await conn.openBox('INBOX');
+  const uids = await conn.search(['UNSEEN'], {});
+  return uids.length;
+}
+
+module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, deleteMessage, evict, getUnreadCount };

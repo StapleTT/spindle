@@ -15,13 +15,13 @@ const Composer = (() => {
   }
 
   // ── Open ──────────────────────────────────────────────────────────
+  let _fromSelect = null; // CustomSelect instance for the from picker
+
   function open(opts = {}) {
     close(); // close any existing
 
     const accounts = App.accounts;
-    const fromOptions = accounts.map(a =>
-      `<option value="${a.id}"${a.id == opts.accountId ? ' selected' : ''}>${esc(a.display_name||a.email_address)} — ${esc(a.email_address)}</option>`
-    ).join('');
+    const activeId = String(opts.accountId || App.activeAcct || (accounts[0] && accounts[0].id) || '');
 
     _modal = document.createElement('div');
     _modal.className = 'modal-bg';
@@ -35,7 +35,7 @@ const Composer = (() => {
         <div class="modal-body">
           <div class="compose-row">
             <div class="lbl">// from</div>
-            <select class="from-select" id="c-from">${fromOptions}</select>
+            <div id="c-from-wrap" style="flex:1;min-width:0"></div>
           </div>
           <div class="compose-row with-extra">
             <div class="lbl">// to</div>
@@ -69,6 +69,15 @@ const Composer = (() => {
       </div>`;
 
     document.body.appendChild(_modal);
+
+    // Build the from custom select and inject it
+    const fromOptions = accounts.map(a => ({
+      value: String(a.id),
+      label: `${a.display_name || a.email_address} — ${a.email_address}`,
+    }));
+    _fromSelect = CustomSelect.create(fromOptions, activeId, { borderless: true });
+    document.getElementById('c-from-wrap').appendChild(_fromSelect.el);
+
     wireModal(opts);
     document.getElementById('c-to').focus();
   }
@@ -107,11 +116,12 @@ const Composer = (() => {
       _modal.remove();
       _modal = null;
     }
+    _fromSelect = null;
     document.removeEventListener('keydown', escHandler);
   }
 
   async function send() {
-    const accountId = document.getElementById('c-from').value;
+    const accountId = _fromSelect ? _fromSelect.getValue() : '';
     const to        = document.getElementById('c-to').value.trim();
     const cc        = document.getElementById('c-cc').value.trim();
     const bcc       = document.getElementById('c-bcc').value.trim();
