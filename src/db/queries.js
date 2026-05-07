@@ -15,8 +15,10 @@ const updateUserImages = db.prepare(`UPDATE users SET auto_load_images = ? WHERE
 const updateUserPassword = db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`);
 const deleteUser = db.prepare(`DELETE FROM users WHERE id = ?`);
 const getAllUsers = db.prepare(`
-  SELECT id, username, role, theme, invite_code_used, created_at FROM users ORDER BY id
+  SELECT id, username, role, paused, invite_code_used, created_at FROM users ORDER BY id
 `);
+const updateUserRole = db.prepare(`UPDATE users SET role = ? WHERE id = ?`);
+const setUserPaused  = db.prepare(`UPDATE users SET paused = ? WHERE id = ?`);
 
 // --- Invite Codes ---
 
@@ -43,6 +45,7 @@ const markInviteCodeUsed = db.prepare(`
 const revokeInviteCode = db.prepare(`
   UPDATE invite_codes SET revoked = 1 WHERE code = ?
 `);
+const deleteInviteCode = db.prepare(`DELETE FROM invite_codes WHERE code = ?`);
 // Nullify invite_code references before deleting a user (no ON DELETE CASCADE on those columns)
 const clearInviteCodesUsedBy    = db.prepare(`UPDATE invite_codes SET used_by    = NULL WHERE used_by    = ?`);
 const clearInviteCodesCreatedBy = db.prepare(`UPDATE invite_codes SET created_by = NULL WHERE created_by = ?`);
@@ -107,6 +110,8 @@ module.exports = {
   updateUserTheme,
   updateUserImages,
   updateUserPassword,
+  updateUserRole,
+  setUserPaused,
   deleteUser,
   getAllUsers,
 
@@ -117,6 +122,7 @@ module.exports = {
   insertInviteCode,
   markInviteCodeUsed,
   revokeInviteCode,
+  deleteInviteCode,
   clearInviteCodesUsedBy,
   clearInviteCodesCreatedBy,
 

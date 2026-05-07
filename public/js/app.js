@@ -32,6 +32,11 @@ const App = (() => {
     const tbUser = document.getElementById('tb-username');
     if (tbUser) tbUser.textContent = state.user.username;
 
+    if (state.user.role === 'admin') {
+      const adminBtn = document.getElementById('sys-admin');
+      if (adminBtn) adminBtn.style.display = '';
+    }
+
     await loadAccounts();
 
     // Fetch unread counts for all accounts immediately after loading
@@ -133,7 +138,7 @@ const App = (() => {
   // ── Document title with unread count ─────────────────────────────
   function updateDocTitle() {
     const total = Object.values(state.unreadCounts).reduce((a, b) => a + b, 0);
-    document.title = total > 0 ? `(${total}) Spindle` : 'Spindle';
+    document.title = total > 0 ? `Spindle - Inbox (${total})` : 'Spindle - Inbox';
   }
 
   // ── Logout ───────────────────────────────────────────────────────

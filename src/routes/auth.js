@@ -88,6 +88,10 @@ router.post('/login', async (req, res) => {
     return res.status(401).json({ error: 'Invalid username or password' });
   }
 
+  if (user.paused) {
+    return res.status(403).json({ error: 'This account has been paused' });
+  }
+
   req.session.regenerate((err) => {
     if (err) return res.status(500).json({ error: 'Session error' });
     req.session.userId = user.id;

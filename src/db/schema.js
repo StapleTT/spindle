@@ -12,6 +12,12 @@ db.exec('PRAGMA journal_mode = WAL');
 db.exec('PRAGMA foreign_keys = ON');
 
 db.exec(`
+  CREATE TABLE IF NOT EXISTS sessions (
+    sid     TEXT PRIMARY KEY,
+    sess    TEXT NOT NULL,
+    expire  INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE NOT NULL,
@@ -65,6 +71,11 @@ db.exec(`
 // Migrations — safe to run on every boot
 try {
   db.exec(`ALTER TABLE users ADD COLUMN auto_load_images INTEGER DEFAULT 0`);
+} catch (e) {
+  if (!e.message.includes('duplicate column name')) throw e;
+}
+try {
+  db.exec(`ALTER TABLE users ADD COLUMN paused INTEGER DEFAULT 0`);
 } catch (e) {
   if (!e.message.includes('duplicate column name')) throw e;
 }

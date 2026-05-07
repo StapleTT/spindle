@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Spindle</title>
+  <title>Spindle - Inbox</title>
   <script>
     (function() {
       var mq = window.matchMedia('(prefers-color-scheme: dark)');
@@ -72,6 +72,10 @@
           <div class="f-name">compose</div>
           <div class="f-count"><span class="kbd">c</span></div>
         </div>
+        <div class="folder" id="sys-admin" style="display:none">
+          <div class="f-name">admin</div>
+          <div class="f-count">—</div>
+        </div>
         <div class="folder" id="sys-settings">
           <div class="f-name">settings</div>
           <div class="f-count">—</div>
@@ -113,6 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-compose').onclick     = () => Composer.open();
   document.getElementById('btn-logout').onclick      = () => App.logout();
   document.getElementById('sys-compose').onclick     = () => Composer.open();
+  document.getElementById('sys-admin').onclick       = () => Admin.toggle();
   document.getElementById('sys-settings').onclick    = () => Settings.toggle();
   document.getElementById('btn-add-account').onclick = () => Accounts.openAddModal();
 });

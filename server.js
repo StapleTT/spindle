@@ -33,17 +33,51 @@ app.use(cors({ origin: false }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// --- Session (session-file-store: pure JS, no native deps, works on Windows/Linux) ---
-const FileStore = require('session-file-store')(session);
+// --- SQLite session store (uses the same DB as the app; no file-lock issues on Windows) ---
+const db = require('./src/db/schema');
+
+class SQLiteStore extends session.Store {
+  constructor() {
+    super();
+    this._get  = db.prepare('SELECT sess FROM sessions WHERE sid = ? AND expire > ?');
+    this._set  = db.prepare('INSERT OR REPLACE INTO sessions (sid, sess, expire) VALUES (?, ?, ?)');
+    this._touch = db.prepare('UPDATE sessions SET expire = ? WHERE sid = ?');
+    this._del  = db.prepare('DELETE FROM sessions WHERE sid = ?');
+    this._reap = db.prepare('DELETE FROM sessions WHERE expire <= ?');
+    // Prune expired sessions every 15 minutes
+    setInterval(() => this._reap.run(Date.now()), 15 * 60 * 1000).unref();
+  }
+  get(sid, cb) {
+    try {
+      const row = this._get.get(sid, Date.now());
+      cb(null, row ? JSON.parse(row.sess) : null);
+    } catch (e) { cb(e); }
+  }
+  set(sid, sess, cb) {
+    try {
+      const exp = sess.cookie && sess.cookie.expires
+        ? new Date(sess.cookie.expires).getTime()
+        : Date.now() + 7 * 24 * 3600 * 1000;
+      this._set.run(sid, JSON.stringify(sess), exp);
+      cb(null);
+    } catch (e) { cb(e); }
+  }
+  touch(sid, sess, cb) {
+    try {
+      const exp = sess.cookie && sess.cookie.expires
+        ? new Date(sess.cookie.expires).getTime()
+        : Date.now() + 7 * 24 * 3600 * 1000;
+      this._touch.run(exp, sid);
+      cb(null);
+    } catch (e) { cb(e); }
+  }
+  destroy(sid, cb) {
+    try { this._del.run(sid); cb(null); } catch (e) { cb(e); }
+  }
+}
 
 app.use(session({
-  store: new FileStore({
-    path: './data/sessions',
-    ttl: 7 * 24 * 3600,
-    retries: 0,
-    // Suppress the EPERM rename-race errors that session-file-store logs on Windows
-    logFn: () => {},
-  }),
+  store: new SQLiteStore(),
   secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
   resave: false,
   saveUninitialized: false,

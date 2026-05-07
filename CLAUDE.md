@@ -2,7 +2,7 @@
 ## CLAUDE.md · Project Roadmap & Implementation Checklist
 
 > **Stack:** Node.js (Express) · SQLite (`node:sqlite` built-in, Node ≥ 22.5) · Vanilla JS frontend (no framework)
-> **Auth:** Session-based (express-session + session-file-store)
+> **Auth:** Session-based (express-session + custom SQLite store via `node:sqlite`)
 > **Email protocols:** IMAP (imap-simple) · SMTP (nodemailer) · OAuth2 (Gmail, Outlook)
 > **Design:** Spindle Prototype obtained from Claude Design and implemented. See `data/design-dump.txt` for full bundle.
 > **SQLite note:** Uses `node:sqlite` (built into Node 22.5+) — zero native deps, no compilation needed on Windows or Linux. `better-sqlite3` and `connect-sqlite3` are NOT used.
@@ -411,18 +411,20 @@ Create all tables on startup if they don't exist:
 
 ### 9.1 Admin Routes (`src/routes/admin.js`)
 - [x] All routes protected by `requireAuth` + `requireAdmin` middleware
-- [x] `GET /api/admin/users` — list all users: id, username, role, created_at, invite_code_used
+- [x] `GET /api/admin/users` — list all users: id, username, role, paused, created_at
+- [x] `PATCH /api/admin/users/:id/role` — toggle between admin/user; blocked for self
+- [x] `PATCH /api/admin/users/:id/pause` — toggle paused; paused users cannot log in; blocked for self
+- [x] `DELETE /api/admin/users/:id` — permanently delete a user; requires admin's own password; blocked for self
 - [x] `GET /api/admin/invite-codes` — list all codes: code, created_at, used_by username (or null), revoked status
 - [x] `POST /api/admin/invite-codes` — generate new invite code in `XXXX-XXXX-XXXX` hex format; store with `created_by = req.user.id`
-- [x] `DELETE /api/admin/invite-codes/:code` — revoke code (set `revoked = 1`); blocked if code already used
+- [x] `DELETE /api/admin/invite-codes/:code` — permanently DELETE from DB (not just revoke); blocked if code already used
 
 ### 9.2 Admin UI (`public/js/admin.js`)
-- [ ] Admin section only rendered if `user.role === 'admin'` (server enforces; client just hides UI)
-- [ ] **Users tab:** Table showing username, joined date, invite code used
-- [ ] **Invite Codes tab:**
-  - Table of all active codes: code value (monospace), created date, used by (username or "Unused")
-  - "Generate Code" button → POST → append to table
-  - "Revoke" button per code → DELETE → remove from table
+- [x] Admin sidebar button between compose and settings; only visible when `user.role === 'admin'`; revealed by `app.js` post-init
+- [x] **Users section:** table with username (+ "(paused)" indicator), role, joined date; action buttons per row (role toggle, pause/unpause, delete); buttons hidden for logged-in user's own row
+- [x] **Delete user modal:** custom modal matching settings style; requires admin's password; inline error display
+- [x] **Invite codes section:** active unused codes listed with revoke button; used codes in collapsible `<details>` section at bottom; generate button in section header
+- [x] `paused` column migrated onto `users` table via safe `ALTER TABLE`; login blocked for paused accounts
 
 ---
 
@@ -466,7 +468,7 @@ Create all tables on startup if they don't exist:
 - [x] **Custom select component** (`CustomSelect` in `api.js`) — fully site-rendered dropdown replacing native `<select>`; keyboard nav (arrows, enter, esc), aria attributes, outside-click to close, borderless variant for compose-row context; used in composer from-picker and IMAP/SMTP security selects
 - [x] **Custom deletion modals** (`settings.js`) — replaced `prompt()`/`confirm()` with inline modals for both account deletion (checkbox acknowledgement + password field, delete button gated on both) and inbox removal (password field only); inline error display, Enter to submit, Esc to close
 - [x] **Account deletion FK constraint fix** (`settings.js`, `queries.js`) — nullify `invite_codes.used_by` and `invite_codes.created_by` before `deleteUser` to avoid FK constraint failure; evict IMAP connections first; wrap in try/catch to return 500 instead of crashing
-- [x] **Session-file-store EPERM noise suppressed** (`server.js`) — `logFn: () => {}` silences Windows atomic-rename race errors from session writes
+- [x] **SQLite session store** (`server.js`) — replaced `session-file-store` with a custom `SQLiteStore extends session.Store` backed by a `sessions` table in the app DB; eliminates Windows EPERM rename errors entirely; sessions survive server restarts; pruned every 15 min via `setInterval`
 - [x] **`PATCH /reorder` route ordering fix** (`accounts.js`) — moved `/reorder` above `/:id` so Express matches it correctly
 - [x] **Unread count badges** — `getUnreadCount` added to all three services (IMAP: `SEARCH UNSEEN`; Gmail: `resultSizeEstimate`; Outlook: `unreadItemCount` on folder); proactive fetch on boot + every 60s; local ±1 delta on mark read/unread; sidebar always re-renders with active state preserved
 - [x] **Sidebar active state preserved on render** — `Sidebar.render()` now calls `setActive(App.activeAcct, App.activeFolder)` internally so all callers get consistent state
@@ -475,6 +477,7 @@ Create all tables on startup if they don't exist:
 - [x] **Invite code invalidated on account deletion** (`settings.js`) — `revokeInviteCode` is called before `clearInviteCodesUsedBy` so the consumed code is permanently marked `revoked=1` and cannot be reused if the user is later deleted
 - [x] **Username 15-character limit** — backend rejects usernames > 15 chars; `maxlength="15"` on the register input prevents over-length input and paste
 - [x] **Default theme follows system preference** — early inline `prefers-color-scheme` detection script added to `inbox.html` `<head>` (same pattern as `auth.html`); eliminates light-mode flash before `App.init()` resolves
+- [x] **Admin panel** — sidebar button visible only to admins; modal with users table (role toggle, pause, delete with password modal) and invite codes table (active codes + revoke; used codes in collapsible section); invite code revoke physically deletes from DB; paused users blocked from login
 
 ---
 

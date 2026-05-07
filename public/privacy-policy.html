@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Privacy Policy — Spindle</title>
+  <title>Spindle - Privacy Policy</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -85,7 +85,7 @@
   </div>
 
   <h1>Privacy Policy</h1>
-  <div class="doc-date">Effective date: May 2025</div>
+  <div class="doc-date">Effective date: May 2026</div>
 
   <p>
     Spindle is a self-hosted, personal email client. This policy describes what information
@@ -100,7 +100,8 @@
     <li><span class="em">Email account data</span> — IMAP/SMTP hostnames, ports, and usernames you enter when adding an inbox. Passwords are encrypted with AES-256-GCM before being written to disk.</li>
     <li><span class="em">OAuth tokens</span> — when you connect a Gmail account, Google issues an access token and a refresh token. Both are encrypted with AES-256-GCM and stored locally in the Spindle database. They are never transmitted to any party other than Google.</li>
     <li><span class="em">Email content</span> — messages are fetched on demand from your email provider and displayed in the browser. Spindle does not store, cache, or index the body of any email.</li>
-    <li><span class="em">Session data</span> — a session cookie is set to keep you logged in. Session files are stored on the server and expire after seven days.</li>
+    <li><span class="em">Session data</span> — a session cookie is set to keep you logged in. Sessions are stored in the application database and expire after seven days.</li>
+    <li><span class="em">Invite codes</span> — registration requires a one-time invite code issued by an administrator. The code used is recorded against your account for auditing purposes.</li>
   </ul>
 
   <h2><span class="slash">//</span>how we use your information</h2>
@@ -128,11 +129,30 @@
     <li>OAuth tokens are stored encrypted on the server running Spindle and are used only to authenticate requests to the Gmail API on your behalf.</li>
   </ul>
 
+  <h2><span class="slash">//</span>microsoft user data</h2>
+  <p>
+    When you connect an Outlook account, Spindle uses the Microsoft Graph API to access
+    your mail on your behalf. OAuth tokens issued by Microsoft are encrypted with
+    AES-256-GCM and stored locally. They are never transmitted to any party other than
+    Microsoft. Spindle requests only the permissions required to read, send, and manage
+    your mail (<span class="em">Mail.ReadWrite</span>, <span class="em">Mail.Send</span>,
+    <span class="em">offline_access</span>).
+  </p>
+
+  <h2><span class="slash">//</span>administrator access</h2>
+  <p>
+    Each Spindle instance has at least one administrator. Administrators can view the
+    list of registered users, generate and revoke invite codes, change user roles, and
+    permanently delete user accounts. If your account is on a shared Spindle instance,
+    the administrator of that instance may take these actions on your account.
+  </p>
+
   <h2><span class="slash">//</span>data storage and security</h2>
   <ul>
-    <li>All data is stored in a SQLite database on the server where Spindle is deployed.</li>
+    <li>All data — including user accounts, email credentials, sessions, and invite codes — is stored in a single SQLite database on the server where Spindle is deployed.</li>
     <li>Passwords (Spindle account and IMAP) are never stored in plaintext. Spindle account passwords use bcrypt (12 rounds); IMAP passwords use AES-256-GCM encryption.</li>
-    <li>OAuth tokens (access and refresh) are encrypted with AES-256-GCM using a key you control via the <span class="em">ENCRYPTION_KEY</span> environment variable.</li>
+    <li>OAuth tokens (access and refresh) for Gmail and Outlook are encrypted with AES-256-GCM using a key you control via the <span class="em">ENCRYPTION_KEY</span> environment variable.</li>
+    <li>Sessions are stored in the database and expire after seven days. No session files are written to disk.</li>
     <li>Because Spindle is self-hosted, the security of the stored data depends on the security of the server you operate it on.</li>
   </ul>
 
