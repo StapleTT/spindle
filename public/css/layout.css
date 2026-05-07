@@ -3,14 +3,22 @@
 /* ─── App Shell ──────────────────────────────────────────────────────────── */
 .app-shell {
   display: grid;
-  grid-template-rows: 44px auto 1fr;
+  grid-template-rows: 44px 1fr;
   height: 100vh;
   overflow: hidden;
   background: var(--bg);
+  position: relative;
 }
 
 /* ─── Search panel ───────────────────────────────────────────────────────── */
+/* Absolutely positioned so it overlays the app-body without affecting the
+   grid track sizes — prevents the 1fr row from shrinking during skeleton load */
 .search-panel {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  right: 0;
+  z-index: 500;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -18,6 +26,7 @@
   border-bottom: 1px solid var(--line);
   background: var(--bg-2);
   flex-wrap: wrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,.25);
 }
 
 .search-input {
