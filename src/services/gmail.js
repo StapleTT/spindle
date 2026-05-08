@@ -87,6 +87,38 @@ function extractBody(payload) {
   return { text, html };
 }
 
+/**
+ * Walk a Gmail payload tree and collect named attachment parts.
+ * Skips inline parts (those with a Content-ID used for embedding).
+ */
+function extractAttachments(payload) {
+  const attachments = [];
+
+  function walk(node) {
+    const mime = (node.mimeType || '').toLowerCase();
+    if (mime.startsWith('multipart/')) {
+      for (const part of node.parts || []) walk(part);
+      return;
+    }
+    // Named non-body parts with an attachmentId are downloadable attachments
+    if (node.filename && node.body?.attachmentId) {
+      const headers = (node.headers || []);
+      const cid = headers.find(h => h.name?.toLowerCase() === 'content-id')?.value;
+      if (!cid) { // skip inline images embedded in HTML
+        attachments.push({
+          attachmentId: node.body.attachmentId,
+          filename:     node.filename,
+          contentType:  node.mimeType || 'application/octet-stream',
+          size:         node.body.size || 0,
+        });
+      }
+    }
+  }
+
+  walk(payload);
+  return attachments;
+}
+
 // ── Message shape normalisation ────────────────────────────────────────────
 
 function normaliseMetadata(msg) {
@@ -110,7 +142,8 @@ function normaliseFullMessage(msg) {
   const meta     = normaliseMetadata(msg);
   const h        = parseHeaders(msg.payload?.headers);
   const { text, html } = extractBody(msg.payload);
-  return { ...meta, cc: h.cc || '', text, html };
+  const attachments    = extractAttachments(msg.payload || {});
+  return { ...meta, cc: h.cc || '', text, html, attachments };
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
@@ -191,6 +224,22 @@ async function markRead(account, folder, uid, isRead) {
       removeLabelIds: isRead ? ['UNREAD'] : [],
     },
   });
+}
+
+/**
+ * Download a single attachment by its Gmail attachmentId.
+ */
+async function fetchAttachment(account, folder, uid, attachmentId) {
+  const auth  = getClient(account);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.messages.attachments.get({
+    userId:    'me',
+    messageId: uid,
+    id:        attachmentId,
+  });
+
+  return Buffer.from(res.data.data, 'base64url');
 }
 
 /**
@@ -337,25 +386,46 @@ async function getUnreadCount(account) {
  * @param {object} account  — email_accounts row from DB
  * @param {object} opts     — { to, cc, bcc, subject, text, replyTo }
  */
-async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}) {
+async function sendMessage(account, { to, cc, bcc, subject, text, replyTo, attachments } = {}) {
   const auth  = getClient(account);
   const gmail = google.gmail({ version: 'v1', auth });
 
-  // Omit From — Gmail API injects it automatically from the authenticated account.
-  // Including it risks a mismatch rejection (error 69585).
-  const lines = [
-    `To: ${to || ''}`,
-  ];
-  if (cc)      lines.push(`Cc: ${cc}`);
-  if (bcc)     lines.push(`Bcc: ${bcc}`);
-  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
-  lines.push(`Subject: ${subject || '(no subject)'}`);
-  lines.push('MIME-Version: 1.0');
-  lines.push('Content-Type: text/plain; charset=UTF-8');
-  lines.push('');
-  lines.push(text || '');
+  // Omit From — Gmail API injects it from the authenticated account (error 69585 otherwise).
+  const headers = [`To: ${to || ''}`];
+  if (cc)      headers.push(`Cc: ${cc}`);
+  if (bcc)     headers.push(`Bcc: ${bcc}`);
+  if (replyTo) headers.push(`Reply-To: ${replyTo}`);
+  headers.push(`Subject: ${subject || '(no subject)'}`);
+  headers.push('MIME-Version: 1.0');
 
-  const raw = Buffer.from(lines.join('\r\n')).toString('base64url');
+  let raw;
+  if (attachments && attachments.length > 0) {
+    const boundary = `spindle_${Date.now().toString(36)}`;
+    headers.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+    const parts = [
+      `--${boundary}`,
+      'Content-Type: text/plain; charset=UTF-8',
+      '',
+      text || '',
+    ];
+    for (const a of attachments) {
+      const b64 = Buffer.isBuffer(a.content)
+        ? a.content.toString('base64')
+        : Buffer.from(a.content).toString('base64');
+      parts.push(`--${boundary}`);
+      parts.push(`Content-Type: ${a.contentType || 'application/octet-stream'}`);
+      parts.push('Content-Transfer-Encoding: base64');
+      parts.push(`Content-Disposition: attachment; filename="${(a.filename || 'file').replace(/"/g, '')}"`);
+      parts.push('');
+      // Split base64 into 76-char lines per RFC 2045
+      parts.push(b64.match(/.{1,76}/g).join('\r\n'));
+    }
+    parts.push(`--${boundary}--`);
+    raw = Buffer.from([...headers, '', ...parts].join('\r\n')).toString('base64url');
+  } else {
+    headers.push('Content-Type: text/plain; charset=UTF-8');
+    raw = Buffer.from([...headers, '', text || ''].join('\r\n')).toString('base64url');
+  }
 
   await gmail.users.messages.send({
     userId:      'me',
@@ -426,4 +496,4 @@ async function searchMessages(account, query, field, _folder, page, limit) {
   return { messages, total };
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread, searchMessages };
+module.exports = { fetchMessages, fetchMessage, fetchAttachment, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread, searchMessages };

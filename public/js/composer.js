@@ -8,21 +8,34 @@
  */
 
 const Composer = (() => {
+  const MAX_FILE_MB    = 10;
+  const MAX_TOTAL_MB   = 25;
+  const MAX_FILE_BYTES = MAX_FILE_MB  * 1024 * 1024;
+  const MAX_TOTAL_BYTES= MAX_TOTAL_MB * 1024 * 1024;
+
   let _modal     = null;
   let _minimized = false;
+  let _files     = []; // Array<File>
 
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 
+  function fmtSize(bytes) {
+    if (bytes < 1024)    return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  }
+
   // ── Open ──────────────────────────────────────────────────────────
-  let _fromSelect = null; // CustomSelect instance for the from picker
+  let _fromSelect = null;
 
   function open(opts = {}) {
-    close(); // close any existing
+    close();
+    _files = [];
 
     const accounts = App.accounts;
-    const rawId = opts.accountId || App.activeAcct;
+    const rawId    = opts.accountId || App.activeAcct;
     const activeId = String(
       (rawId && rawId !== 'all') ? rawId : (accounts[0] && accounts[0].id) || ''
     );
@@ -65,10 +78,12 @@ const Composer = (() => {
             <input class="input" id="c-subj" placeholder="subject line" autocomplete="off" value="${esc(opts.subject||'')}">
           </div>
           <textarea class="compose-textarea" id="c-body" placeholder="compose your message…">${opts.body||''}</textarea>
+          <div id="c-attach-list" class="compose-attach-list" style="display:none"></div>
         </div>
         <div class="modal-footer">
           <div class="mf-left">
-            <button class="chip">[ attach ]</button>
+            <button class="chip" id="c-attach-btn">[ attach ]</button>
+            <input type="file" id="c-file-input" multiple style="display:none">
             <button class="chip" id="c-draft">[ draft ]</button>
           </div>
           <button class="btn" id="c-send" style="width:auto;padding:10px 18px">[ send ] <span class="ret">↵</span></button>
@@ -77,7 +92,6 @@ const Composer = (() => {
 
     document.body.appendChild(_modal);
 
-    // Build the from custom select and inject it
     const fromOptions = accounts.map(a => ({
       value: String(a.id),
       label: `${a.display_name || a.email_address} — ${a.email_address}`,
@@ -100,11 +114,9 @@ const Composer = (() => {
     document.getElementById('compose-minimize').onclick = e => { e.stopPropagation(); _toggleMinimize(); };
     document.getElementById('compose-close').onclick    = e => { e.stopPropagation(); close(); };
 
-    // Click the minimized header bar to restore; backdrop click closes when not minimized
     document.getElementById('compose-header').onclick = () => { if (_minimized) _toggleMinimize(); };
     _modal.addEventListener('click', e => { if (e.target === _modal && !_minimized) close(); });
 
-    // CC / BCC toggles
     document.getElementById('c-cc-btn').onclick = function() {
       const row = document.getElementById('c-cc-row');
       const on  = row.style.display === 'none';
@@ -118,11 +130,81 @@ const Composer = (() => {
       this.classList.toggle('active', on);
     };
 
-    // Send
-    document.getElementById('c-send').onclick = send;
+    // File attach
+    const attachBtn  = document.getElementById('c-attach-btn');
+    const fileInput  = document.getElementById('c-file-input');
+    attachBtn.onclick = () => fileInput.click();
+    fileInput.onchange = () => _addFiles(Array.from(fileInput.files));
 
-    // Esc key
+    // Drag-and-drop onto the modal body
+    const body = _modal.querySelector('.modal-body');
+    body.addEventListener('dragover', e => { e.preventDefault(); body.classList.add('drag-over'); });
+    body.addEventListener('dragleave', () => body.classList.remove('drag-over'));
+    body.addEventListener('drop', e => {
+      e.preventDefault();
+      body.classList.remove('drag-over');
+      _addFiles(Array.from(e.dataTransfer.files));
+    });
+
+    document.getElementById('c-send').onclick = send;
     document.addEventListener('keydown', escHandler);
+  }
+
+  function _addFiles(incoming) {
+    let rejected = [];
+    for (const f of incoming) {
+      if (f.size > MAX_FILE_BYTES) {
+        rejected.push(`${f.name} exceeds ${MAX_FILE_MB} MB`);
+        continue;
+      }
+      // Skip duplicates (same name + size)
+      if (_files.some(x => x.name === f.name && x.size === f.size)) continue;
+      _files.push(f);
+    }
+
+    // Check total
+    const total = _files.reduce((s, f) => s + f.size, 0);
+    if (total > MAX_TOTAL_BYTES) {
+      // Remove files from the end until under limit
+      while (_files.length && _files.reduce((s, f) => s + f.size, 0) > MAX_TOTAL_BYTES) {
+        const removed = _files.pop();
+        rejected.push(`${removed.name} removed — total exceeds ${MAX_TOTAL_MB} MB`);
+      }
+    }
+
+    if (rejected.length) Toast.show(rejected.join('\n'), 'err');
+    _renderFileList();
+
+    // Reset input so the same file can be re-added after removal
+    const fi = document.getElementById('c-file-input');
+    if (fi) fi.value = '';
+  }
+
+  function _renderFileList() {
+    const list = document.getElementById('c-attach-list');
+    if (!list) return;
+    if (_files.length === 0) {
+      list.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    list.style.display = 'flex';
+    const totalBytes = _files.reduce((s, f) => s + f.size, 0);
+    list.innerHTML = _files.map((f, i) =>
+      `<span class="compose-attach-chip">
+        <span class="attach-chip-name">${esc(f.name)}</span>
+        <span class="attach-chip-size">${fmtSize(f.size)}</span>
+        <button class="attach-chip-remove" data-idx="${i}" title="remove">×</button>
+      </span>`
+    ).join('') +
+    `<span class="attach-total">${fmtSize(totalBytes)} / ${MAX_TOTAL_MB} MB</span>`;
+
+    list.querySelectorAll('.attach-chip-remove').forEach(btn => {
+      btn.onclick = () => {
+        _files.splice(parseInt(btn.dataset.idx, 10), 1);
+        _renderFileList();
+      };
+    });
   }
 
   function escHandler(e) {
@@ -130,12 +212,10 @@ const Composer = (() => {
   }
 
   function close() {
-    if (_modal) {
-      _modal.remove();
-      _modal = null;
-    }
+    if (_modal) { _modal.remove(); _modal = null; }
     _fromSelect = null;
     _minimized  = false;
+    _files      = [];
     document.removeEventListener('keydown', escHandler);
   }
 
@@ -155,7 +235,23 @@ const Composer = (() => {
     btn.innerHTML = '[ sending… ]';
 
     try {
-      await API.post(`/api/email/${accountId}/send`, { to, cc: cc||undefined, bcc: bcc||undefined, subject, body });
+      const fd = new FormData();
+      fd.append('to', to);
+      if (cc)      fd.append('cc', cc);
+      if (bcc)     fd.append('bcc', bcc);
+      if (subject) fd.append('subject', subject);
+      fd.append('body', body);
+      for (const f of _files) fd.append('attachments', f, f.name);
+
+      const res = await fetch(`/api/email/${accountId}/send`, {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': API.getCSRF() },
+        body: fd,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Send failed (${res.status})`);
+      }
       Toast.show('Sent', 'ok');
       close();
     } catch (e) {

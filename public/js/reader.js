@@ -116,6 +116,7 @@ const Reader = (() => {
             </div>
           </div>
           ${bodyHtml}
+          ${_attachmentsHtml(msg.attachments, _current.accountId, _current.uid, _current.folder)}
         </div>
       </div>
     </div>`;
@@ -374,7 +375,8 @@ const Reader = (() => {
           ${msg.to ? `<div class="msg-head-to">to ${esc(msg.to)}</div>` : ''}
         </div>
       </div>
-      ${bodyHtml}`;
+      ${bodyHtml}
+      ${_attachmentsHtml(msg.attachments, _current.accountId, msg.uid, _current.folder)}`;
 
     // Click the header to collapse
     el.querySelector('.msg-head-clickable').onclick = () => {
@@ -403,6 +405,26 @@ const Reader = (() => {
         iframe.srcdoc = iframeDoc(content);
       });
     }
+  }
+
+  function _attachmentsHtml(attachments, accountId, uid, folder) {
+    if (!attachments || attachments.length === 0) return '';
+    const items = attachments.map(a => {
+      const url = `/api/email/${encodeURIComponent(accountId)}/messages/${encodeURIComponent(uid)}/attachments/${encodeURIComponent(a.attachmentId)}` +
+        `?folder=${encodeURIComponent(folder)}&filename=${encodeURIComponent(a.filename)}&contentType=${encodeURIComponent(a.contentType || 'application/octet-stream')}`;
+      return `<a class="attachment-chip" href="${url}" download="${esc(a.filename)}">` +
+        `<span class="attachment-name">${esc(a.filename)}</span>` +
+        (a.size ? `<span class="attachment-size">${_fmtSize(a.size)}</span>` : '') +
+        `</a>`;
+    }).join('');
+    return `<div class="msg-attachments">${items}</div>`;
+  }
+
+  function _fmtSize(bytes) {
+    if (!bytes) return '';
+    if (bytes < 1024)        return `${bytes} B`;
+    if (bytes < 1048576)     return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
   }
 
   function _avatar(name, addr, size) {

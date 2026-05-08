@@ -198,6 +198,15 @@ async function fetchMessage(account, folder, uid) {
   const raw  = results[0].parts.find(p => p.which === '')?.body || '';
   const parsed = await simpleParser(raw);
 
+  const attachments = (parsed.attachments || [])
+    .filter(a => a.filename)
+    .map((a, i) => ({
+      attachmentId: String(i),
+      filename:     a.filename,
+      contentType:  a.contentType || 'application/octet-stream',
+      size:         a.size || a.content?.length || 0,
+    }));
+
   return {
     uid,
     subject:   parsed.subject || '',
@@ -208,7 +217,28 @@ async function fetchMessage(account, folder, uid) {
     html:      parsed.html  || null,
     text:      parsed.text  || '',
     unread:    !results[0].attributes.flags.includes('\\Seen'),
+    attachments,
   };
+}
+
+async function fetchAttachment(account, folder, uid, attachmentId) {
+  const conn = await getConnection(account);
+  await conn.openBox(folder);
+
+  const results = await conn.search([['UID', String(uid)]], {
+    bodies:   [''],
+    markSeen: false,
+  });
+  if (!results.length) throw new Error('Message not found');
+
+  const raw    = results[0].parts.find(p => p.which === '')?.body || '';
+  const parsed = await simpleParser(raw);
+  const named  = (parsed.attachments || []).filter(a => a.filename);
+  const idx    = parseInt(attachmentId, 10);
+  const att    = named[idx];
+  if (!att) throw new Error('Attachment not found');
+
+  return { content: att.content, contentType: att.contentType, filename: att.filename };
 }
 
 // ── Flag operations ────────────────────────────────────────────────────────
@@ -342,4 +372,4 @@ async function searchMessages(account, query, field, folder = 'INBOX', page = 1,
   return { messages, total: raw.length };
 }
 
-module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount, fetchThread, searchMessages };
+module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, fetchAttachment, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount, fetchThread, searchMessages };

@@ -1,10 +1,19 @@
 const router = require('express').Router();
 const requireAuth = require('../middleware/requireAuth');
+const multer      = require('multer');
 const db = require('../db/queries');
 const imap           = require('../services/imap');
 const gmailService   = require('../services/gmail');
 const outlookService = require('../services/outlook');
 const smtpService    = require('../services/smtp');
+
+const MAX_FILE_BYTES  = 10 * 1024 * 1024;  // 10 MB per file
+const MAX_TOTAL_BYTES = 25 * 1024 * 1024;  // 25 MB total
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_FILE_BYTES, files: 10 },
+});
 
 router.use(requireAuth);
 
@@ -213,6 +222,37 @@ router.get('/:accountId/search', async (req, res) => {
   }
 });
 
+// GET /api/email/:accountId/messages/:uid/attachments/:attachmentId
+router.get('/:accountId/messages/:uid/attachments/:attachmentId', async (req, res) => {
+  const account = getAccount(req.params.accountId, req.user.id);
+  if (!account) return res.status(404).json({ error: 'Account not found' });
+
+  const folder       = sanitizeFolder(req.query.folder || 'INBOX');
+  const uid          = parseUid(account, req.params.uid);
+  const attachmentId = req.params.attachmentId;
+  const filename     = String(req.query.filename || 'attachment').replace(/[^a-zA-Z0-9._\- ]/g, '_');
+  const contentType  = String(req.query.contentType || 'application/octet-stream');
+
+  const svc = getService(account);
+  if (typeof svc.fetchAttachment !== 'function') {
+    return res.status(501).json({ error: 'Attachments not supported for this provider' });
+  }
+
+  try {
+    const data = await svc.fetchAttachment(account, folder, uid, attachmentId);
+    const buf  = Buffer.isBuffer(data) ? data : (data.content || data);
+    const ct   = Buffer.isBuffer(data) ? contentType : (data.contentType || contentType);
+    const fn   = Buffer.isBuffer(data) ? filename     : (data.filename    || filename);
+
+    res.setHeader('Content-Type', ct);
+    res.setHeader('Content-Disposition', `attachment; filename="${fn.replace(/"/g, '')}"`);
+    res.setHeader('Content-Length', buf.length);
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/email/:accountId/threads/:threadId?folder=INBOX
 router.get('/:accountId/threads/:threadId', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
@@ -245,15 +285,36 @@ router.delete('/:accountId/messages/:uid', async (req, res) => {
   }
 });
 
-// POST /api/email/:accountId/send
-router.post('/:accountId/send', async (req, res) => {
+// POST /api/email/:accountId/send  (multipart/form-data or JSON)
+router.post('/:accountId/send', (req, res, next) => {
+  upload.array('attachments')(req, res, err => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: `Each attachment must be under ${MAX_FILE_BYTES / 1048576} MB` });
+    }
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}, async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const { to, cc, bcc, subject, body, replyTo } = req.body;
   if (!to || !to.trim()) return res.status(400).json({ error: 'Recipient (to) is required' });
 
-  const opts = { to, cc, bcc, subject, text: body, replyTo };
+  // Enforce total attachment size limit server-side
+  const files = req.files || [];
+  const totalBytes = files.reduce((s, f) => s + f.size, 0);
+  if (totalBytes > MAX_TOTAL_BYTES) {
+    return res.status(413).json({ error: `Total attachments exceed ${MAX_TOTAL_BYTES / 1048576} MB limit` });
+  }
+
+  const attachments = files.map(f => ({
+    filename:    f.originalname,
+    content:     f.buffer,
+    contentType: f.mimetype || 'application/octet-stream',
+  }));
+
+  const opts = { to, cc, bcc, subject, text: body, replyTo, attachments };
 
   try {
     if (account.provider === 'gmail') {

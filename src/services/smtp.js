@@ -28,16 +28,21 @@ function createTransport(account) {
  * @param {object} account  — email_accounts row from DB
  * @param {object} opts     — { to, cc, bcc, subject, text, replyTo }
  */
-async function sendEmail(account, { to, cc, bcc, subject, text, replyTo } = {}) {
+async function sendEmail(account, { to, cc, bcc, subject, text, replyTo, attachments } = {}) {
   const transport = createTransport(account);
 
   await transport.sendMail({
-    from:    `${account.display_name || ''} <${account.email_address}>`.trim(),
+    from:        `${account.display_name || ''} <${account.email_address}>`.trim(),
     to,
-    cc:      cc  || undefined,
-    bcc:     bcc || undefined,
-    subject: subject || '(no subject)',
-    text:    text || '',
+    cc:          cc  || undefined,
+    bcc:         bcc || undefined,
+    subject:     subject || '(no subject)',
+    text:        text || '',
+    attachments: (attachments || []).map(a => ({
+      filename:    a.filename,
+      content:     a.content,
+      contentType: a.contentType,
+    })),
     ...(replyTo ? { replyTo } : {}),
   });
 }

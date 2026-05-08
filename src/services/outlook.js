@@ -84,11 +84,21 @@ function normaliseFullMessage(msg) {
   const isHtml   = body.contentType === 'html';
   const bodyText = body.content || '';
 
+  const attachments = (msg.attachments || [])
+    .filter(a => !a.isInline && a['@odata.type'] === '#microsoft.graph.fileAttachment')
+    .map(a => ({
+      attachmentId: a.id,
+      filename:     a.name,
+      contentType:  a.contentType || 'application/octet-stream',
+      size:         a.size || 0,
+    }));
+
   return {
     ...meta,
     cc:   ccList,
     html: isHtml   ? bodyText : '',
     text: !isHtml  ? bodyText : '',
+    attachments,
   };
 }
 
@@ -140,7 +150,8 @@ async function fetchMessages(account, folder, page, limit) {
  */
 async function fetchMessage(account, folder, uid) {
   const params = new URLSearchParams({
-    $select: 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,body,conversationId',
+    $select: 'id,subject,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,isRead,body,conversationId,hasAttachments',
+    $expand: 'attachments($select=id,name,contentType,size,isInline)',
   });
 
   const url = `${GRAPH}/messages/${encodeURIComponent(uid)}?${params}`;
@@ -149,6 +160,15 @@ async function fetchMessage(account, folder, uid) {
 
   const data = await res.json();
   return normaliseFullMessage(data);
+}
+
+async function fetchAttachment(account, folder, uid, attachmentId) {
+  const url = `${GRAPH}/messages/${encodeURIComponent(uid)}/attachments/${encodeURIComponent(attachmentId)}`;
+  const res  = await graphFetch(account, url);
+  await checkResponse(res, 'fetchAttachment');
+
+  const data = await res.json();
+  return Buffer.from(data.contentBytes, 'base64');
 }
 
 /**
@@ -266,7 +286,7 @@ async function getUnreadCount(account) {
  * @param {object} account  — email_accounts row from DB
  * @param {object} opts     — { to, cc, bcc, subject, text, replyTo }
  */
-async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}) {
+async function sendMessage(account, { to, cc, bcc, subject, text, replyTo, attachments } = {}) {
   function toRecipientList(str) {
     if (!str) return [];
     return str.split(',').map(s => s.trim()).filter(Boolean).map(addr => {
@@ -294,6 +314,17 @@ async function sendMessage(account, { to, cc, bcc, subject, text, replyTo } = {}
     bccRecipients: toRecipientList(bcc),
     ...(replyTo ? { replyTo: toRecipientList(replyTo) } : {}),
   };
+
+  if (attachments && attachments.length > 0) {
+    message.attachments = attachments.map(a => ({
+      '@odata.type': '#microsoft.graph.fileAttachment',
+      name:          a.filename || 'file',
+      contentType:   a.contentType || 'application/octet-stream',
+      contentBytes:  Buffer.isBuffer(a.content)
+        ? a.content.toString('base64')
+        : Buffer.from(a.content).toString('base64'),
+    }));
+  }
 
   const url = `${GRAPH}/sendMail`;
   const res  = await graphFetch(account, url, {
@@ -374,4 +405,4 @@ async function searchMessages(account, query, field, _folder, page, limit) {
   return { messages, total };
 }
 
-module.exports = { fetchMessages, fetchMessage, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread, searchMessages };
+module.exports = { fetchMessages, fetchMessage, fetchAttachment, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, getFolders, getUnreadCount, sendMessage, fetchThread, searchMessages };

@@ -43,6 +43,7 @@ const API = (() => {
 
   return {
     setCSRF: (token) => { _csrf = token; },
+    getCSRF: ()      => _csrf || '',
     get:    (url)       => request('GET',    url),
     post:   (url, body) => request('POST',   url, body),
     patch:  (url, body) => request('PATCH',  url, body),
