@@ -8,7 +8,8 @@
  */
 
 const Composer = (() => {
-  let _modal = null;
+  let _modal     = null;
+  let _minimized = false;
 
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -21,16 +22,22 @@ const Composer = (() => {
     close(); // close any existing
 
     const accounts = App.accounts;
-    const activeId = String(opts.accountId || App.activeAcct || (accounts[0] && accounts[0].id) || '');
+    const rawId = opts.accountId || App.activeAcct;
+    const activeId = String(
+      (rawId && rawId !== 'all') ? rawId : (accounts[0] && accounts[0].id) || ''
+    );
 
     _modal = document.createElement('div');
     _modal.className = 'modal-bg';
     _modal.id = 'compose-modal';
     _modal.innerHTML = `
       <div class="modal" role="dialog" aria-label="compose message">
-        <div class="modal-header">
+        <div class="modal-header" id="compose-header">
           <span>// ${opts.mode === 'reply' ? 're: ' + esc(opts.subject||'') : opts.mode === 'forward' ? 'fwd: ' + esc(opts.subject||'') : 'new message'}</span>
-          <span class="modal-close" id="compose-close">[ esc ]</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="modal-min" id="compose-minimize" title="minimize">[ _ ]</span>
+            <span class="modal-close" id="compose-close">[ esc ]</span>
+          </div>
         </div>
         <div class="modal-body">
           <div class="compose-row">
@@ -82,9 +89,20 @@ const Composer = (() => {
     document.getElementById('c-to').focus();
   }
 
+  function _toggleMinimize() {
+    _minimized = !_minimized;
+    _modal.classList.toggle('compose-minimized', _minimized);
+    const btn = document.getElementById('compose-minimize');
+    if (btn) btn.textContent = _minimized ? '[ □ ]' : '[ _ ]';
+  }
+
   function wireModal(opts) {
-    document.getElementById('compose-close').onclick = close;
-    _modal.addEventListener('click', e => { if (e.target === _modal) close(); });
+    document.getElementById('compose-minimize').onclick = e => { e.stopPropagation(); _toggleMinimize(); };
+    document.getElementById('compose-close').onclick    = e => { e.stopPropagation(); close(); };
+
+    // Click the minimized header bar to restore; backdrop click closes when not minimized
+    document.getElementById('compose-header').onclick = () => { if (_minimized) _toggleMinimize(); };
+    _modal.addEventListener('click', e => { if (e.target === _modal && !_minimized) close(); });
 
     // CC / BCC toggles
     document.getElementById('c-cc-btn').onclick = function() {
@@ -108,7 +126,7 @@ const Composer = (() => {
   }
 
   function escHandler(e) {
-    if (e.key === 'Escape') close();
+    if (e.key === 'Escape' && !_minimized) close();
   }
 
   function close() {
@@ -117,6 +135,7 @@ const Composer = (() => {
       _modal = null;
     }
     _fromSelect = null;
+    _minimized  = false;
     document.removeEventListener('keydown', escHandler);
   }
 

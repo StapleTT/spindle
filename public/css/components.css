@@ -329,13 +329,37 @@
 }
 .modal-back:hover { color: var(--fg-bright); }
 
-.modal-close {
+.modal-close,
+.modal-min {
   cursor: pointer;
   color: var(--fg-dim);
   padding: 4px 8px;
   font-size: 12px;
 }
-.modal-close:hover { color: var(--fg-bright); }
+.modal-close:hover,
+.modal-min:hover { color: var(--fg-bright); }
+
+/* Minimised compose — strips backdrop, docks to bottom-right as a collapsed bar */
+.modal-bg.compose-minimized {
+  background: transparent;
+  backdrop-filter: none;
+  pointer-events: none;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding-right: 24px;
+}
+.modal-bg.compose-minimized .modal {
+  pointer-events: all;
+  max-width: 320px;
+  animation: none;
+}
+.modal-bg.compose-minimized .modal-body,
+.modal-bg.compose-minimized .modal-footer { display: none; }
+.modal-bg.compose-minimized .modal-header {
+  cursor: pointer;
+  border-bottom: none;
+}
+.modal-bg.compose-minimized .modal-header:hover { background: var(--bg-hover); }
 
 .modal-body {
   padding: 18px;

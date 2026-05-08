@@ -15,9 +15,27 @@ const Reader = (() => {
     const p = pane();
     if (!p) return;
 
-    p.innerHTML = `<div class="thread-view"><div class="thread-msgs" style="display:flex;align-items:center;justify-content:center;height:100%">
-      <div class="skeleton" style="width:80%;height:14px"></div>
-    </div></div>`;
+    p.innerHTML = `<div class="thread-view">
+      <div class="thread-header">
+        <div class="skeleton sk-line" style="width:55%;height:16px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:12px">
+          <div class="skeleton sk-line" style="width:130px;height:11px"></div>
+          <div class="skeleton sk-line" style="width:90px;height:11px"></div>
+        </div>
+      </div>
+      <div class="thread-msgs">
+        <div class="msg">
+          <div style="display:flex;gap:12px;margin-bottom:16px;align-items:center">
+            <div class="skeleton" style="width:28px;height:28px;border-radius:50%;flex-shrink:0"></div>
+            <div class="skeleton sk-line" style="width:38%;height:11px"></div>
+          </div>
+          <div class="skeleton sk-line" style="width:96%;height:12px;margin-bottom:9px"></div>
+          <div class="skeleton sk-line" style="width:89%;height:12px;margin-bottom:9px"></div>
+          <div class="skeleton sk-line" style="width:93%;height:12px;margin-bottom:9px"></div>
+          <div class="skeleton sk-line" style="width:61%;height:12px"></div>
+        </div>
+      </div>
+    </div>`;
 
     try {
       const data = await API.get(
@@ -91,7 +109,11 @@ const Reader = (() => {
       <div class="thread-msgs">
         <div class="msg">
           <div class="msg-head">
-            <div><span class="msg-from">${fromDisplay}</span>&nbsp;·&nbsp;${esc(msg.date ? new Date(msg.date).toLocaleString() : '')}</div>
+            ${_avatar(msg.from_name, msg.from_addr)}
+            <div class="msg-head-info">
+              <div><span class="msg-from">${fromDisplay}</span>&nbsp;·&nbsp;${esc(msg.date ? new Date(msg.date).toLocaleString() : '')}</div>
+              ${msg.to ? `<div class="msg-head-to">to ${esc(msg.to)}</div>` : ''}
+            </div>
           </div>
           ${bodyHtml}
         </div>
@@ -214,34 +236,37 @@ const Reader = (() => {
   async function archive() {
     if (!_current) return;
     const { accountId, folder, uid } = _current;
+    _lockActions(true);
     try {
       await API.post(`/api/email/${accountId}/messages/${uid}/archive`, { folder });
       Toast.show('Moved to Archive.');
       showFolderEmpty();
       _current = null;
-    } catch (e) { Toast.show(e.message, 'err'); }
+    } catch (e) { _lockActions(false); Toast.show(e.message, 'err'); }
   }
 
   async function deleteMsg() {
     if (!_current) return;
     const { accountId, folder, uid } = _current;
+    _lockActions(true);
     try {
       await API.delete(`/api/email/${accountId}/messages/${uid}?folder=${encodeURIComponent(folder)}`);
       Toast.show('Moved to Trash.');
       showFolderEmpty();
       _current = null;
-    } catch (e) { Toast.show(e.message, 'err'); }
+    } catch (e) { _lockActions(false); Toast.show(e.message, 'err'); }
   }
 
   async function restoreMsg() {
     if (!_current) return;
     const { accountId, folder, uid } = _current;
+    _lockActions(true);
     try {
       await API.post(`/api/email/${accountId}/messages/${uid}/restore`, { folder });
       Toast.show('Moved to inbox.');
       showFolderEmpty();
       _current = null;
-    } catch (e) { Toast.show(e.message, 'err'); }
+    } catch (e) { _lockActions(false); Toast.show(e.message, 'err'); }
   }
 
   // Classify the current folder so the toolbar shows the right actions.
@@ -318,6 +343,7 @@ const Reader = (() => {
     const from = msg.from_name ? esc(msg.from_name) : esc(msg.from_addr || '');
     el.innerHTML = `
       <div class="msg-summary">
+        ${_avatar(msg.from_name, msg.from_addr, 'sm')}
         <span class="msg-from">${from}</span>
         <span class="msg-summary-preview">${esc(msg.preview || '')}</span>
         <span class="msg-summary-date">${esc(_fmtDate(msg.date))}</span>
@@ -342,8 +368,11 @@ const Reader = (() => {
 
     el.innerHTML = `
       <div class="msg-head msg-head-clickable">
-        <div><span class="msg-from">${from}</span>&nbsp;·&nbsp;${esc(dateStr)}</div>
-        ${msg.to ? `<div class="msg-head-to">to ${esc(msg.to)}</div>` : ''}
+        ${_avatar(msg.from_name, msg.from_addr)}
+        <div class="msg-head-info">
+          <div><span class="msg-from">${from}</span>&nbsp;·&nbsp;${esc(dateStr)}</div>
+          ${msg.to ? `<div class="msg-head-to">to ${esc(msg.to)}</div>` : ''}
+        </div>
       </div>
       ${bodyHtml}`;
 
@@ -374,6 +403,16 @@ const Reader = (() => {
         iframe.srcdoc = iframeDoc(content);
       });
     }
+  }
+
+  function _avatar(name, addr, size) {
+    return Avatar.html(name, addr, size ? `avatar avatar-${size}` : 'avatar');
+  }
+
+  function _lockActions(locked) {
+    const actions = document.getElementById('msg-actions');
+    if (!actions) return;
+    actions.querySelectorAll('.chip').forEach(btn => { btn.disabled = locked; });
   }
 
   function _fmtDate(dateStr) {

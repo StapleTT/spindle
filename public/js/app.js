@@ -249,3 +249,18 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+/* ── Global error boundary ──────────────────────────────────────────── */
+window.addEventListener('unhandledrejection', e => {
+  // 401s are handled by API.request() which redirects to /auth
+  if (e.reason?.status === 401) return;
+  console.error('[spindle] unhandled rejection:', e.reason);
+  const msg = e.reason?.message;
+  if (msg) Toast.show(msg, 'err');
+});
+
+window.addEventListener('error', e => {
+  if (e.error?.status === 401) return;
+  console.error('[spindle] uncaught error:', e.error || e.message);
+  Toast.show('An unexpected error occurred', 'err');
+});

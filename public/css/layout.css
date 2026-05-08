@@ -74,6 +74,11 @@
 }
 .search-close-btn:hover { color: var(--fg-bright); }
 
+/* ─── Shell entrance animations ─────────────────────────────────────────── */
+.app-topbar  { animation: rise 0.45s cubic-bezier(0.16,1,0.3,1) both; }
+.sidebar     { animation: rise 0.45s cubic-bezier(0.16,1,0.3,1) 50ms both; }
+.content-pane{ animation: rise 0.45s cubic-bezier(0.16,1,0.3,1) 100ms both; }
+
 /* ─── Top bar ────────────────────────────────────────────────────────────── */
 .app-topbar {
   display: grid;
@@ -201,6 +206,7 @@
   transition: background 0.1s;
   align-items: baseline;
 }
+.folder-tree-item.animating { animation: rise 0.28s cubic-bezier(0.16,1,0.3,1) calc(var(--i, 0) * 30ms) both; }
 .folder-tree-item:hover { background: var(--bg-hover); }
 .folder-tree-item.active {
   background: var(--bg-active);

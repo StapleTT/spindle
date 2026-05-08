@@ -163,7 +163,7 @@ const Search = (() => {
 
       row.innerHTML = `
         <div class="tr-top">
-          <div class="tr-from"><span class="pip"></span>${_esc(msg.from_name || msg.from_addr || '')}</div>
+          <div class="tr-from">${Avatar.html(msg.from_name, msg.from_addr, 'avatar avatar-row')}<span class="pip"></span>${_esc(msg.from_name || msg.from_addr || '')}</div>
           <div class="tr-time">${_esc(_formatDate(msg.date))}</div>
         </div>
         <div class="tr-subj">${_esc(msg.subject || '(no subject)')}</div>

@@ -11,6 +11,10 @@ const Sidebar = (() => {
   // Used to decide whether setActive() needs a full re-render or just a CSS update.
   let _renderedAcct = null;
 
+  // Which account's folder tree was open the last time render() ran.
+  // Used to gate folder-item entrance animations (only animate on first open).
+  let _renderedOpenAcct = null;
+
   // Override active account/folder used by renderFor() (e.g. search).
   // null = use App state. Cleared by setActive() when normal navigation resumes.
   let _renderOpts = null;
@@ -55,6 +59,10 @@ const Sidebar = (() => {
     }
 
     // ── Per-account rows + folder trees ───────────────────────────────
+    const openAcctStr = activeAcct !== 'all' ? String(activeAcct) : null;
+    const treeIsNew   = openAcctStr !== _renderedOpenAcct;
+    _renderedOpenAcct = openAcctStr;
+
     accounts.forEach(acct => {
       const acctIdStr = String(acct.id);
       const isOpen    = acctIdStr === String(activeAcct) && activeAcct !== 'all';
@@ -103,10 +111,19 @@ const Sidebar = (() => {
             <div class="ft-name">${esc(folder.name.toLowerCase())}</div>
             <div class="ft-count">${count}</div>`;
           fi.onclick = () => App.selectFolder(acct.id, folder.id, folder.name);
+          if (treeIsNew) {
+            fi.classList.add('animating');
+            fi.style.setProperty('--i', cached.indexOf(folder));
+          }
           inboxList.appendChild(fi);
         });
+      } else if (cached && cached.error) {
+        const err = document.createElement('div');
+        err.className = 'folder-tree-loading';
+        err.style.cssText = 'color:var(--fg-dimmer);font-style:italic';
+        err.textContent = 'could not load folders';
+        inboxList.appendChild(err);
       }
-      // If {error:true}: show nothing — account card still navigates to INBOX
     });
   }
 

@@ -108,6 +108,7 @@ const EmailList = (() => {
       );
 
       // Merge fulfilled results and sort by date descending
+      const failed  = results.filter(r => r.status === 'rejected');
       const allMsgs = results
         .filter(r => r.status === 'fulfilled')
         .flatMap(r => r.value)
@@ -118,6 +119,13 @@ const EmailList = (() => {
       _totalPages = 1;
 
       renderAllRows(list);
+
+      if (failed.length > 0) {
+        const note = document.createElement('div');
+        note.className = 'list-warn-note';
+        note.textContent = `${failed.length} account${failed.length !== 1 ? 's' : ''} failed to load`;
+        list.prepend(note);
+      }
     } catch (e) {
       list.innerHTML = `<div class="empty" style="padding:24px;height:auto">
         <div class="empty-sub">failed to load messages</div>
@@ -144,7 +152,7 @@ const EmailList = (() => {
       row.dataset.acctId = msg._accountId;
       row.innerHTML = `
         <div class="tr-top">
-          <div class="tr-from"><span class="pip"></span>${esc(msg.from_name || msg.from_addr || '')}</div>
+          <div class="tr-from">${Avatar.html(msg.from_name, msg.from_addr, 'avatar avatar-row')}<span class="pip"></span>${esc(msg.from_name || msg.from_addr || '')}</div>
           <div class="tr-time">${esc(formatDate(msg.date))}</div>
         </div>
         <div class="tr-subj">${esc(msg.subject || '(no subject)')}</div>
@@ -272,7 +280,7 @@ const EmailList = (() => {
       row.dataset.uid = msg.uid;
       row.innerHTML = `
         <div class="tr-top">
-          <div class="tr-from"><span class="pip"></span>${esc(msg.from_name || msg.from_addr || '')}</div>
+          <div class="tr-from">${Avatar.html(msg.from_name, msg.from_addr, 'avatar avatar-row')}<span class="pip"></span>${esc(msg.from_name || msg.from_addr || '')}</div>
           <div class="tr-time">${esc(formatDate(msg.date))}</div>
         </div>
         <div class="tr-subj">${esc(msg.subject || '(no subject)')}</div>
