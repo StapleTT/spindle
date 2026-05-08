@@ -92,10 +92,11 @@ app.use(session({
 // --- CSRF protection ---
 app.use(require('./src/middleware/csrf'));
 
-// --- Rate limiting for auth routes ---
+// --- Rate limiting for auth mutation routes (skips GET /me session check) ---
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10,
+  max: 20,
+  skip: (req) => req.method === 'GET',
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },

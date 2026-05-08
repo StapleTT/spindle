@@ -110,10 +110,24 @@ const App = (() => {
   }
 
   // ── Theme ─────────────────────────────────────────────────────────
+  let _mqListener = null;
+
   function applyTheme(theme) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+
+    // Remove any previously registered listener before deciding whether to re-add
+    if (_mqListener) {
+      mq.removeEventListener('change', _mqListener);
+      _mqListener = null;
+    }
+
     if (!theme || theme === 'system') {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.dataset.theme = prefersDark ? 'dark' : 'light';
+      document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
+      // Track OS changes only while the stored preference is 'system'
+      _mqListener = (e) => {
+        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
+      };
+      mq.addEventListener('change', _mqListener);
     } else {
       document.documentElement.dataset.theme = theme;
     }

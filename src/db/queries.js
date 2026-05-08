@@ -7,8 +7,8 @@ const getUserById = db.prepare(`SELECT * FROM users WHERE id = ?`);
 const getUserByUsername = db.prepare(`SELECT * FROM users WHERE username = ?`);
 const countUsers = db.prepare(`SELECT COUNT(*) AS count FROM users`);
 const insertUser = db.prepare(`
-  INSERT INTO users (username, password_hash, recovery_email, role, invite_code_used)
-  VALUES (@username, @password_hash, @recovery_email, @role, @invite_code_used)
+  INSERT INTO users (username, password_hash, recovery_email, role, invite_code_used, theme)
+  VALUES (@username, @password_hash, @recovery_email, @role, @invite_code_used, 'system')
 `);
 const updateUserTheme = db.prepare(`UPDATE users SET theme = ? WHERE id = ?`);
 const updateUserImages = db.prepare(`UPDATE users SET auto_load_images = ? WHERE id = ?`);
