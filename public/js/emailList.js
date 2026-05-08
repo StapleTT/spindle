@@ -165,6 +165,7 @@ const EmailList = (() => {
           r.classList.toggle('active', r.dataset.uid == msg.uid && r.dataset.acctId == msg._accountId));
         App.activeMsg = { uid: msg.uid, accountId: msg._accountId, folder: 'INBOX' };
         Reader.loadMessage(msg._accountId, 'INBOX', msg.uid);
+        if (typeof MobileNav !== 'undefined') MobileNav.close();
         if (msg.unread) {
           markReadInList(msg.uid);
           adjustUnreadCount(msg._accountId, -1);
@@ -374,6 +375,7 @@ const EmailList = (() => {
 
     App.activeMsg = { uid: msg.uid, accountId: _currentAcct, folder: _currentFolder };
     Reader.loadMessage(_currentAcct, _currentFolder, msg.uid);
+    if (typeof MobileNav !== 'undefined') MobileNav.close();
 
     // Optimistically mark as read in list and update sidebar count
     if (msg.unread) {

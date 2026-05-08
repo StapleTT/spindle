@@ -297,6 +297,7 @@
   width: 100%;
   max-width: 720px;
   max-height: 86vh;
+  max-height: 86dvh;
   background: var(--bg-2);
   border: 1px solid var(--line);
   display: flex;
@@ -378,6 +379,42 @@
 }
 .modal-footer .mf-left { display: flex; gap: 10px; }
 .modal-footer .btn     { width: auto; padding: 10px 18px; }
+
+/* ─── Mobile modals — full-screen sheet ─────────────────────────────────── */
+@media (max-width: 768px) {
+  .modal-bg {
+    align-items: flex-end;
+    padding: 0;
+    backdrop-filter: none; /* skip expensive blur on mobile */
+  }
+
+  .modal {
+    max-width: 100%;
+    max-height: 92dvh;
+    max-height: 92vh; /* fallback */
+    width: 100%;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.5);
+  }
+
+  /* Minimised compose makes no sense on mobile — keep it full-height */
+  .modal-bg.compose-minimized {
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: none;
+    pointer-events: auto;
+    align-items: flex-end;
+    padding-right: 0;
+  }
+  .modal-bg.compose-minimized .modal {
+    max-width: 100%;
+    pointer-events: all;
+  }
+  .modal-bg.compose-minimized .modal-body,
+  .modal-bg.compose-minimized .modal-footer { display: flex; }
+  .modal-bg.compose-minimized .modal-header { cursor: default; border-bottom: 1px solid var(--line); }
+}
 
 /* Compose rows */
 .compose-row {
@@ -727,4 +764,36 @@
   background: var(--line);
   border-radius: 2px;
   animation: shimmer 1.4s ease infinite;
+}
+
+/* ─── Mobile auth ────────────────────────────────────────────────────────── */
+@media (max-width: 520px) {
+  .auth-shell {
+    padding: 28px 16px 24px;
+    justify-content: flex-start;
+    padding-top: max(28px, env(safe-area-inset-top));
+  }
+
+  .auth-prompt,
+  .auth-logo-wrap,
+  .auth-tag,
+  .auth-rule,
+  .auth-status,
+  .auth-section-label,
+  .auth-footer,
+  .card {
+    max-width: 100%;
+  }
+
+  .auth-logo-wrap {
+    margin-bottom: 8px;
+  }
+
+  .auth-tag {
+    margin-bottom: 18px;
+  }
+
+  .card {
+    padding: 20px 16px;
+  }
 }

@@ -181,3 +181,58 @@
 .home-footer .links { display: flex; gap: 20px; }
 .home-footer a:hover { color: var(--fg-bright); }
 .home-footer .legal { color: var(--fg-dimmer); }
+
+/* ── Mobile ── */
+@media (max-width: 600px) {
+  .home {
+    padding: 20px 18px 18px;
+  }
+
+  .home-main {
+    gap: 22px;
+    padding: 28px 0;
+  }
+
+  .home-hero .word {
+    font-size: 52px;
+  }
+
+  .home-hero svg {
+    width: 60px;
+    height: 60px;
+  }
+
+  .home-hero {
+    gap: 14px;
+  }
+
+  .home-desc {
+    font-size: 13.5px;
+  }
+
+  .home-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .home-btn {
+    justify-content: center;
+    padding: 12px 18px;
+  }
+
+  .home-topbar .status {
+    display: none;
+  }
+
+  .home-footer {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .home-tag {
+    letter-spacing: 0.18em;
+    font-size: 10px;
+  }
+}

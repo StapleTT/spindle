@@ -82,6 +82,7 @@ const App = (() => {
     Sidebar.setActive(accountId, f);
     EmailList.load(accountId, f);
     Reader.showFolderEmpty();
+    if (typeof MobileNav !== 'undefined') MobileNav.showList();
   }
 
   function selectFolder(accountId, folder, folderName) {
@@ -93,6 +94,7 @@ const App = (() => {
     Sidebar.setActive(accountId, folder);
     EmailList.load(accountId, folder);
     Reader.showFolderEmpty();
+    if (typeof MobileNav !== 'undefined') MobileNav.showList();
   }
 
   function selectAllInboxes() {
@@ -104,6 +106,7 @@ const App = (() => {
     Sidebar.setActive('all', 'INBOX');
     EmailList.loadAll();
     Reader.showFolderEmpty();
+    if (typeof MobileNav !== 'undefined') MobileNav.showList();
   }
 
   // ── Theme ─────────────────────────────────────────────────────────
@@ -209,6 +212,14 @@ const App = (() => {
     }, 60_000);
   }
 
+  // Resets the selection guard without re-rendering anything.
+  // Called by MobileNav when returning to the sidebar so the user can
+  // tap the same inbox again to navigate back to the list.
+  function clearSelection() {
+    state.activeAcct   = null;
+    state.activeFolder = 'INBOX';
+  }
+
   return {
     init,
     loadAccounts,
@@ -216,6 +227,7 @@ const App = (() => {
     selectAccount,
     selectFolder,
     selectAllInboxes,
+    clearSelection,
     toggleTheme,
     toggleImages,
     logout,
