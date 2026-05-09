@@ -72,9 +72,6 @@ html, body {
   letter-spacing: 0.01em;
   min-height: 100vh;
   min-height: 100dvh;
-  /* Prevent the page itself from scrolling on mobile (app-shell handles scroll internally) */
-  overflow: hidden;
-  height: 100%;
 }
 
 a { color: inherit; text-decoration: none; }
