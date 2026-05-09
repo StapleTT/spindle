@@ -181,10 +181,13 @@ router.get('/:accountId/search', async (req, res) => {
 
   // ── All accounts ───────────────────────────────────────────────────────────
   if (req.params.accountId === 'all') {
-    const db = require('../db/queries');
     const accounts = db.getEmailAccountsByUser.all(req.user.id);
     const results  = await Promise.allSettled(
-      accounts.map(async account => {
+      accounts.map(async acctRow => {
+        // getEmailAccountsByUser omits OAuth tokens; fetch the full row so
+        // Gmail/Outlook search can authenticate correctly.
+        const account = db.getEmailAccountById.get(acctRow.id);
+        if (!account) return [];
         const svc  = getService(account);
         if (typeof svc.searchMessages !== 'function') return [];
         const data = await svc.searchMessages(account, sanitizedQ, sanitizedField, sanitizedFolder, 1, limit);
