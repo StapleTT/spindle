@@ -1,6 +1,6 @@
 {
   "name": "spindle",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Centralized self-hosted email client",
   "main": "server.js",
   "scripts": {
