@@ -210,16 +210,16 @@ router.post('/recovery/request', async (req, res) => {
     } else {
       try {
         const nodemailer = require('nodemailer');
-        const port   = parseInt(process.env.SYSTEM_SMTP_PORT) || 587;
-        const secure = port === 465; // true for SSL, false for STARTTLS
+        const port   = parseInt(process.env.SYSTEM_SMTP_PORT) || 25;
+        const secure = port === 465; // true for SSL, false for STARTTLS/plain
+        const smtpUser = process.env.SYSTEM_SMTP_USER;
+        const smtpPass = process.env.SYSTEM_SMTP_PASS;
         const transporter = nodemailer.createTransport({
           host: process.env.SYSTEM_SMTP_HOST,
           port,
           secure,
-          auth: {
-            user: process.env.SYSTEM_SMTP_USER,
-            pass: process.env.SYSTEM_SMTP_PASS,
-          },
+          // Only include auth when credentials are provided (local Postfix doesn't need them)
+          ...(smtpUser && smtpPass ? { auth: { user: smtpUser, pass: smtpPass } } : {}),
         });
 
         const appUrl   = process.env.APP_URL || 'http://localhost:3000';
