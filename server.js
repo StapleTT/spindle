@@ -145,6 +145,8 @@ app.use((req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Spindle running on http://localhost:${PORT}`);
+  // Signal PM2 that the app is ready (enables listen-timeout hang detection)
+  if (process.send) process.send('ready');
 });
 
 module.exports = app;
