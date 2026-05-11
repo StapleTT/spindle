@@ -3,7 +3,7 @@ const bcrypt = require('bcrypt');
 const db = require('../db/schema');
 const q = require('../db/queries');
 const requireAuth = require('../middleware/requireAuth');
-const { randomToken, hashToken, INVITE_CODE_REGEX } = require('../utils/crypto');
+const { randomToken, hashToken, randomInviteCode, INVITE_CODE_REGEX } = require('../utils/crypto');
 
 const BCRYPT_ROUNDS = 12;
 
@@ -264,6 +264,19 @@ router.post('/recovery/reset', async (req, res) => {
   q.markRecoveryTokenUsed.run(record.id);
 
   res.json({ ok: true });
+});
+
+// POST /api/auth/bootstrap-invite
+// Generates the very first invite code so the admin account can be created.
+// Only works when no users exist. No auth or CSRF required (there is no session yet).
+router.post('/bootstrap-invite', (req, res) => {
+  const { count } = q.countUsers.get();
+  if (count > 0) {
+    return res.status(403).json({ error: 'Instance already has users' });
+  }
+  const code = randomInviteCode();
+  q.insertInviteCode.run({ code, created_by: null });
+  res.json({ code });
 });
 
 module.exports = router;

@@ -31,7 +31,7 @@ For production use with auto-start and crash recovery, see [Production Deploymen
 The first registered user is automatically granted admin privileges. Because registration requires an invite code, generate one via the API before navigating to the app:
 
 ```bash
-curl -s -X POST http://localhost:3000/api/admin/invite-codes
+curl -s -X POST http://localhost:3000/api/auth/bootstrap-invite
 ```
 
 The response contains a `XXXX-XXXX-XXXX` code ready to use. Navigate to `/auth`, register with it, and you are in. All subsequent invite codes can be generated and managed from the admin panel in the sidebar.

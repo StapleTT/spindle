@@ -62,7 +62,7 @@ npm start
 The server starts on `http://localhost:3000` by default. The first registered user is automatically granted admin privileges. Generate an invite code before registering:
 
 ```bash
-curl -s -X POST http://localhost:3000/api/admin/invite-codes
+curl -s -X POST http://localhost:3000/api/auth/bootstrap-invite
 ```
 
 For full setup instructions, see the [wiki](wiki/Home.md).
