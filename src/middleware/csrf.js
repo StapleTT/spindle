@@ -5,8 +5,9 @@
  * All non-GET/HEAD/OPTIONS requests must supply it as the X-CSRF-Token header.
  *
  * Exemptions:
- *   /api/auth/login, /api/auth/register — no session exists yet
- *   /api/auth/recovery/*               — protected by time-limited one-use token
+ *   /api/auth/login, /api/auth/register  — no session exists yet
+ *   /api/auth/bootstrap-invite          — only works when no users exist; no session possible
+ *   /api/auth/recovery/*                — protected by time-limited one-use token
  *   /api/oauth/*                        — protected by the OAuth `state` parameter
  */
 
@@ -17,6 +18,7 @@ const CSRF_EXEMPT = new Set([
   '/api/auth/register',
   '/api/auth/recovery/request',
   '/api/auth/recovery/reset',
+  '/api/auth/bootstrap-invite',
 ]);
 
 function csrf(req, res, next) {
