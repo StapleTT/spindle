@@ -116,8 +116,10 @@ router.post('/register', async (req, res) => {
 
   // Wrap count-check + insert in a transaction so two concurrent first-registrations
   // cannot both observe count=0 and both become admin.
+  // node:sqlite's DatabaseSync uses db.exec() for BEGIN/COMMIT — no .transaction() method.
   let newUserId, role;
-  const register = db.transaction(() => {
+  try {
+    db.exec('BEGIN');
     const { count } = q.countUsers.get();
     role = count === 0 ? 'admin' : 'user';
     const result = q.insertUser.run({
@@ -129,11 +131,9 @@ router.post('/register', async (req, res) => {
     });
     newUserId = result.lastInsertRowid;
     q.markInviteCodeUsed.run({ used_by: newUserId, code: invite_code });
-  });
-
-  try {
-    register();
+    db.exec('COMMIT');
   } catch (e) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
     console.error('[register] transaction failed:', e.message);
     return res.status(500).json({ error: 'Registration failed' });
   }

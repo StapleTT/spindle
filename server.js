@@ -11,9 +11,10 @@ require('./src/db/schema');
 
 const app = express();
 
-// Trust X-Forwarded-For only from loopback (nginx on the same machine).
-// Connections that arrive directly on a non-loopback socket cannot spoof this header.
-app.set('trust proxy', 'loopback');
+// TRUST_PROXY: IP/subnet of your reverse proxy (e.g. '10.0.0.1').
+// Set in .env when nginx runs on a separate machine; defaults to 'loopback' (same machine).
+const _trustProxy = process.env.TRUST_PROXY || 'loopback';
+app.set('trust proxy', /^\d+$/.test(_trustProxy) ? parseInt(_trustProxy, 10) : _trustProxy);
 
 // --- Security middleware ---
 app.use(helmet({
