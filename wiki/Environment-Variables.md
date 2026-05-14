@@ -18,7 +18,7 @@ cp .env.example .env
 | `APP_URL` | Yes | Public URL of your instance, e.g. `https://mail.yourdomain.com`. Used for OAuth callbacks and recovery links. |
 | `TRUST_PROXY` | No | IP or subnet of your reverse proxy, e.g. `192.168.1.10`. Required when nginx runs on a **separate machine**. Omit when nginx is on the same host (loopback is trusted by default). See [Reverse Proxy](Reverse-Proxy.md). |
 
-> `ENCRYPTION_KEY` is critical. Spindle now **refuses to start** if it is absent or malformed — there is no insecure fallback. If you change the key, all connected accounts will need to be re-added because the stored credentials cannot be decrypted with a different key.
+> `ENCRYPTION_KEY` is critical. Spindle now **refuses to start** if it is absent or malformed; there is no insecure fallback. If you change the key, all connected accounts will need to be re-added because the stored credentials cannot be decrypted with a different key.
 
 > `SESSION_SECRET` is equally critical. It is used to sign session cookies; anyone who knows it can forge a valid cookie for any user. Spindle **refuses to start** if it is absent. Rotate it immediately if you suspect it has been exposed, then invalidate all active sessions by restarting the server (sessions stored in the DB will be orphaned and re-login will be required).
 

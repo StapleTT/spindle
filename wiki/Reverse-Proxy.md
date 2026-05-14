@@ -6,7 +6,7 @@ There are two common setups depending on whether nginx runs on the **same machin
 
 ---
 
-## Scenario A — nginx on the same machine
+## Scenario A: nginx on the same machine
 
 Leave `TRUST_PROXY` unset. Spindle defaults to trusting only loopback (`127.0.0.1` / `::1`).
 
@@ -35,7 +35,7 @@ server {
 }
 ```
 
-**Firewall** — block external access to port 3000 so clients cannot reach Express directly:
+**Firewall:** block external access to port 3000 so clients cannot reach Express directly:
 
 ```bash
 # ufw
@@ -48,7 +48,7 @@ iptables -A INPUT -p tcp --dport 3000 -j DROP
 
 ---
 
-## Scenario B — nginx on a separate machine
+## Scenario B: nginx on a separate machine
 
 Set `TRUST_PROXY` in `.env` to the **private IP of the nginx server**. Spindle will trust `X-Forwarded-*` headers only from that address.
 
@@ -83,7 +83,7 @@ server {
 }
 ```
 
-**Firewall** (on the Node.js machine) — allow port 3000 only from the nginx machine's IP:
+**Firewall** (on the Node.js machine): allow port 3000 only from the nginx machine's IP:
 
 ```bash
 # ufw
@@ -95,7 +95,7 @@ iptables -A INPUT -p tcp --dport 3000 -s 192.168.1.10 -j ACCEPT
 iptables -A INPUT -p tcp --dport 3000 -j DROP
 ```
 
-> **Why TRUST_PROXY matters:** express-session only sets the `Secure` cookie attribute when `req.secure` is true. With HTTPS terminated at nginx, Express receives a plain HTTP connection — it only learns the original scheme via `X-Forwarded-Proto: https`. If the proxy's IP is not trusted, that header is ignored, `req.secure` stays false, and the browser never receives the session cookie. Login appears to succeed (HTTP 200) but every subsequent request returns 401 because no cookie was stored.
+> **Why TRUST_PROXY matters:** express-session only sets the `Secure` cookie attribute when `req.secure` is true. With HTTPS terminated at nginx, Express receives a plain HTTP connection; it only learns the original scheme via `X-Forwarded-Proto: https`. If the proxy's IP is not trusted, that header is ignored, `req.secure` stays false, and the browser never receives the session cookie. Login appears to succeed (HTTP 200) but every subsequent request returns 401 because no cookie was stored.
 
 ---
 
