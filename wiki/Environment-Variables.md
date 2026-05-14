@@ -16,6 +16,7 @@ cp .env.example .env
 | `SESSION_SECRET` | **Yes** | Long random string used to sign session cookies. Generate with `openssl rand -hex 32`. **Spindle will not start if this is missing.** |
 | `ENCRYPTION_KEY` | **Yes** | 64-character hex string (32 bytes) for AES-256-GCM encryption of stored credentials. Generate with `openssl rand -hex 32`. **Spindle will not start if this is missing or not exactly 64 hex characters.** |
 | `APP_URL` | Yes | Public URL of your instance, e.g. `https://mail.yourdomain.com`. Used for OAuth callbacks and recovery links. |
+| `TRUST_PROXY` | No | IP or subnet of your reverse proxy, e.g. `192.168.1.10`. Required when nginx runs on a **separate machine**. Omit when nginx is on the same host (loopback is trusted by default). See [Reverse Proxy](Reverse-Proxy.md). |
 
 > `ENCRYPTION_KEY` is critical. Spindle now **refuses to start** if it is absent or malformed — there is no insecure fallback. If you change the key, all connected accounts will need to be re-added because the stored credentials cannot be decrypted with a different key.
 
