@@ -9,6 +9,15 @@ const smtpService    = require('../services/smtp');
 
 const MAX_FILE_BYTES  = 10 * 1024 * 1024;  // 10 MB per file
 const MAX_TOTAL_BYTES = 25 * 1024 * 1024;  // 25 MB total
+const MAX_RECIPIENTS  = 50;
+
+// Allowlist for Content-Type values supplied via query string in attachment downloads
+const SAFE_MIME_RE = /^[a-zA-Z0-9][a-zA-Z0-9!#$&\-^_.+]{0,62}\/[a-zA-Z0-9][a-zA-Z0-9!#$&\-^_.+]{0,62}$/;
+
+function svcError(res, e) {
+  console.error('[email]', e.message);
+  res.status(500).json({ error: e.message });
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -51,7 +60,7 @@ router.get('/:accountId/unread', async (req, res) => {
     const count = await getService(account).getUnreadCount(account);
     res.json({ unreadCount: count });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -63,7 +72,7 @@ router.get('/:accountId/folders', async (req, res) => {
     const folders = await getService(account).getFolders(account);
     res.json(folders);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -80,7 +89,7 @@ router.get('/:accountId/messages', async (req, res) => {
     const result = await getService(account).fetchMessages(account, folder, page, limit);
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -96,7 +105,7 @@ router.get('/:accountId/messages/:uid', async (req, res) => {
     const message = await getService(account).fetchMessage(account, folder, uid);
     res.json(message);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -113,7 +122,7 @@ router.patch('/:accountId/messages/:uid/read', async (req, res) => {
     await getService(account).markRead(account, folder, uid, read);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -129,7 +138,7 @@ router.post('/:accountId/messages/:uid/archive', async (req, res) => {
     await getService(account).archiveMessage(account, folder, uid);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -145,7 +154,7 @@ router.post('/:accountId/messages/:uid/restore', async (req, res) => {
     await getService(account).restoreMessage(account, folder, uid);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -163,7 +172,7 @@ router.post('/:accountId/messages/:uid/move', async (req, res) => {
     await getService(account).moveMessage(account, fromFolder, toFolder, uid);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -221,7 +230,7 @@ router.get('/:accountId/search', async (req, res) => {
     const data = await svc.searchMessages(account, sanitizedQ, sanitizedField, sanitizedFolder, page, limit);
     res.json(data);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -234,7 +243,8 @@ router.get('/:accountId/messages/:uid/attachments/:attachmentId', async (req, re
   const uid          = parseUid(account, req.params.uid);
   const attachmentId = req.params.attachmentId;
   const filename     = String(req.query.filename || 'attachment').replace(/[^a-zA-Z0-9._\- ]/g, '_');
-  const contentType  = String(req.query.contentType || 'application/octet-stream');
+  const rawCt        = String(req.query.contentType || '');
+  const contentType  = SAFE_MIME_RE.test(rawCt) ? rawCt : 'application/octet-stream';
 
   const svc = getService(account);
   if (typeof svc.fetchAttachment !== 'function') {
@@ -252,7 +262,7 @@ router.get('/:accountId/messages/:uid/attachments/:attachmentId', async (req, re
     res.setHeader('Content-Length', buf.length);
     res.send(buf);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -268,7 +278,7 @@ router.get('/:accountId/threads/:threadId', async (req, res) => {
     const messages = await getService(account).fetchThread(account, threadId, folder);
     res.json(messages);
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -284,7 +294,7 @@ router.delete('/:accountId/messages/:uid', async (req, res) => {
     await getService(account).deleteMessage(account, folder, uid);
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 
@@ -303,6 +313,11 @@ router.post('/:accountId/send', (req, res, next) => {
 
   const { to, cc, bcc, subject, body, replyTo } = req.body;
   if (!to || !to.trim()) return res.status(400).json({ error: 'Recipient (to) is required' });
+
+  const _rcpt = (s) => (s ? String(s).split(',').filter(p => p.trim()).length : 0);
+  if (_rcpt(to) + _rcpt(cc) + _rcpt(bcc) > MAX_RECIPIENTS) {
+    return res.status(400).json({ error: `Too many recipients (max ${MAX_RECIPIENTS} total)` });
+  }
 
   // Enforce total attachment size limit server-side
   const files = req.files || [];
@@ -329,7 +344,7 @@ router.post('/:accountId/send', (req, res, next) => {
     }
     res.json({ ok: true });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    svcError(res, e);
   }
 });
 

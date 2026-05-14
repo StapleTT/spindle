@@ -15,7 +15,7 @@ function buildConfig(account, password) {
       host: account.imap_host,
       port: account.imap_port,
       tls: !!account.imap_secure,
-      tlsOptions: { rejectUnauthorized: false },
+      tlsOptions: { rejectUnauthorized: process.env.ALLOW_SELF_SIGNED_TLS !== 'true' },
       authTimeout: 15000,
       connTimeout: 15000,
     },

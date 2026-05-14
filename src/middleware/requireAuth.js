@@ -5,7 +5,7 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: 'Not authenticated' });
   }
   const user = getUserById.get(req.session.userId);
-  if (!user) {
+  if (!user || user.paused) {
     req.session.destroy(() => {});
     return res.status(401).json({ error: 'Not authenticated' });
   }

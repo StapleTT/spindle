@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const requireAuth = require('../middleware/requireAuth');
 const requireAdmin = require('../middleware/requireAdmin');
 const q = require('../db/queries');
+const imap = require('../services/imap');
 const { randomInviteCode, INVITE_CODE_REGEX } = require('../utils/crypto');
 
 router.use(requireAuth, requireAdmin);
@@ -54,12 +55,17 @@ router.delete('/users/:id', async (req, res) => {
   const match = await bcrypt.compare(password, req.user.password_hash);
   if (!match) return res.status(403).json({ error: 'Incorrect password' });
 
+  // Evict any open IMAP connections before the accounts row cascade-deletes
+  const targetAccounts = q.getEmailAccountsByUser.all(targetId);
+  for (const acct of targetAccounts) imap.evict(acct.id);
+
   if (target.invite_code_used) {
     q.revokeInviteCode.run(target.invite_code_used);
   }
   q.clearInviteCodesUsedBy.run(targetId);
   q.clearInviteCodesCreatedBy.run(targetId);
   q.deleteUser.run(targetId);
+  q.deleteUserSessions.run(targetId);
 
   res.json({ ok: true });
 });

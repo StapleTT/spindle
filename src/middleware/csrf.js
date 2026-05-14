@@ -34,7 +34,12 @@ function csrf(req, res, next) {
   if (CSRF_EXEMPT.has(req.path) || req.path.startsWith('/api/oauth/')) return next();
 
   const provided = req.headers['x-csrf-token'];
-  if (!provided || !req.session || provided !== req.session.csrfToken) {
+  if (!provided || !req.session || !req.session.csrfToken) {
+    return res.status(403).json({ error: 'CSRF token missing or invalid' });
+  }
+  const a = Buffer.from(provided);
+  const b = Buffer.from(req.session.csrfToken);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
     return res.status(403).json({ error: 'CSRF token missing or invalid' });
   }
 

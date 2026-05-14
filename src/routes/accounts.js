@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const net    = require('net');
 const bcrypt = require('bcrypt');
 const requireAuth = require('../middleware/requireAuth');
 const db = require('../db/queries');
@@ -10,8 +11,21 @@ router.use(requireAuth);
 // ── Validation helpers ──────────────────────────────────────────────────────
 
 const EMAIL_RE    = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-// Hostnames: letters, digits, hyphens, dots — no leading/trailing dot or hyphen
 const HOSTNAME_RE = /^(?:[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$/;
+
+// Ranges that must never be reachable as IMAP/SMTP targets (SSRF prevention)
+const BLOCKED_HOST_RE = [
+  /^localhost$/i,
+  /^127\./,
+  /^0\.0\.0\.0$/,
+  /^10\./,
+  /^172\.(1[6-9]|2\d|3[01])\./,
+  /^192\.168\./,
+  /^169\.254\./,   // link-local / cloud metadata endpoint
+  /^fc00:/i,
+  /^fe80:/i,
+  /^::1$/,
+];
 
 function validPort(v) {
   const n = parseInt(v, 10);
@@ -19,7 +33,10 @@ function validPort(v) {
 }
 
 function validHost(h) {
-  return typeof h === 'string' && h.length <= 253 && HOSTNAME_RE.test(h);
+  if (typeof h !== 'string' || h.length > 253) return false;
+  if (BLOCKED_HOST_RE.some(re => re.test(h))) return false;
+  if (net.isIP(h)) return true; // raw IP that passed the blocklist
+  return HOSTNAME_RE.test(h);
 }
 
 // GET /api/accounts — list accounts for the logged-in user
@@ -79,6 +96,12 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid IMAP username' });
   }
 
+  // Enforce per-user account cap (each account opens a persistent IMAP connection)
+  const existing = db.getEmailAccountsByUser.all(req.user.id);
+  if (existing.length >= 20) {
+    return res.status(400).json({ error: 'Maximum of 20 email accounts per user' });
+  }
+
   // Test the connection before saving
   try {
     await imap.testConnection({
@@ -93,9 +116,6 @@ router.post('/', async (req, res) => {
   }
 
   const encrypted = encrypt(password);
-
-  // Determine sort order (append at end)
-  const existing = db.getEmailAccountsByUser.all(req.user.id);
   const sortOrder = existing.length;
 
   db.insertEmailAccount.run({

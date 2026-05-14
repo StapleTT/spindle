@@ -23,12 +23,6 @@ const setUserPaused  = db.prepare(`UPDATE users SET paused = ? WHERE id = ?`);
 // --- Invite Codes ---
 
 const getInviteCode = db.prepare(`SELECT * FROM invite_codes WHERE code = ?`);
-const getInviteCodeByCode = db.prepare(`
-  SELECT ic.*, u.username AS used_by_username
-  FROM invite_codes ic
-  LEFT JOIN users u ON ic.used_by = u.id
-  WHERE ic.code = ?
-`);
 const getAllInviteCodes = db.prepare(`
   SELECT ic.*, creator.username AS created_by_username, used.username AS used_by_username
   FROM invite_codes ic
@@ -49,6 +43,10 @@ const deleteInviteCode = db.prepare(`DELETE FROM invite_codes WHERE code = ?`);
 // Nullify invite_code references before deleting a user (no ON DELETE CASCADE on those columns)
 const clearInviteCodesUsedBy    = db.prepare(`UPDATE invite_codes SET used_by    = NULL WHERE used_by    = ?`);
 const clearInviteCodesCreatedBy = db.prepare(`UPDATE invite_codes SET created_by = NULL WHERE created_by = ?`);
+// Remove all active sessions belonging to a user (e.g. after admin deletion)
+const deleteUserSessions = db.prepare(
+  `DELETE FROM sessions WHERE CAST(json_extract(sess, '$.userId') AS INTEGER) = ?`
+);
 
 // --- Email Accounts ---
 
@@ -117,7 +115,6 @@ module.exports = {
 
   // Invite Codes
   getInviteCode,
-  getInviteCodeByCode,
   getAllInviteCodes,
   insertInviteCode,
   markInviteCodeUsed,
@@ -125,6 +122,7 @@ module.exports = {
   deleteInviteCode,
   clearInviteCodesUsedBy,
   clearInviteCodesCreatedBy,
+  deleteUserSessions,
 
   // Email Accounts
   getEmailAccountsByUser,

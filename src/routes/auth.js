@@ -112,26 +112,37 @@ router.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'Username already taken' });
   }
 
-  const { count } = q.countUsers.get();
-  const role = count === 0 ? 'admin' : 'user';
-
   const password_hash = await bcrypt.hash(password, BCRYPT_ROUNDS);
 
-  const result = q.insertUser.run({
-    username,
-    password_hash,
-    recovery_email: recovery_email || null,
-    role,
-    invite_code_used: invite_code,
+  // Wrap count-check + insert in a transaction so two concurrent first-registrations
+  // cannot both observe count=0 and both become admin.
+  let newUserId, role;
+  const register = db.transaction(() => {
+    const { count } = q.countUsers.get();
+    role = count === 0 ? 'admin' : 'user';
+    const result = q.insertUser.run({
+      username,
+      password_hash,
+      recovery_email: recovery_email || null,
+      role,
+      invite_code_used: invite_code,
+    });
+    newUserId = result.lastInsertRowid;
+    q.markInviteCodeUsed.run({ used_by: newUserId, code: invite_code });
   });
 
-  q.markInviteCodeUsed.run({ used_by: result.lastInsertRowid, code: invite_code });
+  try {
+    register();
+  } catch (e) {
+    console.error('[register] transaction failed:', e.message);
+    return res.status(500).json({ error: 'Registration failed' });
+  }
 
   req.session.regenerate((err) => {
     if (err) return res.status(500).json({ error: 'Session error' });
-    req.session.userId = result.lastInsertRowid;
+    req.session.userId = newUserId;
     req.session.role = role;
-    res.status(201).json({ id: result.lastInsertRowid, username, role, theme: 'system', auto_load_images: false });
+    res.status(201).json({ id: newUserId, username, role, theme: 'system', auto_load_images: false });
   });
 });
 

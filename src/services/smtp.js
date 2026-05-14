@@ -18,8 +18,7 @@ function createTransport(account) {
       user: account.imap_user || account.email_address,
       pass: password,
     },
-    // Self-hosted servers frequently use self-signed certs; don't reject them.
-    tls: { rejectUnauthorized: false },
+    tls: { rejectUnauthorized: process.env.ALLOW_SELF_SIGNED_TLS !== 'true' },
   });
 }
 

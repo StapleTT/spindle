@@ -308,7 +308,12 @@ const Toast = (() => {
   function show(message, kind = '') {
     const el = document.createElement('div');
     el.className = `toast ${kind ? 'toast-' + kind : ''}`;
-    el.innerHTML = `<span class="toast-dot"></span><span>${message}</span>`;
+    const dot = document.createElement('span');
+    dot.className = 'toast-dot';
+    const msg = document.createElement('span');
+    msg.textContent = String(message);
+    el.appendChild(dot);
+    el.appendChild(msg);
     getContainer().appendChild(el);
     setTimeout(() => {
       el.style.transition = 'opacity 0.3s';
