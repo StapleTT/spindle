@@ -13,11 +13,13 @@ cp .env.example .env
 | Variable | Required | Description |
 |---|---|---|
 | `PORT` | No | Port the server listens on. Defaults to `3000`. |
-| `SESSION_SECRET` | Yes | Long random string used to sign session cookies. Generate with `openssl rand -hex 32`. |
-| `ENCRYPTION_KEY` | Yes | 64-character hex string (32 bytes) for AES-256-GCM encryption of stored credentials. Generate with `openssl rand -hex 32`. |
+| `SESSION_SECRET` | **Yes** | Long random string used to sign session cookies. Generate with `openssl rand -hex 32`. **Spindle will not start if this is missing.** |
+| `ENCRYPTION_KEY` | **Yes** | 64-character hex string (32 bytes) for AES-256-GCM encryption of stored credentials. Generate with `openssl rand -hex 32`. **Spindle will not start if this is missing or not exactly 64 hex characters.** |
 | `APP_URL` | Yes | Public URL of your instance, e.g. `https://mail.yourdomain.com`. Used for OAuth callbacks and recovery links. |
 
-> `ENCRYPTION_KEY` is critical. Without it, stored IMAP passwords and OAuth tokens cannot be decrypted. If you change it, all connected accounts will need to be re-added.
+> `ENCRYPTION_KEY` is critical. Spindle now **refuses to start** if it is absent or malformed — there is no insecure fallback. If you change the key, all connected accounts will need to be re-added because the stored credentials cannot be decrypted with a different key.
+
+> `SESSION_SECRET` is equally critical. It is used to sign session cookies; anyone who knows it can forge a valid cookie for any user. Spindle **refuses to start** if it is absent. Rotate it immediately if you suspect it has been exposed, then invalidate all active sessions by restarting the server (sessions stored in the DB will be orphaned and re-login will be required).
 
 > `APP_URL` must match the exact URL your users access. OAuth callbacks and password reset links are built from this value.
 

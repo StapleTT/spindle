@@ -1,0 +1,307 @@
+/* ── Render helpers ────────────────────────────────────────────── */
+const SVG_MARK = (sz) => `<svg width="${sz}" height="${sz}" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style="display:inline-block;vertical-align:middle;flex-shrink:0">
+  <path d="M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 50 6 L 51.6 50 L 48.4 50 Z" fill="currentColor"/>
+  <rect x="48.6" y="50" width="2.8" height="40" fill="currentColor"/>
+  <ellipse cx="50" cy="92" rx="9" ry="1.8" fill="currentColor"/>
+</svg>`;
+
+const LOCKUP = (sz, gap) =>
+  `<span style="display:inline-flex;align-items:center;gap:${gap}px;line-height:1">${SVG_MARK(sz*1.3)}<span style="font-size:${sz}px;font-weight:600;letter-spacing:0.02em">spindle</span></span>`;
+
+const hero = (tags, cmd) =>
+  `<div class="auth-prompt"><span class="prompt-path">~/spindle&nbsp;$&nbsp;</span><span class="prompt-cmd">./auth.sh</span><span class="prompt-flag">&nbsp;${cmd}</span><span class="cursor"></span></div>
+   <div class="auth-logo-wrap">${LOCKUP(36,14)}</div>
+   <div class="auth-tag">${tags.map(t=>`<span>${t}</span>`).join('<span class="sep">·</span>')}</div>`;
+
+const statusLine = (kind, html) =>
+  `<div class="auth-status"><span class="dot ${kind}"></span><span>${html}</span></div>`;
+
+const secLabel = (text) =>
+  `<div class="auth-section-label"><span class="slash">//</span>${text}</div>`;
+
+const fld = (label, inp, errId, opt) =>
+  `<div class="field">
+     <div class="field-label"><span class="slash">//</span>${label}${opt?'<span class="opt">— optional</span>':''}</div>
+     ${inp}
+     <div class="field-error" id="${errId}" style="display:none"></div>
+   </div>`;
+
+const authFooter = (left, right) =>
+  `<div class="auth-footer"><div>${left}</div><div>${right}</div></div>`;
+
+/* ── API ─────────────────────────────────────────────────────────── */
+async function post(url, body) {
+  try {
+    const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    return { ok: r.ok, data: await r.json() };
+  } catch { return { ok:false, data:{ error:'Network error' } }; }
+}
+
+/* ── Error helpers ───────────────────────────────────────────────── */
+function showErr(id, msg) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? 'flex' : 'none';
+  const sib = el.previousElementSibling;
+  const inp = sib && (sib.classList.contains('input') ? sib : sib.querySelector && sib.querySelector('.input'));
+  if (inp) inp.classList.toggle('error', !!msg);
+}
+const clearErrs = (...ids) => ids.forEach(id => showErr(id,''));
+
+/* ── View router ─────────────────────────────────────────────────── */
+let VIEW = null;
+function go(v, ...args) {
+  VIEW = v;
+  const root = document.getElementById('root');
+  root.className = '';
+  void root.offsetWidth; // force reflow so animation restarts between views
+  root.className = 'page-enter';
+  if (v === 'login')    { root.innerHTML = loginHTML();    wireLogin(); }
+  if (v === 'register') { root.innerHTML = regHTML();      wireReg(); }
+  if (v === 'recover')  { root.innerHTML = recoverHTML(...args); if (!args[0]) wireRecover(); }
+}
+
+/* ═══════════════════  LOGIN  ═══════════════════════════════════════ */
+function loginHTML() {
+  return `<div class="auth-shell">
+    ${hero(['centralized mail','secure access'],'--login')}
+    ${statusLine('','system ready &nbsp;—&nbsp; authenticate to continue')}
+    ${secLabel('credentials')}
+    <div class="card">
+      ${fld('username', `<input class="input" id="l-u" placeholder="your username" autocomplete="off">`, 'l-ue')}
+      ${fld('password',
+        `<div class="input-wrap">
+           <input class="input" id="l-p" type="password" placeholder="············">
+           <span class="input-suffix" id="l-pt">show</span>
+         </div>`,
+        'l-pe')}
+      <button class="btn" id="l-go">[ authenticate ] <span class="ret">↵</span></button>
+    </div>
+    ${authFooter(
+      `<a id="l-recover">forgot password <span class="arrow">↗</span></a>`,
+      `<a id="l-register">create account <span class="arrow">↗</span></a>`
+    )}
+  </div>`;
+}
+function wireLogin() {
+  const pEl = document.getElementById('l-p');
+  const tog = document.getElementById('l-pt');
+  const btn = document.getElementById('l-go');
+  tog.onclick = () => { const s=pEl.type==='text'; pEl.type=s?'password':'text'; tog.textContent=s?'show':'hide'; };
+  async function submit() {
+    const u = document.getElementById('l-u').value.trim();
+    const p = pEl.value;
+    clearErrs('l-ue','l-pe');
+    let v = true;
+    if (!u) { showErr('l-ue','username required'); v=false; }
+    if (!p) { showErr('l-pe','password required'); v=false; }
+    if (!v) return;
+    btn.disabled=true; btn.innerHTML='[ authenticating… ]';
+    const res = await post('/api/auth/login',{username:u,password:p});
+    if (res.ok) { await new Promise(r => setTimeout(r, 700)); location.href='/inbox'; return; }
+    btn.disabled=false; btn.innerHTML='[ authenticate ] <span class="ret">↵</span>';
+    showErr('l-pe', res.data.error || 'authentication failed');
+  }
+  btn.onclick = submit;
+  document.getElementById('l-recover').onclick = () => go('recover');
+  document.getElementById('l-register').onclick = () => go('register');
+  document.addEventListener('keydown', function h(e){ if(e.key==='Enter'&&VIEW==='login'){ document.removeEventListener('keydown',h); submit(); } });
+}
+
+/* ═══════════════════  REGISTER  ════════════════════════════════════ */
+function regHTML() {
+  return `<div class="auth-shell">
+    ${hero(['new account','first-time setup'],'--register')}
+    <div class="auth-rule"></div>
+    ${secLabel('account details')}
+    <div class="card">
+      ${fld('invite code', `<input class="input" id="r-ic" placeholder="XXXX-XXXX-XXXX" autocomplete="off">`, 'r-ice')}
+      ${fld('username',    `<input class="input" id="r-u"  placeholder="choose a username" maxlength="15" autocomplete="off">`, 'r-ue')}
+      ${fld('recovery email',
+        `<input class="input" id="r-em" type="email" placeholder="for account recovery only" autocomplete="off">`,
+        'r-eme', true)}
+      ${fld('password',
+        `<div class="input-wrap">
+           <input class="input" id="r-p" type="password" placeholder="············">
+           <span class="input-suffix" id="r-pt">show</span>
+         </div>
+         <div class="req-status dash" id="rq-st">— no password</div>
+         <ul class="req-list">
+           <li id="rq-len">at least 12 characters</li>
+           <li id="rq-up">uppercase letter</li>
+           <li id="rq-num">number</li>
+           <li id="rq-sym">symbol (!@#$…)</li>
+         </ul>`,
+        'r-pe')}
+      ${fld('confirm password',
+        `<div class="input-wrap">
+           <input class="input" id="r-cp" type="password" placeholder="············">
+           <span class="input-suffix" id="r-cpt">show</span>
+         </div>`,
+        'r-cpe')}
+      <button class="btn" id="r-go">[ create account ] <span class="ret">↵</span></button>
+    </div>
+    ${authFooter(`<a id="r-back">← back to login</a>`,'')}
+  </div>`;
+}
+const getReqs = (p) => ({
+  len:   p.length >= 12,
+  upper: /[A-Z]/.test(p),
+  num:   /[0-9]/.test(p),
+  sym:   /[!@#$%^&*()\-_=+[\]{};:,.<>?\\/|~`]/.test(p),
+});
+function updateReqs(p) {
+  const r=getReqs(p), all=Object.values(r).every(Boolean);
+  const st=document.getElementById('rq-st');
+  if(st){ if(!p){st.className='req-status dash';st.textContent='— no password';}
+    else if(all){st.className='req-status met';st.textContent='— meets requirements';}
+    else{st.className='req-status bad';st.textContent='— does not meet requirements';} }
+  [['len','rq-len'],['upper','rq-up'],['num','rq-num'],['sym','rq-sym']].forEach(([k,id])=>{
+    const el=document.getElementById(id); if(el)el.classList.toggle('met',r[k]); });
+}
+/* ── Invite code input — XXXX-XXXX-XXXX formatting ──────────────── */
+function formatHex(raw) {
+  // Strip non-hex, uppercase, cap at 12 chars, then insert dashes
+  const hex = raw.replace(/[^0-9A-Fa-f]/g, '').toUpperCase().slice(0, 12);
+  const p = [hex.slice(0,4), hex.slice(4,8), hex.slice(8,12)].filter(s => s.length);
+  return p.join('-');
+}
+function wireInviteCode(el) {
+  // Block non-hex characters at the keystroke level
+  el.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey) return;       // allow Ctrl+C/V/A/Z etc.
+    if (e.key.length > 1) return;             // allow Backspace, Delete, Arrows, Tab…
+    if (!/^[0-9A-Fa-f]$/.test(e.key)) { e.preventDefault(); return; }
+    // Block if already at the 12-hex-char limit (14 chars with dashes)
+    const hexLen = el.value.replace(/[^0-9A-Fa-f]/g, '').length;
+    if (hexLen >= 12) e.preventDefault();
+  });
+
+  // After every input, normalise and auto-insert dashes; preserve cursor
+  el.addEventListener('input', () => {
+    const start = el.selectionStart;
+    const raw   = el.value;
+    const formatted = formatHex(raw);
+    if (formatted === raw) return;
+    // Count hex chars before cursor in raw value, then find matching position in formatted
+    const hexBefore = raw.slice(0, start).replace(/[^0-9A-Fa-f]/g, '').length;
+    el.value = formatted;
+    let pos = formatted.length, seen = 0;
+    for (let i = 0; i < formatted.length; i++) {
+      if (/[0-9A-F]/.test(formatted[i])) seen++;
+      if (seen === hexBefore) { pos = i + 1; break; }
+    }
+    el.setSelectionRange(pos, pos);
+  });
+
+  // Paste: strip dashes (or accept them), extract hex, reformat
+  el.addEventListener('paste', e => {
+    e.preventDefault();
+    const text = (e.clipboardData || window.clipboardData).getData('text');
+    el.value = formatHex(text);
+    const len = el.value.length;
+    el.setSelectionRange(len, len);
+  });
+}
+
+function wireReg() {
+  wireInviteCode(document.getElementById('r-ic'));
+  [['r-p','r-pt'],['r-cp','r-cpt']].forEach(([inp,tog])=>{
+    const i=document.getElementById(inp), t=document.getElementById(tog);
+    t.onclick=()=>{const s=i.type==='text';i.type=s?'password':'text';t.textContent=s?'show':'hide';};
+  });
+  document.getElementById('r-p').addEventListener('input',e=>updateReqs(e.target.value));
+  document.getElementById('r-back').onclick = () => go('login');
+  document.getElementById('r-go').onclick = async () => {
+    const ic=document.getElementById('r-ic').value.trim();
+    const u =document.getElementById('r-u').value.trim();
+    const em=document.getElementById('r-em').value.trim();
+    const p =document.getElementById('r-p').value;
+    const cp=document.getElementById('r-cp').value;
+    clearErrs('r-ice','r-ue','r-eme','r-pe','r-cpe');
+    const rqs=getReqs(p), allMet=Object.values(rqs).every(Boolean);
+    let v=true;
+    if(!ic)                        {showErr('r-ice','invite code required');v=false;}
+    if(!u)                         {showErr('r-ue','username required');v=false;}
+    if(em&&!em.includes('@'))      {showErr('r-eme','valid email required');v=false;}
+    if(!allMet)                    {showErr('r-pe','password does not meet requirements');v=false;}
+    if(p!==cp)                     {showErr('r-cpe','passwords do not match');v=false;}
+    if(!v) return;
+    const btn=document.getElementById('r-go');
+    btn.disabled=true; btn.innerHTML='[ creating account… ]';
+    const res=await post('/api/auth/register',{invite_code:ic,username:u,recovery_email:em||undefined,password:p});
+    if(res.ok){location.href='/inbox';return;}
+    btn.disabled=false; btn.innerHTML='[ create account ] <span class="ret">↵</span>';
+    const msg=res.data.error||'registration failed';
+    if(/invite/i.test(msg))        showErr('r-ice',msg);
+    else if(/username/i.test(msg)) showErr('r-ue',msg);
+    else if(/password/i.test(msg)) showErr('r-pe',msg);
+    else                           showErr('r-ice',msg);
+  };
+}
+
+/* ═══════════════════  RECOVER  ═════════════════════════════════════ */
+function recoverHTML(sent, sentTo) {
+  if(sent) return `<div class="auth-shell">
+    ${hero(['account recovery','reset access'],'--recover')}
+    ${statusLine('ok',`reset link dispatched to <span class="em">${sentTo}</span>`)}
+    <div class="card">
+      <div class="card-info">
+        A single-use reset link will arrive at <span class="kw">${sentTo}</span> if a matching account was found.
+        The link expires in <span class="em">1 hour</span>.
+      </div>
+      <button class="btn" id="rc-done">[ back to login ] <span class="ret">↵</span></button>
+    </div>
+  </div>`;
+
+  return `<div class="auth-shell">
+    ${hero(['account recovery','reset access'],'--recover')}
+    <div class="card">
+      <div class="card-info">
+        Enter your <span class="kw">username</span> and the <span class="kw">recovery email</span>
+        attached to your account. A reset link will be dispatched if both match.
+      </div>
+    </div>
+    ${secLabel('verify identity')}
+    <div class="card">
+      ${fld('username',       `<input class="input" id="rc-u" placeholder="your username" autocomplete="off">`, 'rc-ue')}
+      ${fld('recovery email', `<input class="input" id="rc-em" type="email" placeholder="recovery@example.com" autocomplete="off">`, 'rc-eme')}
+      <button class="btn" id="rc-go">[ send reset link ] <span class="ret">↵</span></button>
+    </div>
+    ${authFooter(
+      `<a id="rc-back">← back to login</a>`,
+      `<a id="rc-register">create account <span class="arrow">↗</span></a>`
+    )}
+  </div>`;
+}
+function wireRecover() {
+  document.getElementById('rc-back').onclick = () => go('login');
+  document.getElementById('rc-register').onclick = () => go('register');
+  document.getElementById('rc-go').onclick = async () => {
+    const u  = document.getElementById('rc-u').value.trim();
+    const em = document.getElementById('rc-em').value.trim();
+    clearErrs('rc-ue','rc-eme');
+    let v=true;
+    if(!u)              {showErr('rc-ue','username required');v=false;}
+    if(!em||!em.includes('@')){showErr('rc-eme','valid email required');v=false;}
+    if(!v) return;
+    const btn=document.getElementById('rc-go');
+    btn.disabled=true; btn.innerHTML='[ dispatching… ]';
+    await post('/api/auth/recovery/request',{username:u,recovery_email:em});
+    document.getElementById('root').innerHTML = recoverHTML(true, em);
+    document.getElementById('rc-done').onclick = () => go('login');
+  };
+}
+
+/* ── Boot ────────────────────────────────────────────────────────── */
+(async()=>{
+  try { const r=await fetch('/api/auth/me'); if(r.ok){location.href='/inbox';return;} } catch(_){}
+  // Check for view hint in hash (e.g. auth.html#register)
+  const hash = location.hash.replace('#','');
+  if (hash === 'register') go('register');
+  else if (hash === 'recover') go('recover');
+  else go('login');
+})();

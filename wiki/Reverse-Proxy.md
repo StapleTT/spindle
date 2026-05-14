@@ -1,6 +1,17 @@
 # Reverse Proxy
 
-Spindle is designed to run behind a reverse proxy such as nginx. `app.set('trust proxy', 1)` is already configured so rate limiting uses real client IPs from `X-Forwarded-For`.
+Spindle is designed to run behind a reverse proxy such as nginx. `app.set('trust proxy', 'loopback')` is configured so that `X-Forwarded-For` is only trusted when the connection arrives from a loopback address (127.0.0.1 / ::1). This prevents clients from spoofing their IP to bypass rate limits.
+
+> **Security requirement:** Port 3000 (or whichever port Spindle listens on) must be firewalled so it is only reachable from localhost. If clients can connect directly to Express without going through nginx, the `X-Forwarded-For` protection is ineffective. Add a firewall rule to block external access to the app port:
+>
+> ```bash
+> # iptables (Linux)
+> iptables -A INPUT -p tcp --dport 3000 -s 127.0.0.1 -j ACCEPT
+> iptables -A INPUT -p tcp --dport 3000 -j DROP
+>
+> # ufw
+> ufw deny 3000
+> ```
 
 ---
 

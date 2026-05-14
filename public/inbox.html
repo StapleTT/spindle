@@ -4,12 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Spindle - Inbox</title>
-  <script>
-    (function() {
-      var mq = window.matchMedia('(prefers-color-scheme: dark)');
-      document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
-    })();
-  </script>
+  <script src="/js/theme-init.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -125,19 +120,7 @@
 <script src="/js/settings.js"></script>
 <script src="/js/admin.js"></script>
 <script src="/js/search.js"></script>
-
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  MobileNav.init();
-  document.getElementById('btn-compose').onclick     = () => Composer.open();
-  document.getElementById('btn-search').onclick      = () => Search.toggle();
-  document.getElementById('btn-logout').onclick      = () => App.logout();
-  document.getElementById('sys-compose').onclick     = () => Composer.open();
-  document.getElementById('sys-admin').onclick       = () => Admin.toggle();
-  document.getElementById('sys-settings').onclick    = () => Settings.toggle();
-  document.getElementById('btn-add-account').onclick = () => Accounts.openAddModal();
-});
-</script>
+<script src="/js/inbox-init.js"></script>
 
 </body>
 </html>

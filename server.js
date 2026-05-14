@@ -11,16 +11,17 @@ require('./src/db/schema');
 
 const app = express();
 
-// Trust the first proxy (nginx) so X-Forwarded-For is used for real client IPs
-app.set('trust proxy', 1);
+// Trust X-Forwarded-For only from loopback (nginx on the same machine).
+// Connections that arrive directly on a non-loopback socket cannot spoof this header.
+app.set('trust proxy', 'loopback');
 
 // --- Security middleware ---
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "cdn.quilljs.com"],
-      scriptSrcAttr: ["'unsafe-inline'"],
+      scriptSrc: ["'self'", "cdn.jsdelivr.net", "cdn.quilljs.com"],
+      scriptSrcAttr: [],
       styleSrc: ["'self'", "'unsafe-inline'", "cdn.jsdelivr.net", "cdn.quilljs.com", "fonts.googleapis.com"],
       fontSrc: ["'self'", "fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https:", "http:"],
@@ -76,9 +77,14 @@ class SQLiteStore extends session.Store {
   }
 }
 
+const SESSION_SECRET = process.env.SESSION_SECRET;
+if (!SESSION_SECRET) {
+  throw new Error('SESSION_SECRET env var is required (run: openssl rand -hex 32)');
+}
+
 app.use(session({
   store: new SQLiteStore(),
-  secret: process.env.SESSION_SECRET || 'dev-secret-change-me',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
