@@ -386,7 +386,7 @@ async function searchMessages(account, query, field, _folder, page, limit) {
   // For page > 1 use the cached nextLink; for page 1 build a fresh URL
   const url = page > 1 && _searchNextLinks.has(prevKey)
     ? _searchNextLinks.get(prevKey)
-    : `${GRAPH}/messages?$search=${encodeURIComponent(JSON.stringify(kql))}&$top=${limit}&$select=${sel}`;
+    : `${GRAPH}/messages?$search=${encodeURIComponent(JSON.stringify(kql))}&$top=${limit}&$select=${sel}&$count=true`;
 
   const res = await graphFetch(account, url, {
     headers: { 'ConsistencyLevel': 'eventual' },
@@ -400,7 +400,10 @@ async function searchMessages(account, query, field, _folder, page, limit) {
   }
 
   const messages = (data.value || []).map(normaliseMetadata);
-  const total    = data['@odata.count'] ?? messages.length;
+  // $count is unreliable with $search on Graph; use nextLink presence as a signal
+  // that more pages exist so pagination advances correctly.
+  const hasMore = !!data['@odata.nextLink'];
+  const total   = data['@odata.count'] ?? (hasMore ? limit * page + 1 : messages.length);
 
   return { messages, total };
 }

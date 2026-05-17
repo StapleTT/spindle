@@ -52,6 +52,11 @@ function sanitizeFolder(f) {
   return f.replace(/\0/g, '').substring(0, 200);
 }
 
+// Resolve folder from request query or body, defaulting to INBOX
+function reqFolder(req, field = 'folder') {
+  return sanitizeFolder(req.query[field] || req.body?.[field] || 'INBOX');
+}
+
 // GET /api/email/:accountId/unread — lightweight unread count for sidebar badges
 router.get('/:accountId/unread', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
@@ -81,7 +86,7 @@ router.get('/:accountId/messages', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = sanitizeFolder(req.query.folder || 'INBOX');
+  const folder = reqFolder(req);
   const page   = Math.max(1, parseInt(req.query.page)  || 1);
   const limit  = Math.min(100, parseInt(req.query.limit) || 50);
 
@@ -98,7 +103,7 @@ router.get('/:accountId/messages/:uid', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = sanitizeFolder(req.query.folder || 'INBOX');
+  const folder = reqFolder(req);
   const uid    = parseUid(account, req.params.uid);
 
   try {
@@ -114,7 +119,7 @@ router.patch('/:accountId/messages/:uid/read', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = sanitizeFolder(req.query.folder || req.body.folder || 'INBOX');
+  const folder = reqFolder(req);
   const uid    = parseUid(account, req.params.uid);
   const read   = req.body.read !== false;
 
@@ -131,7 +136,7 @@ router.post('/:accountId/messages/:uid/archive', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = sanitizeFolder(req.body.folder || 'INBOX');
+  const folder = reqFolder(req);
   const uid    = parseUid(account, req.params.uid);
 
   try {
@@ -147,7 +152,7 @@ router.post('/:accountId/messages/:uid/restore', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = sanitizeFolder(req.body.folder || 'INBOX');
+  const folder = reqFolder(req);
   const uid    = parseUid(account, req.params.uid);
 
   try {
@@ -163,9 +168,9 @@ router.post('/:accountId/messages/:uid/move', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
+  if (!req.body.toFolder) return res.status(400).json({ error: 'toFolder is required' });
   const fromFolder = sanitizeFolder(req.body.fromFolder || 'INBOX');
   const toFolder   = sanitizeFolder(req.body.toFolder);
-  if (!req.body.toFolder) return res.status(400).json({ error: 'toFolder is required' });
   const uid = parseUid(account, req.params.uid);
 
   try {
@@ -239,7 +244,7 @@ router.get('/:accountId/messages/:uid/attachments/:attachmentId', async (req, re
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder       = sanitizeFolder(req.query.folder || 'INBOX');
+  const folder       = reqFolder(req);
   const uid          = parseUid(account, req.params.uid);
   const attachmentId = req.params.attachmentId;
   const filename     = String(req.query.filename || 'attachment').replace(/[^a-zA-Z0-9._\- ]/g, '_');
@@ -272,10 +277,12 @@ router.get('/:accountId/threads/:threadId', async (req, res) => {
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
   const { threadId } = req.params;
-  const folder = sanitizeFolder(req.query.folder || 'INBOX');
+  const folder = reqFolder(req);
+  const svc = getService(account);
+  if (typeof svc.fetchThread !== 'function') return res.json([]);
 
   try {
-    const messages = await getService(account).fetchThread(account, threadId, folder);
+    const messages = await svc.fetchThread(account, threadId, folder);
     res.json(messages);
   } catch (e) {
     svcError(res, e);
@@ -287,7 +294,7 @@ router.delete('/:accountId/messages/:uid', async (req, res) => {
   const account = getAccount(req.params.accountId, req.user.id);
   if (!account) return res.status(404).json({ error: 'Account not found' });
 
-  const folder = sanitizeFolder(req.query.folder || 'INBOX');
+  const folder = reqFolder(req);
   const uid    = parseUid(account, req.params.uid);
 
   try {

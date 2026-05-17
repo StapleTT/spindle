@@ -40,8 +40,21 @@ function folderToLabel(folder) {
 }
 
 // ── Page token cache ───────────────────────────────────────────────────────
-// Key: `${accountId}:${label}:${page}` → nextPageToken for page+1
+// Key: `${accountId}:${label}:${page}` → { token, expires } for page+1
+// TTL prevents stale tokens (which Google can expire) from causing silent errors.
 const _pageTokens = new Map();
+const PAGE_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+function _setPageToken(key, token) {
+  _pageTokens.set(key, { token, expires: Date.now() + PAGE_TOKEN_TTL_MS });
+}
+
+function _getPageToken(key) {
+  const entry = _pageTokens.get(key);
+  if (!entry) return undefined;
+  if (Date.now() > entry.expires) { _pageTokens.delete(key); return undefined; }
+  return entry.token;
+}
 
 // ── Header / body parsing ──────────────────────────────────────────────────
 
@@ -159,7 +172,7 @@ async function fetchMessages(account, folder, page, limit) {
   const prevKey = `${account.id}:${label}:${page - 1}`;
   const thisKey = `${account.id}:${label}:${page}`;
 
-  const pageToken = page > 1 ? _pageTokens.get(prevKey) : undefined;
+  const pageToken = page > 1 ? _getPageToken(prevKey) : undefined;
 
   // ALLMAIL is not a valid labelIds filter in messages.list; omitting labelIds
   // returns all messages, which is the correct behaviour for the archive view.
@@ -172,7 +185,7 @@ async function fetchMessages(account, folder, page, limit) {
 
   // Cache the next-page token so page+1 can use it
   if (listRes.data.nextPageToken) {
-    _pageTokens.set(thisKey, listRes.data.nextPageToken);
+    _setPageToken(thisKey, listRes.data.nextPageToken);
   }
 
   const ids    = listRes.data.messages || [];
@@ -352,7 +365,10 @@ async function getFolders(account) {
     visible.map(l =>
       gmail.users.labels.get({ userId: 'me', id: l.id })
         .then(r => ({ ...l, unread: r.data.messagesUnread || 0 }))
-        .catch(() => ({ ...l, unread: 0 }))
+        .catch(e => {
+          console.warn(`[gmail] unread count for label ${l.id} failed:`, e.message);
+          return { ...l, unread: 0 };
+        })
     )
   );
 
@@ -466,7 +482,7 @@ async function searchMessages(account, query, field, _folder, page, limit) {
   // Gmail pagination is cursor-based; for simplicity use pageToken cache keyed by query
   const cacheKey = `search:${account.id}:${q}:${page}`;
   const prevKey  = `search:${account.id}:${q}:${page - 1}`;
-  const pageToken = page > 1 ? _pageTokens.get(prevKey) : undefined;
+  const pageToken = page > 1 ? _getPageToken(prevKey) : undefined;
 
   const listRes = await gmail.users.messages.list({
     userId:     'me',
@@ -476,7 +492,7 @@ async function searchMessages(account, query, field, _folder, page, limit) {
   });
 
   if (listRes.data.nextPageToken) {
-    _pageTokens.set(cacheKey, listRes.data.nextPageToken);
+    _setPageToken(cacheKey, listRes.data.nextPageToken);
   }
 
   const ids   = listRes.data.messages || [];

@@ -235,6 +235,7 @@ async function fetchAttachment(account, folder, uid, attachmentId) {
   const parsed = await simpleParser(raw);
   const named  = (parsed.attachments || []).filter(a => a.filename);
   const idx    = parseInt(attachmentId, 10);
+  if (!Number.isInteger(idx) || idx < 0) throw new Error('Invalid attachment ID');
   const att    = named[idx];
   if (!att) throw new Error('Attachment not found');
 
@@ -321,13 +322,6 @@ async function getUnreadCount(account) {
 }
 
 /**
- * IMAP does not natively support threading; return empty to fall back to single-message view.
- */
-async function fetchThread(account, threadId) {
-  return [];
-}
-
-/**
  * Search messages in a folder using IMAP SEARCH criteria.
  * field: 'all' | 'from' | 'to' | 'subject'
  * Searches INBOX by default (IMAP requires an open mailbox; opening all folders is too slow).
@@ -372,4 +366,4 @@ async function searchMessages(account, query, field, folder = 'INBOX', page = 1,
   return { messages, total: raw.length };
 }
 
-module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, fetchAttachment, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount, fetchThread, searchMessages };
+module.exports = { testConnection, getFolders, fetchMessages, fetchMessage, fetchAttachment, markRead, archiveMessage, restoreMessage, moveMessage, deleteMessage, evict, getUnreadCount, searchMessages };

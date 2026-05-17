@@ -43,11 +43,14 @@ const Reader = (() => {
       );
       _current.data = data;
 
-      // Mark as read (fire-and-forget)
+      // Mark as read optimistically; revert list state if the server rejects it
       EmailList.markReadInList(uid);
       API.patch(`/api/email/${accountId}/messages/${uid}/read`, { read: true })
         .then(() => { if (_current?.data) _current.data.unread = false; })
-        .catch(() => {});
+        .catch(e => {
+          console.warn('[reader] mark-as-read failed:', e.message);
+          EmailList.markUnreadInList(uid);
+        });
 
       // If the provider returns a threadId, try to fetch all messages in the thread
       if (data.threadId) {
