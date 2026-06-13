@@ -117,6 +117,21 @@ app.use('/api/settings', require('./src/routes/settings'));
 app.use('/api/admin', require('./src/routes/admin'));
 app.use('/api/oauth', require('./src/routes/oauth'));
 
+// --- Mobile browser redirect ---
+const _MOBILE_UA = /Android|iPhone|iPad|iPod|IEMobile|Opera Mini|BlackBerry|Mobile/i;
+const _MOBILE_MAP = {
+  '/': '/m/', '/inbox': '/m/inbox', '/auth': '/m/auth',
+  '/recovery': '/m/recovery', '/privacy-policy': '/m/privacy-policy', '/tos': '/m/tos',
+};
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.query.desktop) return next();
+  const dest = _MOBILE_MAP[req.path];
+  if (!dest || !_MOBILE_UA.test(req.get('User-Agent') || '')) return next();
+  const params = Object.entries(req.query).filter(([k]) => k !== 'desktop');
+  const qs = new URLSearchParams(Object.fromEntries(params)).toString();
+  res.redirect(302, dest + (qs ? '?' + qs : ''));
+});
+
 // --- Redirect legacy .html URLs to clean equivalents (must precede static) ---
 app.get('/inbox.html', (req, res) => {
   const qs = new URLSearchParams(req.query).toString();

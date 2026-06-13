@@ -103,6 +103,7 @@ html, body {
   overflow: hidden;
   will-change: transform;
   transition: transform 0.28s cubic-bezier(0.2, 0, 0, 1);
+  background: var(--bg);      /* opaque so off-screen panels don't bleed through */
 }
 
 /* Accounts panel starts off LEFT */
@@ -124,10 +125,17 @@ html, body {
   transform: translateX(0) !important;
 }
 
-/* Panels behind the active one slide 30% left (depth cue) */
-.m-panel.m-panel-bg {
-  transform: translateX(-28%) !important;
-  pointer-events: none;
+/* ─── Edge swipe zone for reader → list navigation ───────────────────────── */
+/* Created dynamically by mobile-app.js; captures left-edge touches that     */
+/* would otherwise be swallowed by the iframe inside the reading pane.        */
+#m-edge-swipe {
+  position: fixed;
+  top: 54px;
+  left: 0;
+  width: 24px;
+  bottom: calc(60px + env(safe-area-inset-bottom));
+  z-index: 200;
+  display: none;
 }
 
 /* ─── Accounts panel content ─────────────────────────────────────────────── */
@@ -205,6 +213,8 @@ html, body {
 .m-shell .thread-row {
   padding: 14px 16px;
   min-height: 72px;
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 /* ─── Reading pane ───────────────────────────────────────────────────────── */

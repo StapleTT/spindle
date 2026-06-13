@@ -10,7 +10,8 @@
  *  - Bottom tab bar with unread badge
  *  - Contextual header with back button
  *  - Long-press on email rows → action sheet
- *  - Swipe right from reader edge → back to list
+ *  - Fixed left-edge overlay for reliable swipe-back from reader
+ *  - Settings / search mutual exclusion
  */
 
 const MobileNav = (() => {
@@ -20,6 +21,7 @@ const MobileNav = (() => {
 
   let _panel   = ACCOUNTS;
   let _hasList = false;
+  let _edgeEl  = null;
 
   // ── Panel switching ─────────────────────────────────────────────────────
   function _setPanel(p) {
@@ -33,16 +35,11 @@ const MobileNav = (() => {
 
     Object.entries(panels).forEach(([key, el]) => {
       if (!el) return;
-      el.classList.remove('m-panel-active', 'm-panel-bg');
-      if (key === p) {
-        el.classList.add('m-panel-active');
-      } else if (
-        (p === LIST   && key === ACCOUNTS) ||
-        (p === READER && key !== READER)
-      ) {
-        el.classList.add('m-panel-bg');
-      }
+      el.classList.toggle('m-panel-active', key === p);
     });
+
+    // Show left-edge swipe zone only when reading pane is active
+    if (_edgeEl) _edgeEl.style.display = (p === READER) ? 'block' : 'none';
 
     _updateHeader(p);
     _updateTabBar(p);
@@ -220,7 +217,6 @@ const MobileNav = (() => {
     const container = document.getElementById('thread-list-rows');
     if (!container) return;
 
-    // MutationObserver isn't needed — we use event delegation on the stable container.
     container.addEventListener('touchstart', _lpStart, { passive: true });
     container.addEventListener('touchmove',  _lpMove,  { passive: true });
     container.addEventListener('touchend',   _lpEnd,   { passive: true });
@@ -270,33 +266,77 @@ const MobileNav = (() => {
     _showSheet({ uid, acctId, folder, isUnread, fromName });
   }
 
-  // ── Swipe-right from reader to go back ──────────────────────────────────
-  function _initReaderSwipe() {
-    const reader = document.getElementById('reading-pane');
-    if (!reader) return;
+  // ── Left-edge swipe overlay → back to list from reader ───────────────────
+  // A 24px transparent strip at the left edge of the screen captures swipe-
+  // back touches that would otherwise be swallowed by the email iframe.
+  function _initEdgeSwipe() {
+    const shell = document.querySelector('.m-shell');
+    if (!shell) return;
 
-    let sx = 0, sy = 0, swiping = false;
+    const edge = document.createElement('div');
+    edge.id = 'm-edge-swipe';
+    edge.setAttribute('aria-hidden', 'true');
+    shell.appendChild(edge);
+    _edgeEl = edge;
 
-    reader.addEventListener('touchstart', e => {
-      sx = e.touches[0].clientX;
-      sy = e.touches[0].clientY;
-      swiping = false;
-    }, { passive: true });
+    let _sx = 0, _tracking = false;
 
-    reader.addEventListener('touchmove', e => {
-      if (swiping) return;
-      const dx = e.touches[0].clientX - sx;
-      const dy = Math.abs(e.touches[0].clientY - sy);
-      // Edge swipe: start < 40px from left, horizontal > vertical
-      if (dx > 20 && dy < 50 && sx < 50) swiping = true;
-    }, { passive: true });
+    edge.addEventListener('touchstart', e => {
+      _sx = e.touches[0].clientX;
+      _tracking = true;
+      e.preventDefault(); // overlay is gesture-only; safe to prevent
+    }, { passive: false });
 
-    reader.addEventListener('touchend', e => {
-      if (!swiping) return;
-      const dx = e.changedTouches[0].clientX - sx;
-      if (dx > 50 && _panel === READER) _setPanel(LIST);
-      swiping = false;
-    }, { passive: true });
+    edge.addEventListener('touchmove', e => {
+      if (!_tracking) return;
+      e.preventDefault(); // prevent scroll-behind while swiping
+    }, { passive: false });
+
+    edge.addEventListener('touchend', e => {
+      if (!_tracking) return;
+      const dx = e.changedTouches[0].clientX - _sx;
+      if (dx > 48 && _panel === READER) _setPanel(LIST);
+      _tracking = false;
+    });
+
+    edge.addEventListener('touchcancel', () => { _tracking = false; });
+  }
+
+  // ── Settings / search mutual exclusion ──────────────────────────────────
+  // Runs after DOMContentLoaded (via setTimeout 0) so inbox-init.js has
+  // already set onclick handlers, letting us safely override them.
+  function _patchMutualExclusion() {
+    // Settings tab + sys-settings: close search before toggling settings
+    const _openSettings = () => {
+      if (typeof Search !== 'undefined') Search.close();
+      if (typeof Settings !== 'undefined') Settings.toggle();
+    };
+    const tabSet = document.getElementById('m-tab-settings');
+    const sysSet = document.getElementById('sys-settings');
+    if (tabSet) tabSet.onclick = _openSettings;
+    if (sysSet) sysSet.onclick = _openSettings;
+
+    // Search button: close settings if open before toggling search
+    const searchBtn = document.getElementById('btn-search');
+    if (searchBtn) {
+      searchBtn.onclick = () => {
+        if (document.getElementById('settings-modal')) {
+          if (typeof Settings !== 'undefined') Settings.toggle();
+          return;
+        }
+        if (typeof Search !== 'undefined') Search.toggle();
+      };
+    }
+
+    // MutationObserver: if search opens via keyboard shortcut (/), close settings
+    const sp = document.getElementById('search-panel');
+    if (sp) {
+      new MutationObserver(() => {
+        if (sp.style.display !== 'none' && document.getElementById('settings-modal')) {
+          if (typeof Settings !== 'undefined') Settings.toggle();
+        }
+      }).observe(sp, { attributes: true, attributeFilter: ['style'] });
+    }
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────
@@ -304,15 +344,11 @@ const MobileNav = (() => {
     // Tab bar wiring
     const tabAcc  = document.getElementById('m-tab-accounts');
     const tabList = document.getElementById('m-tab-list');
-    const tabSet  = document.getElementById('m-tab-settings');
 
     if (tabAcc)  tabAcc.addEventListener('click',  () => _setPanel(ACCOUNTS));
     if (tabList) tabList.addEventListener('click', () => {
       if (_hasList) _setPanel(LIST);
       else          _setPanel(ACCOUNTS);
-    });
-    if (tabSet)  tabSet.addEventListener('click', () => {
-      if (typeof Settings !== 'undefined') Settings.toggle();
     });
 
     // Header back button
@@ -322,26 +358,20 @@ const MobileNav = (() => {
       else                   goToSidebar();
     });
 
-    // Start on accounts panel; showList() will switch to list once email loads
-    _setPanel(ACCOUNTS);
-
     // Touch interactions
     _initSheet();
     _initLongPress();
-    _initReaderSwipe();
+    _initEdgeSwipe(); // must be before _setPanel so _edgeEl exists
 
-    // Badge refresh — hook into App's unread update cycle.
-    // App.updateDocTitle() is called whenever counts change; we patch it once.
-    const _schedBadge = () => {
-      if (typeof App !== 'undefined' && App.updateDocTitle) {
-        const orig = App.updateDocTitle.bind(App);
-        // Replace via the module's returned function — App exposes it directly
-        // so we just poll on a short interval after init instead of monkey-patching.
-      }
-      setInterval(_updateBadge, 8000);
-      setTimeout(_updateBadge, 1500); // first update after App.init() resolves
-    };
-    _schedBadge();
+    // Start on accounts panel
+    _setPanel(ACCOUNTS);
+
+    // Badge refresh
+    setInterval(_updateBadge, 8000);
+    setTimeout(_updateBadge, 1500);
+
+    // Patch mutual exclusion after all DOMContentLoaded handlers have run
+    setTimeout(_patchMutualExclusion, 0);
   }
 
   function _esc(s) {
