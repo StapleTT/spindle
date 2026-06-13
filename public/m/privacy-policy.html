@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Spindle - Privacy Policy</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    (function() {
+      var mq = window.matchMedia('(prefers-color-scheme: dark)');
+      document.documentElement.dataset.theme = mq.matches ? 'dark' : 'light';
+      mq.addEventListener('change', function(e) {
+        document.documentElement.dataset.theme = e.matches ? 'dark' : 'light';
+      });
+    })();
+  </script>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cstyle%3E.s%7Bfill:none;stroke-width:7;stroke-linecap:round;stroke:%23000%7D.f%7Bfill:%23000;stroke:none%7D%40media (prefers-color-scheme:dark)%7B.s%7Bstroke:%23f0f0f0%7D.f%7Bfill:%23f0f0f0%7D%7D%3C/style%3E%3Cpath class='s' d='M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46'/%3E%3Cpath class='s' d='M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54'/%3E%3Cpath class='f' d='M 50 6 L 51.6 50 L 48.4 50 Z'/%3E%3Crect class='f' x='48.6' y='50' width='2.8' height='40'/%3E%3Cellipse class='f' cx='50' cy='92' rx='9' ry='1.8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/mobile.css">
+  <style>
+    .doc-shell {
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 36px 20px 80px;
+    }
+    .doc-brand {
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      margin-bottom: 36px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .doc-brand a { color: var(--fg-dim); text-decoration: none; }
+    .doc-brand a:hover { color: var(--fg-bright); }
+    .doc-brand .sep { opacity: 0.35; }
+    h1 { font-size: 20px; font-weight: 600; color: var(--fg-bright); letter-spacing: -0.01em; margin: 0 0 8px; }
+    .doc-date { font-size: 11px; color: var(--fg-dimmer); margin-bottom: 36px; }
+    h2 {
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--fg-dim);
+      margin: 36px 0 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line-2);
+    }
+    h2 .slash { color: var(--fg-dimmer); margin-right: 6px; }
+    p, li { font-size: 14px; color: var(--fg); line-height: 1.75; margin: 0 0 12px; }
+    ul { padding-left: 20px; margin: 0 0 12px; }
+    li { margin-bottom: 6px; }
+    a { color: var(--fg-dim); text-underline-offset: 3px; }
+    a:hover { color: var(--fg-bright); }
+    .em { color: var(--fg-bright); }
+  </style>
+</head>
+<body class="m-doc-page">
+<div class="doc-shell">
+
+  <div class="doc-brand">
+    <a href="/m/">spindle</a>
+    <span class="sep">—</span>
+    <span>privacy policy</span>
+  </div>
+
+  <h1>Privacy Policy</h1>
+  <div class="doc-date">Effective date: May 2026</div>
+
+  <p>Spindle is a self-hosted, personal email client. This policy describes what information Spindle collects, how it is stored, and how it is used when you connect email accounts through the application.</p>
+
+  <h2><span class="slash">//</span>information we collect</h2>
+  <p>Spindle collects only the information required to operate as an email client:</p>
+  <ul>
+    <li><span class="em">Account credentials</span> — your Spindle username and a bcrypt hash of your password. The original password is never stored.</li>
+    <li><span class="em">Email account data</span> — IMAP/SMTP hostnames, ports, and usernames. Passwords are encrypted with AES-256-GCM before being written to disk.</li>
+    <li><span class="em">OAuth tokens</span> — when you connect a Gmail account, Google issues an access token and a refresh token. Both are encrypted with AES-256-GCM and stored locally. They are never transmitted to any party other than Google.</li>
+    <li><span class="em">Email content</span> — messages are fetched on demand from your email provider and displayed in the browser. Spindle does not store, cache, or index the body of any email.</li>
+    <li><span class="em">Session data</span> — a session cookie is set to keep you logged in. Sessions are stored in the application database and expire after seven days.</li>
+    <li><span class="em">Invite codes</span> — registration requires a one-time invite code issued by an administrator. The code used is recorded against your account for auditing purposes.</li>
+  </ul>
+
+  <h2><span class="slash">//</span>how we use your information</h2>
+  <p>All data collected by Spindle is used exclusively to provide the core email-client functionality. Spindle does not use your data for analytics, advertising, profiling, or any purpose beyond operating the application.</p>
+
+  <h2><span class="slash">//</span>google user data</h2>
+  <p>Spindle's use of data obtained from Google APIs complies with the <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noopener">Google API Services User Data Policy</a>, including the Limited Use requirements. Gmail data is not transferred to third parties and is not used for advertising.</p>
+
+  <h2><span class="slash">//</span>microsoft user data</h2>
+  <p>When you connect an Outlook account, Spindle uses the Microsoft Graph API. OAuth tokens issued by Microsoft are encrypted with AES-256-GCM and stored locally. Spindle requests only <span class="em">Mail.ReadWrite</span>, <span class="em">Mail.Send</span>, and <span class="em">offline_access</span>.</p>
+
+  <h2><span class="slash">//</span>data storage and security</h2>
+  <ul>
+    <li>All data is stored in a single SQLite database on the server where Spindle is deployed.</li>
+    <li>Passwords are never stored in plaintext. Spindle account passwords use bcrypt (12 rounds); IMAP passwords use AES-256-GCM.</li>
+    <li>OAuth tokens are encrypted with AES-256-GCM using a key you control via the <span class="em">ENCRYPTION_KEY</span> environment variable.</li>
+  </ul>
+
+  <h2><span class="slash">//</span>data sharing</h2>
+  <p>Spindle does not sell, rent, or share your personal data with third parties. The only external services your data touches are the email providers you explicitly connect.</p>
+
+  <h2><span class="slash">//</span>data retention and deletion</h2>
+  <p>Your data is retained for as long as your Spindle account exists. You can delete your account at any time from the settings panel.</p>
+
+  <h2><span class="slash">//</span>contact</h2>
+  <p>Spindle is a self-hosted application. If you have questions, please contact the person or organisation operating that instance.</p>
+
+  <p style="margin-top:36px"><a href="/m/">&larr; back</a></p>
+</div>
+</body>
+</html>

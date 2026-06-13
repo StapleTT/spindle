@@ -140,6 +140,15 @@ app.get('/recovery',       (req, res) => res.sendFile(path.join(__dirname, 'publ
 app.get('/privacy-policy', (req, res) => res.sendFile(path.join(__dirname, 'public', 'privacy-policy.html')));
 app.get('/tos',            (req, res) => res.sendFile(path.join(__dirname, 'public', 'tos.html')));
 
+// --- Mobile pages (/m/*) ---
+app.get('/m',                  (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'index.html')));
+app.get('/m/',                 (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'index.html')));
+app.get('/m/inbox',            (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'inbox.html')));
+app.get('/m/auth',             (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'auth.html')));
+app.get('/m/recovery',         (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'recovery.html')));
+app.get('/m/privacy-policy',   (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'privacy-policy.html')));
+app.get('/m/tos',              (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'tos.html')));
+
 // 404 handler — must be last
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {

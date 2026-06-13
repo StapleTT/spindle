@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en" class="m-auth-page">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Spindle - Sign In</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cstyle%3E.s%7Bfill:none;stroke-width:7;stroke-linecap:round;stroke:%23000%7D.f%7Bfill:%23000;stroke:none%7D%40media (prefers-color-scheme:dark)%7B.s%7Bstroke:%23f0f0f0%7D.f%7Bfill:%23f0f0f0%7D%7D%3C/style%3E%3Cpath class='s' d='M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46'/%3E%3Cpath class='s' d='M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54'/%3E%3Cpath class='f' d='M 50 6 L 51.6 50 L 48.4 50 Z'/%3E%3Crect class='f' x='48.6' y='50' width='2.8' height='40'/%3E%3Cellipse class='f' cx='50' cy='92' rx='9' ry='1.8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/mobile.css">
+  <style>
+    @keyframes auth-in {
+      from { opacity: 0; transform: translateY(22px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .page-enter { animation: auth-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
+  </style>
+</head>
+<body class="m-auth-page">
+<div id="root"></div>
+<script src="/js/auth.js"></script>
+</body>
+</html>

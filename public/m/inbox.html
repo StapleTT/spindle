@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Spindle - Inbox</title>
+  <script src="/js/theme-init.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cstyle%3E.s%7Bfill:none;stroke-width:7;stroke-linecap:round;stroke:%23000%7D.f%7Bfill:%23000;stroke:none%7D%40media (prefers-color-scheme:dark)%7B.s%7Bstroke:%23f0f0f0%7D.f%7Bfill:%23f0f0f0%7D%7D%3C/style%3E%3Cpath class='s' d='M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46'/%3E%3Cpath class='s' d='M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54'/%3E%3Cpath class='f' d='M 50 6 L 51.6 50 L 48.4 50 Z'/%3E%3Crect class='f' x='48.6' y='50' width='2.8' height='40'/%3E%3Cellipse class='f' cx='50' cy='92' rx='9' ry='1.8'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/css/main.css">
+  <link rel="stylesheet" href="/css/layout.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/email.css">
+  <link rel="stylesheet" href="/css/mobile.css">
+</head>
+<body>
+
+<div class="m-shell">
+
+  <!-- ── Fixed header ──────────────────────────────────────────────── -->
+  <header class="m-header">
+    <button class="m-hdr-btn m-hidden" id="m-header-back" aria-label="back">←</button>
+    <div class="m-header-title" id="m-header-title">
+      <svg width="16" height="16" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M 78 22 C 78 12, 60 8, 44 12 C 28 16, 22 28, 32 38 C 40 46, 60 46, 60 46" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+        <path d="M 22 78 C 22 88, 40 92, 56 88 C 72 84, 78 72, 68 62 C 60 54, 40 54, 40 54" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>
+        <path d="M 50 6 L 51.6 50 L 48.4 50 Z" fill="currentColor"/>
+        <rect x="48.6" y="50" width="2.8" height="40" fill="currentColor"/>
+        <ellipse cx="50" cy="92" rx="9" ry="1.8" fill="currentColor"/>
+      </svg>
+      <span>spindle</span>
+    </div>
+    <button class="m-hdr-btn" id="btn-logout" aria-label="logout" title="logout">↪</button>
+  </header>
+
+  <!-- ── Search panel ───────────────────────────────────────────────── -->
+  <div class="search-panel" id="search-panel" style="display:none">
+    <input type="text" class="search-input" id="search-q"
+           placeholder="search mail…" autocomplete="off" spellcheck="false">
+    <div class="search-controls">
+      <span class="search-label">in</span>
+      <div id="search-acct-wrap"></div>
+      <span class="search-label">field</span>
+      <div id="search-field-wrap"></div>
+      <button class="chip search-btn" id="search-submit">search</button>
+      <button class="icon-btn search-close-btn" id="search-close" title="close">✕</button>
+    </div>
+  </div>
+
+  <!-- ── Panel container ────────────────────────────────────────────── -->
+  <div class="m-panels">
+
+    <!-- Accounts / sidebar panel -->
+    <div class="m-panel" id="m-panel-accounts">
+      <div class="m-acct-header">
+        <span>// inboxes</span>
+        <button class="m-add-btn" id="btn-add-account" aria-label="add inbox">+</button>
+      </div>
+      <div id="inbox-list"></div>
+
+      <div style="flex:1;min-height:16px"></div>
+
+      <!-- System links -->
+      <div id="system-list">
+        <div class="folder" id="sys-compose">
+          <div class="f-name">compose</div>
+          <div class="f-count">—</div>
+        </div>
+        <div class="folder" id="sys-admin" style="display:none">
+          <div class="f-name">admin</div>
+          <div class="f-count">—</div>
+        </div>
+        <div class="folder" id="sys-settings">
+          <div class="f-name">settings</div>
+          <div class="f-count">—</div>
+        </div>
+      </div>
+
+      <div class="m-user-line">logged in as <span class="em" id="tb-username">…</span></div>
+    </div>
+
+    <!-- Email list panel — id matches what emailList.js expects -->
+    <div class="m-panel" id="thread-list-panel" style="display:none">
+      <div class="thread-list-header" id="thread-list-header">
+        <span>// inbox</span>
+        <span>↕</span>
+      </div>
+      <div id="thread-list-rows"></div>
+      <div id="thread-list-pagination"></div>
+    </div>
+
+    <!-- Reading pane — id matches what reader.js expects -->
+    <div class="m-panel" id="reading-pane"></div>
+
+  </div><!-- /.m-panels -->
+
+  <!-- ── Bottom tab bar ────────────────────────────────────────────── -->
+  <nav class="m-tab-bar" aria-label="main navigation">
+
+    <button class="m-tab" id="m-tab-accounts" aria-label="accounts">
+      <span class="m-tab-icon">☰</span>
+      <span class="m-tab-label">accounts</span>
+    </button>
+
+    <button class="m-tab" id="m-tab-list" aria-label="inbox">
+      <span class="m-tab-icon">✉</span>
+      <span class="m-tab-label">inbox</span>
+      <span class="m-tab-badge" id="m-tab-badge" aria-label="unread count"></span>
+    </button>
+
+    <!-- Compose (wired by inbox-init.js via btn-compose id) -->
+    <button class="m-tab m-tab-compose-center" id="btn-compose" aria-label="compose">
+      <span class="m-tab-icon">＋</span>
+    </button>
+
+    <!-- Search (wired by inbox-init.js via btn-search id) -->
+    <button class="m-tab" id="btn-search" aria-label="search">
+      <span class="m-tab-icon">⌕</span>
+      <span class="m-tab-label">search</span>
+    </button>
+
+    <button class="m-tab" id="m-tab-settings" aria-label="settings">
+      <span class="m-tab-icon">⚙</span>
+      <span class="m-tab-label">settings</span>
+    </button>
+
+  </nav>
+
+  <!-- ── Action sheet (long-press on email rows) ────────────────────── -->
+  <div class="m-sheet-overlay" id="m-sheet-overlay" role="dialog" aria-modal="true">
+    <div class="m-sheet" id="m-sheet"></div>
+  </div>
+
+  <!-- Hidden compat element for emailList.js's app-body class manipulation -->
+  <div id="app-body" aria-hidden="true" style="display:none"></div>
+
+</div><!-- /.m-shell -->
+
+<!-- ── Scripts ──────────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.5/dist/purify.min.js"></script>
+
+<script src="/js/api.js"></script>
+<script src="/js/mobile-app.js"></script><!-- defines MobileNav before DOMContentLoaded -->
+<script src="/js/app.js"></script>
+<script src="/js/sidebar.js"></script>
+<script src="/js/emailList.js"></script>
+<script src="/js/reader.js"></script>
+<script src="/js/composer.js"></script>
+<script src="/js/accounts.js"></script>
+<script src="/js/settings.js"></script>
+<script src="/js/admin.js"></script>
+<script src="/js/search.js"></script>
+<script src="/js/inbox-init.js"></script>
+
+</body>
+</html>
