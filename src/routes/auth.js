@@ -7,6 +7,11 @@ const { randomToken, hashToken, randomInviteCode, INVITE_CODE_REGEX } = require(
 
 const BCRYPT_ROUNDS = 12;
 
+// Express 4 does not forward rejected promises from async handlers to error
+// middleware. Wrap async handlers so a rejection calls next(err) instead of
+// leaving the request hanging with no response.
+const asyncH = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
 // ── Recovery email template ───────────────────────────────────────────────────
 function buildRecoveryEmail(username, resetUrl, appUrl) {
   return `<!DOCTYPE html>
@@ -84,13 +89,22 @@ function passwordStrong(p) {
 }
 
 // POST /api/auth/register
-router.post('/register', async (req, res) => {
+router.post('/register', asyncH(async (req, res) => {
   const { username, password, invite_code, recovery_email } = req.body;
 
+  // Reject non-string inputs up front so nothing reaches bcrypt/DB with a value
+  // that could hang the handler. recovery_email is optional but, when present,
+  // must be a string.
+  if (typeof username !== 'string' || typeof password !== 'string' || typeof invite_code !== 'string') {
+    return res.status(400).json({ error: 'username, password, and invite_code are required' });
+  }
+  if (recovery_email != null && typeof recovery_email !== 'string') {
+    return res.status(400).json({ error: 'recovery_email must be a string' });
+  }
   if (!username || !password || !invite_code) {
     return res.status(400).json({ error: 'username, password, and invite_code are required' });
   }
-  if (typeof username !== 'string' || username.length < 2 || username.length > 15) {
+  if (username.length < 2 || username.length > 15) {
     return res.status(400).json({ error: 'Username must be 2–15 characters' });
   }
   if (!passwordStrong(password)) {
@@ -144,12 +158,18 @@ router.post('/register', async (req, res) => {
     req.session.role = role;
     res.status(201).json({ id: newUserId, username, role, theme: 'system', auto_load_images: false });
   });
-});
+}));
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', asyncH(async (req, res) => {
   const { username, password } = req.body;
 
+  // Type-guard before any DB/crypto work. Non-string truthy values (objects,
+  // booleans, numbers, arrays) would otherwise reach bcrypt.compare and hang the
+  // handler until the proxy kills it at 60s — an unauthenticated DoS vector.
+  if (typeof username !== 'string' || typeof password !== 'string') {
+    return res.status(400).json({ error: 'username and password are required' });
+  }
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password are required' });
   }
@@ -174,7 +194,7 @@ router.post('/login', async (req, res) => {
     req.session.role = user.role;
     res.json({ id: user.id, username: user.username, role: user.role, theme: user.theme, auto_load_images: !!user.auto_load_images });
   });
-});
+}));
 
 // POST /api/auth/logout
 router.post('/logout', (req, res) => {
@@ -198,11 +218,14 @@ router.get('/me', requireAuth, (req, res) => {
 // ─── Recovery ────────────────────────────────────────────────────────────────
 
 // POST /api/auth/recovery/request
-router.post('/recovery/request', async (req, res) => {
+router.post('/recovery/request', asyncH(async (req, res) => {
   // Always return generic response to prevent user enumeration
   const GENERIC = { ok: true, message: 'If a matching account exists, a reset link has been dispatched.' };
 
   const { username, recovery_email } = req.body;
+  // Type-guard: non-string values must not reach the DB lookup. Still return the
+  // generic response to preserve the non-enumeration contract.
+  if (typeof username !== 'string' || typeof recovery_email !== 'string') return res.json(GENERIC);
   if (!username || !recovery_email) return res.json(GENERIC);
 
   try {
@@ -250,11 +273,14 @@ router.post('/recovery/request', async (req, res) => {
   }
 
   res.json(GENERIC);
-});
+}));
 
 // POST /api/auth/recovery/reset
-router.post('/recovery/reset', async (req, res) => {
+router.post('/recovery/reset', asyncH(async (req, res) => {
   const { token, new_password } = req.body;
+  if (typeof token !== 'string' || typeof new_password !== 'string') {
+    return res.status(400).json({ error: 'token and new_password are required' });
+  }
   if (!token || !new_password) {
     return res.status(400).json({ error: 'token and new_password are required' });
   }
@@ -275,7 +301,7 @@ router.post('/recovery/reset', async (req, res) => {
   q.markRecoveryTokenUsed.run(record.id);
 
   res.json({ ok: true });
-});
+}));
 
 // POST /api/auth/bootstrap-invite
 // Generates the very first invite code so the admin account can be created.

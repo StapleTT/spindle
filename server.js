@@ -32,8 +32,8 @@ app.use(helmet({
 }));
 
 app.use(cors({ origin: false }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10kb' }));
+app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // --- SQLite session store (uses the same DB as the app; no file-lock issues on Windows) ---
 const db = require('./src/db/schema');
@@ -164,12 +164,35 @@ app.get('/m/recovery',         (req, res) => res.sendFile(path.join(__dirname, '
 app.get('/m/privacy-policy',   (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'privacy-policy.html')));
 app.get('/m/tos',              (req, res) => res.sendFile(path.join(__dirname, 'public', 'm', 'tos.html')));
 
-// 404 handler — must be last
+// 404 handler — must be last before the error handler
 app.use((req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Not found' });
   }
   res.status(404).sendFile(path.join(__dirname, 'public', '404.html'));
+});
+
+// --- Global error handler ---
+// Express 4 does NOT forward rejected promises from async route handlers to
+// error middleware automatically. Combined with our handlers being `async`, an
+// unhandled rejection (e.g. a library throwing on bad input) would leave the
+// request without a response — it would hang until the proxy 504s. Catching the
+// `body-parser` "request entity too large"/"invalid JSON" errors here also turns
+// them into clean JSON 4xx responses instead of HTML stack traces.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (res.headersSent) return next(err);
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Request body too large' });
+  }
+  if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) {
+    return res.status(400).json({ error: 'Invalid request body' });
+  }
+  console.error('[unhandled]', req.method, req.path, '-', err && err.message);
+  if (req.path.startsWith('/api/')) {
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+  res.status(500).sendFile(path.join(__dirname, 'public', '404.html'));
 });
 
 // --- Start ---
