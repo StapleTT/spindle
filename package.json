@@ -1,0 +1,39 @@
+{
+  "name": "spindle",
+  "private": true,
+  "version": "2.0.0-dev",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <27"
+  },
+  "workspaces": [
+    "apps/server",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently --kill-others --names api,web,worker npm:dev:api npm:dev:web npm:dev:worker",
+    "dev:api": "tsx watch --env-file-if-exists=.env apps/server/src/start.ts",
+    "dev:web": "npm run dev --workspace=@spindle/web",
+    "dev:worker": "tsx watch --env-file-if-exists=.env apps/server/src/worker.ts",
+    "db:up": "docker compose up -d --wait",
+    "db:down": "docker compose down",
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "tsx --test apps/server/test/*.test.ts",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build",
+    "start": "node --env-file-if-exists=.env apps/server/dist/start.js",
+    "worker": "node --env-file-if-exists=.env apps/server/dist/worker.js"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/node": "^24.0.0",
+    "concurrently": "^9.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}
