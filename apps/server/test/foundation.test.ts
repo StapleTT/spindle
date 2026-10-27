@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Pool } from 'pg';
-import { buildApp } from '../src/app.js';
 import { readConfig } from '../src/config.js';
+import { testApp } from './auth-fixture.js';
 
 test('configuration rejects missing/invalid database URLs without exposing credentials', () => {
   assert.throws(() => readConfig({}), /DATABASE_URL is required/);
@@ -33,7 +33,7 @@ test('liveness survives database outages while readiness fails without leaking d
   t.mock.method(database, 'query', async () => {
     throw new Error('private-host:secret');
   });
-  const app = buildApp(database);
+  const app = testApp(database);
   t.after(() => app.close());
 
   const live = await app.inject('/api/health');
@@ -52,7 +52,7 @@ test('readiness checks the database and returns success when it responds', async
   const query = t.mock.method(database, 'query', async () => ({
     rows: [{ '?column?': 1 }],
   }));
-  const app = buildApp(database);
+  const app = testApp(database);
   t.after(() => app.close());
 
   const response = await app.inject('/api/ready');

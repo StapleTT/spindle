@@ -2,7 +2,7 @@
 
 Spindle syncs all your mailboxes into one unified inbox you can drive from the keyboard. Use the hosted service or run it on your own server.
 
-The 2.0 rewrite has a local development foundation. Authentication and mail synchronization are not implemented yet. The visual design system will be imported from Claude Design later.
+The 2.0 rewrite supports invite-only signup, verified-email/password login, logout, verification resend, and password recovery. Mail synchronization comes next. The visual design system will be imported from Claude Design later.
 
 See the [confirmed decisions](docs/decisions.md), [rebuild brief](REBUILD_BRIEF.md), and [task checklist](REBUILD_TASKS.md).
 
@@ -13,15 +13,22 @@ Install Node 24 LTS (see `.nvmrc`), npm, and Docker with Compose. Your user need
 ```bash
 npm ci
 cp .env.example .env
+# Set AUTH_SECRET in .env to a random value: openssl rand -base64 48
 npm run db:up
+npm run db:migrate
+npm run auth:invite -- you@example.com --admin
 npm run dev
 ```
 
 Keep an existing `.env` rather than overwriting it. The example credentials are for a loopback-only development database. Never reuse them for hosting.
 
-Open **http://127.0.0.1:5173**. One command starts Vite, the Fastify API, and a separate pg-boss worker. Vite forwards `/api` to the local API, so the browser uses one origin. The placeholder page checks database readiness; it is not the final product design.
+Replace `you@example.com` with the email you want to use. `--admin` explicitly designates the initial admin; the first person to register does not automatically become admin. For subsequent users, omit `--admin`.
 
-Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, and Vite on `127.0.0.1:5173`. The worker initializes pg-boss's own versioned queue schema; application/user/mail schema migrations come with the next slice. No mail handlers run yet.
+With the example Mailpit settings, open **http://127.0.0.1:8025** to read captured invitation, verification, and recovery emails. Follow the invitation to **http://127.0.0.1:5173**, create your account, open the verification email, and sign in. Use `127.0.0.1` consistently: it must match `APP_URL` for cookies and origin checks. For real delivery from `noreply@spindle.staplett.xyz`, see [Resend setup and receipt checks](docs/resend.md).
+
+`npm run dev` starts Vite, the Fastify API, and a separate pg-boss worker. Vite forwards `/api` to the API, so the browser uses one origin. Forms use temporary accessible styling pending Claude Design.
+
+Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, Vite on `127.0.0.1:5173`, and Mailpit SMTP on `127.0.0.1:1025`. The worker owns pg-boss's queue schema; `npm run db:migrate` applies versioned application migrations. No mail sync handlers run yet.
 
 If Docker reports permission denied, start the development database with `sudo docker compose up -d --wait` in your terminal, then run `npm run dev` normally. Do not run npm or the application as root.
 
@@ -32,12 +39,15 @@ Stop the app with Ctrl-C. `npm run db:down` stops Postgres and preserves its nam
 ```bash
 npm run check    # lint/format check, typecheck, tests, builds
 npm run format   # apply formatting
+npm run test:integration # isolated Postgres auth tests; development role needs CREATEDB
+npm exec -- playwright install chromium # once, for browser tests
+npm run test:browser
 ```
 
 - `apps/web`: responsive React/Vite frontend with temporary native styling.
-- `apps/server/src/start.ts`: API startup; `/api/health` tests liveness and `/api/ready` tests database connectivity. Readiness returns 503 without database details during an outage.
+- `apps/server/src/start.ts`: API startup; `/api/health` tests liveness and `/api/ready` tests database connectivity. Run migrations before starting. `/api/me` returns only the authenticated, verified user's profile.
 - `apps/server/src/worker.ts`: separate Postgres-backed queue process with graceful shutdown.
 - `npm run build`: emits `apps/web/dist` and `apps/server/dist`.
 - `npm start` and `npm run worker`: run the compiled API and worker. The API currently serves API routes only; production web hosting/TLS will be added before deployment.
 
-CI uses Node 24 and runs the same checks. Configure secrets only when their owning features are implemented; no OAuth credentials, encryption keys or mail accounts are needed for this foundation.
+CI uses Node 24, Postgres, and Chromium to run the same checks. See [authentication setup and behavior](docs/authentication.md) for configuration, API boundaries, invitations, sessions and deployment requirements. No OAuth credentials or connected mailboxes are needed yet.

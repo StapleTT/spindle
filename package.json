@@ -17,6 +17,10 @@
     "dev:worker": "tsx watch --env-file-if-exists=.env apps/server/src/worker.ts",
     "db:up": "docker compose up -d --wait",
     "db:down": "docker compose down",
+    "db:migrate": "tsx --env-file-if-exists=.env apps/server/scripts/migrate.ts",
+    "auth:invite": "tsx --env-file-if-exists=.env apps/server/scripts/invite.ts",
+    "test:integration": "tsx --env-file-if-exists=.env apps/server/scripts/test-auth.ts",
+    "test:browser": "tsx --env-file-if-exists=.env apps/server/scripts/test-auth.ts --browser",
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
     "lint": "biome check .",
@@ -30,6 +34,7 @@
     "@biomejs/biome": "^2.0.0",
     "@types/node": "^24.0.0",
     "concurrently": "^9.0.0",
+    "playwright": "^1.64.1",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   },

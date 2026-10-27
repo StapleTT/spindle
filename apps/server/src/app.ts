@@ -1,11 +1,32 @@
 import helmet from '@fastify/helmet';
-import Fastify from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import type { Pool } from 'pg';
-import { logger } from './logger.js';
+import type { Auth } from './auth/auth.js';
+import type { AuthConfig } from './auth/config.js';
+import { registerAuthRoutes } from './auth/routes.js';
+import { loggerOptions } from './logger.js';
 
-export function buildApp(database: Pool) {
-  const app = Fastify({ loggerInstance: logger, bodyLimit: 64 * 1024 });
+export function buildApp(database: Pool, auth: Auth, config: AuthConfig) {
+  const app = Fastify({
+    logger: loggerOptions,
+    bodyLimit: 64 * 1024,
+    trustProxy: config.trustProxy,
+  });
   app.register(helmet);
+  registerAuthRoutes(app, auth, config);
+  app.setErrorHandler<FastifyError>((error, request, reply) => {
+    const status =
+      error.statusCode && error.statusCode >= 400 && error.statusCode < 500
+        ? error.statusCode
+        : 500;
+    if (status === 500) request.log.error('Request failed');
+    reply.code(status).send({
+      message:
+        status === 500
+          ? 'Request failed. Please try again.'
+          : 'Invalid request.',
+    });
+  });
   app.addHook('onClose', async () => {
     await database.end();
   });

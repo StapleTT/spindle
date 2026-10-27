@@ -5,6 +5,19 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: spindle
+          POSTGRES_PASSWORD: spindle
+          POSTGRES_DB: spindle
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U spindle -d spindle"
+          --health-interval 2s --health-timeout 3s --health-retries 15
+    env:
+      DATABASE_URL: postgresql://spindle:spindle@127.0.0.1:5432/spindle
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -13,3 +26,6 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run test:integration
+      - run: npm exec -- playwright install --with-deps chromium
+      - run: npm run test:browser

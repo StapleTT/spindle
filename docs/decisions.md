@@ -41,7 +41,7 @@ Require a verified email address and password for Spindle login. Passkeys and tw
 Consequences:
 
 - Use email as the login identifier; do not require a legacy-style username for authentication.
-- Require email verification before granting access to connected mail or mail operations. Verification and resend flows use expiring single-use tokens and rate limits.
+- Require email verification before granting access to connected mail or mail operations. Verification/resend flows use expiring links and rate limits; recovery links are single-use. The library's signed verification links are idempotent and do not create sessions.
 - Keep secure password hashing, non-enumerating email-based password recovery, session revocation and recent password reauthentication for sensitive operations in the release scope.
 - Keep Google/Microsoft mailbox connection OAuth separate from Spindle login.
 - Do not require TOTP, WebAuthn, passkey enrollment or MFA screens to complete the beta or public 2.0 release.
@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The repository/local foundation is underway. The next functional slice is verified-email/password authentication and the user-owned database schema.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation and first authentication slice are implemented. See [authentication setup and behavior](authentication.md) for the new flows; connected mailboxes are the next functional area.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -88,6 +88,24 @@ Status: selected by the agent on 2026-10-27 to implement the agreed scope; a tec
 - Biome for lint/format checks; Node's test runner through tsx for server tests.
 - Local health/readiness endpoints, bounded database requests, security headers and structured logs with credential/header redaction.
 
-Only dependencies used by this slice are installed. Domain migrations, sessions/authentication, mail adapters, storage, query caching and the final design components will be added when their owning features are implemented. The API's compiled entry point currently serves API routes only; production frontend hosting is still pending.
+Dependencies are added with their owning features. Authentication now adds Better Auth, its transaction-context package, Drizzle ORM and Nodemailer, with versioned SQL migrations. Mail adapters, storage, query caching and final design components remain future work. The API's compiled entry point currently serves API routes only; production frontend hosting is still pending.
 
 Claude Design will supply the design system later; its export format and framework requirements are not yet known. Native temporary styling avoids committing to a competing design system.
+
+## D006 — authentication implementation
+
+Status: agent implementation choices on 2026-10-27, following D001–D004.
+
+Use Better Auth's email/password, verification, recovery and Postgres session flows through its transactional Drizzle adapter. Email-bound, seven-day invitations and roles belong to Spindle; their lookup shares the signup transaction through the library's current adapter. An operator command explicitly designates the initial admin and sends invitations. Generic signup responses avoid exposing invitation membership or account existence.
+
+Use the library's one-hour signed verification links with idempotent verification and no automatic login. Recovery identifiers are hashed, expire after one hour and are atomically single-use. A database credential-change trigger revokes all sessions and remaining recovery links atomically. Production cookies use exact `__Host-` names and secure attributes; an explicit loopback-only HTTP exception supports development. SMTP requires TLS except for the local development relay. See the authentication document for limits and exposed routes.
+
+Use Drizzle's installed SQL migrator rather than its generator: this keeps initial migrations versioned without adding the generator's transitive dependency advisories. Mailpit supplies local email capture; Playwright verifies the browser flows. No organization model, passkey/2FA scaffolding, production email provider or admin web panel is introduced.
+
+## D007 — Resend for system email
+
+Status: provider selected by the user on 2026-10-27; SMTP authentication, domain verification and external receipt confirmed.
+
+Send invitations, verification and recovery email directly through Resend SMTP from `noreply@spindle.staplett.xyz`, using the existing transport. Mailpit remains available for local capture; no relay hop or SDK is added. The existing ignored `.env` already contains Resend settings and a sending-only key. Preserve that restricted scope; domain-management access is unnecessary for routine sending.
+
+SMTP authentication and published DKIM/SPF records are confirmed. The user confirmed domain verification, explicitly designated a test recipient, and confirmed receipt of the one authorized test in Proton Mail after Resend accepted it. DMARC was not found for the sender subdomain during the DNS check; its policy remains unconfirmed. Keep the working app origin until a public HTTPS deployment exists. See [the Resend checklist](resend.md) for proof, setup and rollback.
