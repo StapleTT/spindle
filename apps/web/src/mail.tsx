@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { actionText, mailApi as api, requestAction } from './mail-api.js';
+import { mailApi as api, movedNotice, requestAction } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { Reader } from './reader.js';
 
@@ -109,16 +109,17 @@ export function Mail() {
     reload();
   }
 
-  async function moveMessage(message: Message, kind: 'archive' | 'trash') {
+  async function moveMessage(
+    message: Message,
+    kind: 'archive' | 'trash' | 'restore',
+  ) {
     setPage((current) => ({
       ...current,
       messages: current.messages.filter((item) => item.id !== message.id),
     }));
     try {
-      await requestAction(message.id, kind);
-      setNotice(
-        `${actionText[kind].done} “${message.subject || '(No subject)'}”. Moving it at your provider.`,
-      );
+      const { target } = await requestAction(message.id, kind);
+      setNotice(movedNotice(kind, message.subject, target));
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : 'Unable to update mail.',
@@ -556,6 +557,7 @@ export function Mail() {
               id={messageId}
               account={account}
               mailbox={mailbox}
+              folders={mailboxes}
               onChange={reload}
               onMoved={(text) => {
                 setNotice(text);
@@ -622,6 +624,17 @@ export function Mail() {
                             onClick={() => void moveMessage(message, 'archive')}
                           >
                             Archive
+                          </button>
+                        )}{' '}
+                        {['\\Archive', '\\Trash'].includes(
+                          selected?.role ?? '',
+                        ) && (
+                          <button
+                            type="button"
+                            aria-label={`Restore “${message.subject || '(No subject)'}”`}
+                            onClick={() => void moveMessage(message, 'restore')}
+                          >
+                            Restore
                           </button>
                         )}{' '}
                         {canMove(message, '\\Trash') && (

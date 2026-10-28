@@ -404,6 +404,140 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
   );
 
   await t.test(
+    'move chooses a folder and restore returns to the recorded origin',
+    async () => {
+      for (const [subject, minute] of [
+        ['Sixth action mail', 6],
+        ['Seventh action mail', 7],
+      ] as const)
+        server.control.addMessage('INBOX', {
+          raw: rawMail(subject, `${minute}@example.test`),
+          internaldate: new Date(`2026-10-27T12:0${minute}:00Z`),
+          flags: [],
+        });
+      server.control.addMessage('Trash', {
+        raw: rawMail('Eighth action mail', '8@example.test'),
+        internaldate: new Date('2026-10-27T12:08:00Z'),
+        flags: [],
+      });
+      await pool.query(
+        'UPDATE mailboxes SET last_synced_at=NULL WHERE user_id=$1',
+        [owner.id],
+      );
+      await syncAccount(pool, keys, owner.id, account);
+      const folders = (await request('mailboxes')).json().mailboxes as {
+        id: string;
+        path: string;
+      }[];
+      const folder = (path: string) => {
+        const found = folders.find((box) => box.path === path);
+        assert.ok(found);
+        return found.id;
+      };
+      const idOf = async (subject: string) => {
+        const id = (
+          await pool.query(
+            'SELECT id FROM mail_messages WHERE user_id=$1 AND subject=$2',
+            [owner.id, subject],
+          )
+        ).rows[0]?.id as string | undefined;
+        assert.ok(id);
+        return id;
+      };
+      const folderOf = async (id: string) =>
+        (
+          await pool.query(
+            `SELECT b.path FROM mail_memberships mm JOIN mailboxes b ON b.id=COALESCE(mm.pending_mailbox_id,mm.mailbox_id)
+          WHERE mm.message_id=$1`,
+            [id],
+          )
+        ).rows[0]?.path as string | undefined;
+      const origin = async (id: string, box: string) =>
+        (await request(`messages/${id}?mailbox=${folder(box)}`)).json().message
+          .restoreTo?.path ?? null;
+      const action = (id: string, body: object) =>
+        request(`messages/${id}/actions`, 'POST', {
+          id: randomUUID(),
+          ...body,
+        });
+      const providerHas = (path: string, subject: string) =>
+        server.control
+          .listMessages(path, { raw: true })
+          .some((message) =>
+            String(message.raw).includes(`Subject: ${subject}\r\n`),
+          );
+
+      const sixth = await idOf('Sixth action mail');
+      assert.equal((await action(sixth, { kind: 'move' })).statusCode, 400);
+      assert.equal(
+        (await action(sixth, { kind: 'archive', mailbox: folder('Receipts') }))
+          .statusCode,
+        400,
+      );
+      assert.equal(
+        (await action(sixth, { kind: 'move', mailbox: randomUUID() }))
+          .statusCode,
+        409,
+      );
+      assert.equal(
+        (await action(sixth, { kind: 'move', mailbox: folder('INBOX') }))
+          .statusCode,
+        409,
+      );
+      assert.equal((await action(sixth, { kind: 'restore' })).statusCode, 409);
+      const operation = randomUUID();
+      const moved = await request(`messages/${sixth}/actions`, 'POST', {
+        id: operation,
+        kind: 'move',
+        mailbox: folder('Receipts'),
+      });
+      assert.equal(moved.statusCode, 202, moved.body);
+      assert.equal(moved.json().target, 'Receipts');
+      // Replay is answered from the recorded intent even though the message already moved.
+      const replay = await request(`messages/${sixth}/actions`, 'POST', {
+        id: operation,
+        kind: 'move',
+        mailbox: folder('Receipts'),
+      });
+      assert.equal(replay.statusCode, 202, replay.body);
+      assert.equal(await folderOf(sixth), 'Receipts');
+      assert.equal(await origin(sixth, 'Receipts'), 'INBOX');
+      await apply();
+      assert.ok(providerHas('Receipts', 'Sixth action mail'));
+      assert.equal(await idOf('Sixth action mail'), sixth);
+      const restored = await action(sixth, { kind: 'restore' });
+      assert.equal(restored.json().target, 'INBOX');
+      await apply();
+      assert.ok(providerHas('INBOX', 'Sixth action mail'));
+      assert.ok(!providerHas('Receipts', 'Sixth action mail'));
+      assert.equal(await idOf('Sixth action mail'), sixth);
+      assert.equal(await folderOf(sixth), 'INBOX');
+
+      // Restore follows the most recent move, so Receipts -> Trash restores to Receipts.
+      const seventh = await idOf('Seventh action mail');
+      await action(seventh, { kind: 'move', mailbox: folder('Receipts') });
+      await action(seventh, { kind: 'trash' });
+      assert.equal(await origin(seventh, 'Trash'), 'Receipts');
+      await apply();
+      assert.equal(
+        (await action(seventh, { kind: 'restore' })).json().target,
+        'Receipts',
+      );
+      await apply();
+      assert.ok(providerHas('Receipts', 'Seventh action mail'));
+      assert.equal(await folderOf(seventh), 'Receipts');
+
+      // Mail trashed before Spindle knew its origin restores to the inbox.
+      const eighth = await idOf('Eighth action mail');
+      assert.equal(await origin(eighth, 'Trash'), 'INBOX');
+      await action(eighth, { kind: 'restore' });
+      await apply();
+      assert.ok(providerHas('INBOX', 'Eighth action mail'));
+      assert.equal(await folderOf(eighth), 'INBOX');
+    },
+  );
+
+  await t.test(
     'durable pg-boss dispatch applies a pending action',
     async () => {
       await mark(second.id, 'unread');

@@ -461,6 +461,37 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       .waitFor({ state: 'detached' });
     await page.getByRole('button', { name: 'Trash (1 unread / 1)' }).waitFor();
     await waitFor(() => server.control.getMailbox('Trash').messages === 1);
+    await page.getByRole('button', { name: 'Trash (1 unread / 1)' }).click();
+    await page
+      .getByRole('button', { name: 'Restore “Reader message 45”' })
+      .click();
+    await page
+      .getByText(
+        'Restored “Reader message 45” to INBOX. Moving it at your provider.',
+      )
+      .waitFor();
+    await page.getByRole('button', { name: 'Trash (0 unread / 0)' }).waitFor();
+    await waitFor(() => server.control.getMailbox('Trash').messages === 0);
+    await page.evaluate(
+      async (id) => {
+        window.location.hash = `message=${id}`;
+      },
+      await subjectId('Reader message 44'),
+    );
+    await page
+      .getByRole('heading', { name: 'Reader message 44', exact: true })
+      .waitFor();
+    await page.getByLabel('Move to folder').selectOption({ label: 'Receipts' });
+    await page.getByRole('button', { name: 'Move', exact: true }).click();
+    await page
+      .getByText(
+        'Moved “Reader message 44” to Receipts. Moving it at your provider.',
+      )
+      .waitFor();
+    await page
+      .getByRole('button', { name: 'Receipts (1 unread / 1)' })
+      .waitFor();
+    await waitFor(() => server.control.getMailbox('Receipts').messages === 1);
     await page.evaluate((id) => {
       window.location.hash = `message=${id}`;
     }, next);

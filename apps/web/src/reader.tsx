@@ -3,6 +3,7 @@ import {
   actionText,
   type MailAction,
   mailApi,
+  movedNotice,
   requestAction,
 } from './mail-api.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
@@ -25,8 +26,11 @@ type Detail = {
     receivedAt: string;
     messageId: string | null;
     unread: boolean;
+    accountId: string;
     lastAction: MailAction | null;
     canMove: { archive: boolean | null; trash: boolean | null } | null;
+    folderId: string | null;
+    restoreTo: { id: string; path: string } | null;
   };
   previous: string | null;
   next: string | null;
@@ -171,12 +175,14 @@ export function Reader({
   id,
   account,
   mailbox,
+  folders,
   onChange,
   onMoved,
 }: {
   id: string;
   account: string;
   mailbox: string;
+  folders: { id: string; accountId: string; path: string }[];
   onChange: () => void;
   onMoved: (notice: string) => void;
 }) {
@@ -190,6 +196,7 @@ export function Reader({
   const [imageError, setImageError] = useState('');
   const [ownAction, setOwnAction] = useState('');
   const [actionError, setActionError] = useState('');
+  const [destination, setDestination] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
   const imageRequest = useRef<AbortController | null>(null);
   const params = new URLSearchParams();
@@ -313,15 +320,13 @@ export function Reader({
     };
   }, [pendingAction, endpoint, onChange]);
 
-  async function mark(kind: MailAction['kind']) {
+  async function mark(kind: MailAction['kind'], folder?: string) {
     setActionError('');
     try {
-      const action = await requestAction(id, kind);
-      if (kind === 'archive' || kind === 'trash') {
+      const { action, target } = await requestAction(id, kind, folder);
+      if (kind !== 'read' && kind !== 'unread') {
         // The message has left this view; continue with its neighbor.
-        onMoved(
-          `${actionText[kind].done} “${detail?.message.subject || '(No subject)'}”. Moving it at your provider.`,
-        );
+        onMoved(movedNotice(kind, detail?.message.subject ?? '', target));
         navigateMail({ message: detail?.next ?? detail?.previous ?? '' });
         return;
       }
@@ -397,6 +402,42 @@ export function Reader({
           >
             Move to trash
           </button>
+          {detail.message.restoreTo && (
+            <button
+              type="button"
+              disabled={pendingAction}
+              onClick={() => void mark('restore')}
+            >
+              Restore to {detail.message.restoreTo.path}
+            </button>
+          )}
+          <label>
+            Move to folder{' '}
+            <select
+              value={destination}
+              onChange={(event) => setDestination(event.target.value)}
+            >
+              <option value="">Choose a folder</option>
+              {folders
+                .filter(
+                  (folder) =>
+                    folder.accountId === detail.message.accountId &&
+                    folder.id !== detail.message.folderId,
+                )
+                .map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.path}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            disabled={pendingAction || !destination}
+            onClick={() => void mark('move', destination)}
+          >
+            Move
+          </button>
           <span role="status">
             {lastAction?.state === 'pending'
               ? `${actionText[lastAction.kind].pending}… saving to your provider.`
@@ -408,9 +449,14 @@ export function Reader({
             <span role="alert" className="error">
               {actionText[lastAction.kind].pending} failed at your provider; the
               change was undone.{' '}
-              <button type="button" onClick={() => void mark(lastAction.kind)}>
-                Try again
-              </button>
+              {(lastAction.kind === 'read' || lastAction.kind === 'unread') && (
+                <button
+                  type="button"
+                  onClick={() => void mark(lastAction.kind)}
+                >
+                  Try again
+                </button>
+              )}
             </span>
           )}
           {actionError && (

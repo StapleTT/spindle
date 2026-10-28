@@ -3,7 +3,14 @@ import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
 
-export type ActionKind = 'read' | 'unread' | 'archive' | 'trash';
+export type ActionKind =
+  | 'read'
+  | 'unread'
+  | 'archive'
+  | 'trash'
+  | 'move'
+  | 'restore';
+export const moveKinds = ['archive', 'trash', 'move', 'restore'];
 
 // Provider-designated (SPECIAL-USE) destinations; folders are never guessed by name.
 export const moveRoles = { archive: '\\Archive', trash: '\\Trash' } as const;
@@ -31,6 +38,84 @@ export async function refreshPendingFolder(
       ORDER BY a.seq DESC LIMIT 1) WHERE user_id=$1 AND message_id=$2`,
     [owner, message],
   );
+}
+
+type Db = Pick<PoolClient, 'query'>;
+type Folder = { id: string; path: string };
+
+// The effective folder: a pending move already counts as the message's location.
+export async function currentFolder(db: Db, owner: string, message: string) {
+  return (
+    await db.query<{ id: string; role: string | null }>(
+      `SELECT b.id,b.role FROM mail_memberships mm JOIN mailboxes b
+      ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=COALESCE(mm.pending_mailbox_id,mm.mailbox_id)
+      WHERE mm.user_id=$1 AND mm.message_id=$2 LIMIT 1`,
+      [owner, message],
+    )
+  ).rows[0];
+}
+
+// Restore returns to the folder recorded by the move that brought the message here.
+// Mail already archived or trashed before Spindle knew its origin goes to the inbox.
+export async function restoreDestination(
+  db: Db,
+  owner: string,
+  account: string,
+  message: string,
+  current: { id: string; role: string | null },
+) {
+  const origin = (
+    await db.query<Folder>(
+      `SELECT b.id,b.path FROM mail_actions a JOIN mailboxes b
+      ON b.user_id=a.user_id AND b.account_id=a.account_id AND b.id=a.source_mailbox_id
+      WHERE a.user_id=$1 AND a.message_id=$2 AND a.target_mailbox_id=$3 AND a.state<>'failed'
+      ORDER BY a.seq DESC LIMIT 1`,
+      [owner, message, current.id],
+    )
+  ).rows[0];
+  if (origin) return origin;
+  if (current.role !== moveRoles.trash && current.role !== moveRoles.archive)
+    return undefined;
+  return (
+    await db.query<Folder>(
+      `SELECT id,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND role='inbox' LIMIT 1`,
+      [owner, account],
+    )
+  ).rows[0];
+}
+
+const unavailable = {
+  archive: 'This account has no provider-designated Archive folder.',
+  trash: 'This account has no provider-designated Trash folder.',
+  move: 'Choose a folder from the same mail account.',
+  restore: 'There is no known folder to restore this message to.',
+};
+
+export async function moveDestination(
+  db: Db,
+  owner: string,
+  account: string,
+  message: string,
+  kind: 'archive' | 'trash' | 'move' | 'restore',
+  chosen?: string,
+): Promise<{ source: string; target: Folder } | { error: string }> {
+  const current = await currentFolder(db, owner, message);
+  if (!current) return { error: unavailable[kind] };
+  const target =
+    kind === 'restore'
+      ? await restoreDestination(db, owner, account, message, current)
+      : (
+          await db.query<Folder>(
+            kind === 'move'
+              ? 'SELECT id,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND id=$3'
+              : 'SELECT id,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND role=$3 ORDER BY path LIMIT 1',
+            [owner, account, kind === 'move' ? chosen : moveRoles[kind]],
+          )
+        ).rows[0];
+  if (!target) return { error: unavailable[kind] };
+  if (target.id === current.id)
+    return { error: `This message is already in ${target.path}.` };
+  return { source: current.id, target };
 }
 
 type Settled = {

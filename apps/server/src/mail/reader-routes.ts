@@ -2,8 +2,12 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import {
   type ActionKind,
+  currentFolder,
+  moveDestination,
+  moveKinds,
   moveRoles,
   refreshPendingFolder,
+  restoreDestination,
   withSeen,
 } from './actions.js';
 import { trimContentCache } from './content-cache.js';
@@ -72,6 +76,12 @@ export function registerReaderRoutes(
         return reply
           .code(404)
           .send({ message: 'Message not found in this view.' });
+      const folder = await currentFolder(pool, owner, id);
+      const restore =
+        folder &&
+        (await restoreDestination(pool, owner, message.accountId, id, folder));
+      message.folderId = folder?.id ?? null;
+      message.restoreTo = restore && restore.id !== folder?.id ? restore : null;
       const neighbors = await Promise.all(
         [
           ['>', 'ASC'],
@@ -153,7 +163,7 @@ export function registerReaderRoutes(
 
   app.post<{
     Params: { id: string };
-    Body: { id: string; kind: ActionKind };
+    Body: { id: string; kind: ActionKind; mailbox?: string };
   }>(
     '/api/mail/messages/:id/actions',
     {
@@ -166,8 +176,9 @@ export function registerReaderRoutes(
             id: { type: 'string', format: 'uuid' },
             kind: {
               type: 'string',
-              enum: ['read', 'unread', 'archive', 'trash'],
+              enum: ['read', 'unread', 'archive', 'trash', 'move', 'restore'],
             },
+            mailbox: { type: 'string', format: 'uuid' },
           },
           additionalProperties: false,
         },
@@ -175,9 +186,13 @@ export function registerReaderRoutes(
     },
     async (request, reply) => {
       const owner = request.mailUser ?? '';
-      const { id: action, kind } = request.body;
+      const { id: action, kind, mailbox } = request.body;
+      if ((kind === 'move') !== Boolean(mailbox))
+        return reply
+          .code(400)
+          .send({ message: 'Choose a folder only when moving a message.' });
       const result = await transaction(pool, async (db) => {
-        // Locking the message serializes action order with its local flag changes.
+        // Locking the message serializes action order with its local changes.
         const message = (
           await db.query(
             `SELECT m.account_id FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
@@ -186,40 +201,52 @@ export function registerReaderRoutes(
           )
         ).rows[0];
         if (!message) return null;
+        const recorded = `SELECT a.id,a.kind,a.state,t.path AS target,a.message_id,a.target_mailbox_id
+          FROM mail_actions a LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.id=a.target_mailbox_id
+          WHERE a.id=$1 AND a.user_id=$2`;
+        // A retried request with the same operation ID returns the original intent.
+        const existing = (await db.query(recorded, [action, owner])).rows[0];
+        if (existing)
+          return existing.message_id === request.params.id &&
+            existing.kind === kind &&
+            (!mailbox || existing.target_mailbox_id === mailbox)
+            ? existing
+            : 'conflict';
+        let source: string | null = null;
         let target: string | null = null;
-        if (kind === 'archive' || kind === 'trash') {
-          const folder = (
-            await db.query(
-              `SELECT t.id,EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=$4
-              AND COALESCE(mm.pending_mailbox_id,mm.mailbox_id)=t.id) AS here
-              FROM mailboxes t WHERE t.user_id=$1 AND t.account_id=$2 AND t.role=$3 ORDER BY t.path LIMIT 1`,
-              [owner, message.account_id, moveRoles[kind], request.params.id],
-            )
-          ).rows[0];
-          if (!folder || folder.here) return { unavailable: kind };
-          target = folder.id;
+        if (moveKinds.includes(kind)) {
+          const destination = await moveDestination(
+            db,
+            owner,
+            message.account_id,
+            request.params.id,
+            kind as 'archive' | 'trash' | 'move' | 'restore',
+            mailbox,
+          );
+          if ('error' in destination) return destination;
+          source = destination.source;
+          target = destination.target.id;
         }
         const inserted = await db.query(
-          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,target_mailbox_id) VALUES($1,$2,$3,$4,$5,$6)
-        ON CONFLICT (id) DO NOTHING RETURNING id,kind,state`,
-          [action, owner, message.account_id, request.params.id, kind, target],
+          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,source_mailbox_id,target_mailbox_id)
+          VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+          [
+            action,
+            owner,
+            message.account_id,
+            request.params.id,
+            kind,
+            source,
+            target,
+          ],
         );
-        // A retried request with the same operation ID returns the original intent.
-        if (!inserted.rowCount)
-          return (
-            (
-              await db.query(
-                'SELECT id,kind,state FROM mail_actions WHERE id=$1 AND user_id=$2 AND message_id=$3 AND kind=$4',
-                [action, owner, request.params.id, kind],
-              )
-            ).rows[0] ?? 'conflict'
-          );
+        if (!inserted.rowCount) return 'conflict';
         await db.query(
           `UPDATE mail_memberships SET flags=${withSeen('flags', '$3::text')} WHERE user_id=$1 AND message_id=$2`,
           [owner, request.params.id, kind],
         );
         await refreshPendingFolder(db, owner, request.params.id);
-        return inserted.rows[0];
+        return (await db.query(recorded, [action, owner])).rows[0];
       });
       if (!result)
         return reply.code(404).send({ message: 'Message not found.' });
@@ -227,14 +254,12 @@ export function registerReaderRoutes(
         return reply
           .code(409)
           .send({ message: 'This action ID was already used.' });
-      if ('unavailable' in result)
-        return reply.code(409).send({
-          message:
-            result.unavailable === 'archive'
-              ? 'This message is already archived, or its provider has no designated Archive folder.'
-              : 'This message is already in Trash, or its provider has no designated Trash folder.',
-        });
-      return reply.code(202).send({ action: result });
+      if ('error' in result)
+        return reply.code(409).send({ message: result.error });
+      const { id, state, target } = result;
+      return reply
+        .code(202)
+        .send({ action: { id, kind: result.kind, state }, target });
     },
   );
 
