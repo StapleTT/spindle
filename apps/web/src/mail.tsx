@@ -325,7 +325,14 @@ export function Mail({ userId }: { userId: string }) {
             type="button"
             aria-pressed={view === 'drafts'}
             onClick={() =>
-              navigateMail({ draft: '', view: 'drafts', message: '' })
+              navigateMail({
+                account: '',
+                mailbox: '',
+                cursor: '',
+                draft: '',
+                view: 'drafts',
+                message: '',
+              })
             }
           >
             Local drafts
@@ -410,6 +417,8 @@ export function Mail({ userId }: { userId: string }) {
                             mailbox: box.id,
                             cursor: '',
                             message: '',
+                            draft: '',
+                            view: box.role === '\\Drafts' ? 'drafts' : '',
                           });
                         }}
                       >
@@ -644,8 +653,9 @@ export function Mail({ userId }: { userId: string }) {
                 accounts={accounts}
               />
             </Suspense>
-          ) : view === 'drafts' ? (
-            <DraftList user={userId} />
+          ) : view === 'drafts' ||
+            (!messageId && selected?.role === '\\Drafts') ? (
+            <DraftList user={userId} accountId={account} />
           ) : view === 'outbox' ? (
             <Outbox data={outgoing} />
           ) : messageId ? (

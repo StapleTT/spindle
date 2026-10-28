@@ -306,6 +306,47 @@ test('owned provider Drafts synchronization and recovery', {
     },
   );
   await t.test(
+    'an explicit re-save restores a removed provider draft without deleting the trashed version',
+    async () => {
+      const draft = await save();
+      await sync();
+      const remote = await copy(draft.id);
+      const raw = imap.server.control.getMessage(
+        'Drafts',
+        Number(remote.uid),
+      ).raw;
+      assert.ok(raw);
+      imap.server.control.addMessage('Trash', { raw, flags: ['\\Draft'] });
+      imap.server.control.expungeMessages('Drafts', [Number(remote.uid)]);
+      await sync();
+      const current = await link(draft.id);
+      assert.equal(current.error_code, 'draft_removed');
+      assert.equal(
+        (
+          await request(`draft-sync/${current.id}`, 'POST', {
+            action: 'keepLocal',
+            revision: 1,
+          })
+        ).statusCode,
+        200,
+      );
+      await sync();
+      assert.equal((await link(draft.id)).state, 'synced');
+      assert.equal(imap.server.control.listMessages('Drafts').length, 1);
+      assert.equal(imap.server.control.listMessages('Trash').length, 1);
+      const kept = imap.server.control.listMessages('Trash')[0];
+      assert.ok(kept);
+      assert.deepEqual(
+        imap.server.control.getMessage('Trash', kept.uid).raw,
+        raw,
+      );
+      imap.server.control.expungeMessages(
+        'Trash',
+        imap.server.control.listMessages('Trash').map((m) => m.uid),
+      );
+    },
+  );
+  await t.test(
     'keep-local publishes a separate copy without deleting external edits',
     async () => {
       const draft = await save();
@@ -721,6 +762,75 @@ test('owned provider Drafts synchronization and recovery', {
       await sync();
       assert.equal((await link(sent.id)).state, 'removed');
       await pool.query('DELETE FROM mail_smtp WHERE user_id=$1', [owner.id]);
+    },
+  );
+  await t.test(
+    'provider drafts are excluded from received lists, counts and reader navigation, including virtual-folder copies',
+    async () => {
+      imap.server.control.createMailbox('All Mail');
+      imap.server.control.addMessage('Drafts', {
+        raw: rawMail('Native editable draft'),
+        flags: [],
+      });
+      imap.server.control.addMessage('INBOX', {
+        raw: rawMail('Flagged draft'),
+        flags: ['\\Draft'],
+      });
+      imap.server.control.addMessage('INBOX', {
+        raw: rawMail('Received message'),
+        flags: [],
+      });
+      imap.server.control.addMessage('All Mail', {
+        raw: rawMail('Virtual draft copy'),
+        flags: ['\\Draft'],
+      });
+      imap.server.control.addMessage('Trash', {
+        raw: rawMail('Deleted draft'),
+        flags: ['\\Draft'],
+      });
+      await pool.query(
+        'UPDATE mailboxes SET last_synced_at=NULL WHERE account_id=$1',
+        [account],
+      );
+      await syncAccount(pool, keys, owner.id, account);
+      const boxes = (await request('mailboxes')).json().mailboxes;
+      const inbox = boxes.find((b: { path: string }) => b.path === 'INBOX');
+      const native = boxes.find((b: { path: string }) => b.path === 'Drafts');
+      const all = boxes.find((b: { path: string }) => b.path === 'All Mail');
+      const trash = boxes.find((b: { path: string }) => b.path === 'Trash');
+      assert.equal((await request('messages')).json().messages.length, 1);
+      assert.equal(inbox.total, 1);
+      assert.equal(inbox.unread, 1);
+      assert.equal(native.total, 1);
+      assert.equal(
+        (await request(`messages?mailbox=${native.id}`)).json().messages.length,
+        0,
+      );
+      assert.equal(
+        (await request(`messages?mailbox=${all.id}`)).json().messages.length,
+        0,
+      );
+      assert.equal(
+        (await request(`messages?mailbox=${trash.id}`)).json().messages.length,
+        1,
+      );
+      const message = (
+        await pool.query(
+          'SELECT m.id FROM mail_messages m JOIN mail_memberships mm ON mm.message_id=m.id WHERE mm.mailbox_id=$1',
+          [native.id],
+        )
+      ).rows[0];
+      assert.equal(
+        (await request(`messages/${message.id}?mailbox=${native.id}`))
+          .statusCode,
+        404,
+      );
+      for (const path of ['INBOX', 'All Mail', 'Trash'])
+        imap.server.control.expungeMessages(
+          path,
+          imap.server.control.listMessages(path).map((m) => m.uid),
+        );
+      imap.server.control.deleteMailbox('All Mail');
     },
   );
   await t.test(

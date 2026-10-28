@@ -9,12 +9,19 @@ type SyncIssue = {
   draftId: string | null;
   subject: string;
   accountName: string;
+  accountId: string;
   state: string;
   message: string;
   import: boolean;
 };
 
-export function DraftList({ user }: { user: string }) {
+export function DraftList({
+  user,
+  accountId = '',
+}: {
+  user: string;
+  accountId?: string;
+}) {
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
   const [issues, setIssues] = useState<SyncIssue[]>([]);
   const [busy, setBusy] = useState(false);
@@ -37,7 +44,11 @@ export function DraftList({ user }: { user: string }) {
         ]);
         if (!controller.signal.aborted) {
           setDrafts(result.drafts);
-          setIssues(sync.issues);
+          setIssues(
+            sync.issues.filter(
+              (issue) => !accountId || issue.accountId === accountId,
+            ),
+          );
           setError('');
         }
       } catch (failure) {
@@ -57,7 +68,7 @@ export function DraftList({ user }: { user: string }) {
       controller.abort();
       clearInterval(timer);
     };
-  }, [attempt]);
+  }, [attempt, accountId]);
   async function resolve(issue: SyncIssue, action: 'retry' | 'leaveProvider') {
     setBusy(true);
     try {
@@ -80,13 +91,14 @@ export function DraftList({ user }: { user: string }) {
     ...new Map(
       [...drafts, ...recoveries].map((draft) => [draft.id, draft]),
     ).values(),
-  ];
+  ].filter((draft) => !accountId || draft.accountId === accountId);
   return (
     <section aria-labelledby="drafts-heading">
       <h2 id="drafts-heading">Local drafts</h2>
       <p>
         Saved in Spindle and synchronized with the selected account’s Drafts
-        folder. Recovery edits also have text kept in this browser tab.
+        folder. Provider drafts open here for editing after background import.
+        Recovery edits also have text kept in this browser tab.
       </p>
       {loading && <p role="status">Loading drafts…</p>}
       {error && (

@@ -10,7 +10,7 @@ export function providerDraftText(item: ProviderSync) {
   if (item.state === 'unknown')
     return 'Provider save is unconfirmed. Check again before creating another copy.';
   if (item.code === 'draft_removed')
-    return 'The provider draft was removed or sent in another client. Review before sending again.';
+    return 'The provider copy was removed or sent elsewhere. Sync is paused. Review before saving it to provider Drafts again.';
   if (item.code === 'safe_delete_unavailable')
     return 'This server cannot safely replace or remove this draft. The provider copy has been kept.';
   if (item.code === 'draft_ambiguous')
@@ -117,7 +117,9 @@ export function ProviderDraftStatus({
                   disabled={disabled}
                   onClick={() => void onResolve(item.id, 'keepLocal')}
                 >
-                  Keep local as a separate provider draft
+                  {item.code === 'draft_removed'
+                    ? 'Save to provider Drafts again'
+                    : 'Keep local as a separate provider draft'}
                 </button>
               </>
             )}

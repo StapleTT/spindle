@@ -12,7 +12,7 @@ import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerProviderDraftRoutes } from './provider-draft-routes.js';
 import { registerReaderRoutes } from './reader-routes.js';
 import { consumeLimit, transaction } from './store.js';
-import { mailViewCondition } from './view.js';
+import { mailViewCondition, receivedMembershipCondition } from './view.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -328,7 +328,8 @@ export async function registerMailRoutes(
     mailboxes: (
       await pool.query(
         `SELECT b.id,b.account_id AS "accountId",b.name,b.path,b.role,b.initial_complete AS "initialComplete",
-      count(mm.message_id)::int AS total,count(mm.message_id) FILTER(WHERE NOT('\\Seen'=ANY(mm.flags)))::int AS unread
+      count(mm.message_id) FILTER(WHERE b.role='\\Drafts' OR (${receivedMembershipCondition}))::int AS total,
+      count(mm.message_id) FILTER(WHERE (b.role='\\Drafts' OR (${receivedMembershipCondition})) AND NOT('\\Seen'=ANY(mm.flags)))::int AS unread
       FROM mailboxes b LEFT JOIN mail_memberships mm ON mm.user_id=b.user_id AND mm.account_id=b.account_id
         AND COALESCE(mm.pending_mailbox_id,mm.mailbox_id)=b.id
       WHERE b.user_id=$1 GROUP BY b.id ORDER BY b.account_id,CASE WHEN b.role='inbox' THEN 0 ELSE 1 END,b.path`,

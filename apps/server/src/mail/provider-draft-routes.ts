@@ -46,14 +46,14 @@ export function registerProviderDraftRoutes(app: FastifyInstance, pool: Pool) {
     issues: [
       ...(
         await pool.query(
-          `SELECT p.id,p.draft_id AS "draftId",p.subject,p.state,p.error_code AS code,a.name AS "accountName",false AS import
+          `SELECT p.id,p.account_id AS "accountId",p.draft_id AS "draftId",p.subject,p.state,p.error_code AS code,a.name AS "accountName",false AS import
       FROM mail_draft_links p JOIN mail_accounts a ON a.user_id=p.user_id AND a.id=p.account_id WHERE p.user_id=$1 AND p.state IN ('conflict','unknown','failed') ORDER BY p.next_attempt_at LIMIT 100`,
           [request.mailUser],
         )
       ).rows,
       ...(
         await pool.query(
-          `SELECT p.id,NULL AS "draftId",p.subject,p.state,p.error_code AS code,a.name AS "accountName",true AS import
+          `SELECT p.id,p.account_id AS "accountId",NULL AS "draftId",p.subject,p.state,p.error_code AS code,a.name AS "accountName",true AS import
       FROM mail_draft_imports p JOIN mail_accounts a ON a.user_id=p.user_id AND a.id=p.account_id WHERE p.user_id=$1 AND p.state='failed' ORDER BY p.next_attempt_at LIMIT 100`,
           [request.mailUser],
         )

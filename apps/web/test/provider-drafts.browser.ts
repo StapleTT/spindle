@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { createServer as createNetServer } from 'node:net';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +16,11 @@ import {
   testApp,
   testConfig,
 } from '../../server/test/auth-fixture.js';
-import { imapFixture, imapPassword } from '../../server/test/imap-fixture.js';
+import {
+  imapFixture,
+  imapPassword,
+  rawMail,
+} from '../../server/test/imap-fixture.js';
 
 test('provider drafts show status, reconcile clean editors, preserve recovery and expose cleanup conflicts', {
   timeout: 90000,
@@ -65,6 +70,49 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
   assert.equal(connected.statusCode, 202, connected.body);
   const account = connected.json().account.id;
   await syncAccount(pool, keys, owner.id, account);
+  const native = imap.server.control.addMessage('Drafts', {
+    raw: rawMail('Native provider draft', 'editable-native@example.test'),
+    flags: ['\\Draft'],
+    internaldate: new Date(),
+  });
+  await pool.query(
+    'UPDATE mailboxes SET last_synced_at=NULL WHERE account_id=$1',
+    [account],
+  );
+  await syncAccount(pool, keys, owner.id, account);
+  const folder = (
+    await pool.query(
+      "SELECT uid_validity FROM mailboxes WHERE account_id=$1 AND role='\\Drafts'",
+      [account],
+    )
+  ).rows[0];
+  await pool.query(
+    'INSERT INTO mail_draft_imports(user_id,account_id,path,uid_validity,uid) VALUES($1,$2,$3,$4,$5)',
+    [
+      owner.id,
+      account,
+      'Drafts',
+      String(folder.uid_validity),
+      String(native.uid),
+    ],
+  );
+  await syncProviderDrafts(pool, keys, owner.id, account);
+  await pool.query(
+    'INSERT INTO mail_drafts(id,user_id,content) VALUES($1,$2,$3)',
+    [
+      randomUUID(),
+      owner.id,
+      {
+        to: '',
+        cc: '',
+        bcc: '',
+        subject: 'Unassigned local draft',
+        format: 'plain',
+        text: 'Local text',
+        html: '',
+      },
+    ],
+  );
   const apiUrl = await app.listen({ host: '127.0.0.1', port: 0 });
   const vite = await createServer({
     configFile: false,
@@ -105,6 +153,65 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     await page
       .getByRole('heading', { name: 'Unified inbox', exact: true })
       .waitFor();
+    await page.getByRole('button', { name: /^Drafts / }).click();
+    await page
+      .getByRole('heading', { name: 'Local drafts', exact: true })
+      .waitFor();
+    assert.equal(
+      await page
+        .getByRole('link', { name: 'Unassigned local draft', exact: true })
+        .count(),
+      0,
+    );
+    await page
+      .getByRole('link', { name: 'Native provider draft', exact: true })
+      .click();
+    await page
+      .getByLabel('Subject', { exact: true })
+      .fill('Edited provider draft in composer');
+    await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
+    await pool.query(
+      'UPDATE mail_draft_links SET next_attempt_at=clock_timestamp()',
+    );
+    await syncProviderDrafts(pool, keys, owner.id, account);
+    assert.equal(imap.server.control.listMessages('Drafts').length, 1);
+    const savedNative = imap.server.control.listMessages('Drafts')[0];
+    assert.ok(savedNative);
+    const edited = imap.server.control.getMessage(
+      'Drafts',
+      savedNative.uid,
+    ).raw;
+    assert.ok(edited);
+    assert.match(
+      edited.toString(),
+      /Subject: Edited provider draft in composer/,
+    );
+    await page
+      .getByText('Saved to provider Drafts.', { exact: true })
+      .waitFor();
+    await page
+      .getByRole('button', { name: 'Discard draft', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Confirm discard draft', exact: true })
+      .click();
+    await page
+      .getByRole('heading', { name: 'Local drafts', exact: true })
+      .waitFor();
+    await pool.query(
+      'UPDATE mail_draft_links SET next_attempt_at=clock_timestamp()',
+    );
+    await syncProviderDrafts(pool, keys, owner.id, account);
+    assert.equal(imap.server.control.listMessages('Drafts').length, 0);
+    await page
+      .getByRole('button', { name: 'Local drafts', exact: true })
+      .click();
+    await page
+      .getByRole('link', { name: 'Unassigned local draft', exact: true })
+      .waitFor();
+    await page
+      .getByRole('button', { name: 'Unified inbox', exact: true })
+      .click();
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     await page
       .getByRole('heading', { name: 'New message', exact: true })
@@ -254,6 +361,35 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     assert.equal(imap.server.control.listMessages('Drafts').length, 2);
     assert.equal((await stored()).content.subject, 'Local conflicting work');
 
+    // Explicit recovery of a removed copy resumes synchronization without touching retained versions.
+    const removed = (
+      await pool.query(
+        'SELECT c.uid FROM mail_draft_copies c JOIN mail_draft_links l ON l.active_copy_id=c.id WHERE l.source_draft_id=$1',
+        [id],
+      )
+    ).rows[0];
+    imap.server.control.expungeMessages('Drafts', [Number(removed.uid)]);
+    await sync();
+    await page
+      .getByRole('button', {
+        name: 'Save to provider Drafts again',
+        exact: true,
+      })
+      .click();
+    await waitFor(
+      async () =>
+        !(
+          await pool.query(
+            "SELECT 1 FROM mail_draft_links WHERE source_draft_id=$1 AND state='conflict'",
+            [id],
+          )
+        ).rowCount,
+    );
+    await sync();
+    await page
+      .getByText('Saved to provider Drafts.', { exact: true })
+      .waitFor();
+    assert.equal(imap.server.control.listMessages('Drafts').length, 2);
     // A failed cleanup remains visible after navigating away from its deleted draft.
     await native('Native change before discard');
     await page
