@@ -120,6 +120,20 @@
       "when": 1793260000000,
       "tag": "0016_provider_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793270000000,
+      "tag": "0017_account_signatures",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793280000000,
+      "tag": "0018_local_search",
+      "breakpoints": true
     }
   ]
 }

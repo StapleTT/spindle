@@ -1,8 +1,8 @@
 # spindle
 
-Spindle syncs all your mailboxes into one unified inbox you can drive from the keyboard. Use the hosted service or run it on your own server.
+Spindle brings your private mailboxes into one unified inbox. The 2.0 plan includes hosted/self-hosted deployment and keyboard-first workflows.
 
-The 2.0 rewrite supports invite-only signup, verified-email/password login, recovery, private IMAP connections, background sync, a unified inbox and a cached message reader with isolated HTML and optional images. The visual design system will be imported from Claude Design later.
+The current rewrite supports invite-only signup, verified-email/password login and recovery, private IMAP connections and polling sync, a cached isolated reader with image controls, attachments and triage/undo, SMTP/Outbox, replies/formatted forwards, synchronized drafts, scanned outgoing files, sender names, per-account signatures, local search/saved views, split reader and keyboard/batch triage. Native Gmail/Outlook integrations, remaining product features and production readiness are still planned. The visual design system will be imported from Claude Design later. Send-as aliases are excluded from scope.
 
 See the [confirmed decisions](docs/decisions.md), [rebuild brief](REBUILD_BRIEF.md), and [task checklist](REBUILD_TASKS.md).
 
@@ -56,3 +56,5 @@ npm run test:browser
 - `npm start` and `npm run worker`: run the compiled API and worker. The API currently serves API routes only; production web hosting/TLS will be added before deployment.
 
 CI uses Node 24, Postgres, synthetic IMAP mail and Chromium to run the same checks. See [authentication setup and behavior](docs/authentication.md) and [IMAP setup](docs/imap.md) for configuration and boundaries. Automated checks need no real provider accounts or OAuth credentials.
+
+Local search syntax, coverage limits, shortcuts and selected-message recovery are documented in [search and keyboard triage](docs/search.md).

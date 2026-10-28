@@ -87,7 +87,7 @@ export async function releaseLease(pool: Pool, account: MailAccount) {
 }
 
 export async function consumeLimit(
-  pool: Pool,
+  pool: Pick<Pool, 'query'>,
   user: string,
   action: string,
   max: number,

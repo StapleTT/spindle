@@ -1,6 +1,6 @@
 # Composer and local drafts
 
-Choose **Compose** to start a private draft, or **Reply**, **Reply all** or **Forward** from a loaded message. **Local drafts** lists saved drafts and recovery edits from the current browser tab across accounts. An account’s **Drafts** folder opens the same editable workspace filtered to that account. See [sending and Outbox](sending.md), [response drafts and threading](replies.md) and [outgoing attachments](attachments.md). See [provider Drafts synchronization](provider-drafts.md) for native-client imports, status and conflict resolution. Signatures and alternate send-as identities remain later work.
+Choose **Compose** to start a private draft, or **Reply**, **Reply all** or **Forward** from a loaded message. **Local drafts** lists saved drafts and recovery edits from the current browser tab across accounts. An account’s **Drafts** folder opens the same editable workspace filtered to that account. See [sending and Outbox](sending.md), [response drafts and threading](replies.md) and [outgoing attachments](attachments.md). See [provider Drafts synchronization](provider-drafts.md) for native-client imports, status and conflict resolution. See [per-account signatures](signatures.md) for rich/plain editing and separate new-message and reply/forward defaults. Sending uses each connected account’s checked primary sender; send-as aliases are excluded from scope (D018).
 
 ## Editing and saving
 

@@ -11,8 +11,18 @@ import { registerUploadRoutes } from './file-uploads.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerProviderDraftRoutes } from './provider-draft-routes.js';
 import { registerReaderRoutes } from './reader-routes.js';
+import {
+  cachedBodyCondition,
+  SearchError,
+  searchCondition,
+  searchKey,
+  searchProperty,
+  unreadCondition,
+} from './search.js';
+import { registerSignatureRoutes, signatureField } from './signatures.js';
 import { consumeLimit, transaction } from './store.js';
-import { mailViewCondition, receivedMembershipCondition } from './view.js';
+import { registerTriageRoutes } from './triage-routes.js';
+import { receivedMembershipCondition } from './view.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -31,7 +41,7 @@ const accountParams = {
 const accountFields = `id,name,host,port,transport,username,status,error_code AS "errorCode",
   last_synced_at AS "lastSyncedAt",history_since AS "historySince"`;
 
-function parseCursor(value: string | undefined) {
+function parseCursor(value: string | undefined, key?: string) {
   if (!value) return null;
   try {
     const cursor: unknown = JSON.parse(
@@ -39,7 +49,8 @@ function parseCursor(value: string | undefined) {
     );
     if (
       !Array.isArray(cursor) ||
-      cursor.length !== 2 ||
+      cursor.length !== (key ? 3 : 2) ||
+      (key && cursor[2] !== key) ||
       typeof cursor[0] !== 'string' ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(cursor[0]) ||
       !Number.isFinite(Date.parse(cursor[0])) ||
@@ -122,7 +133,7 @@ export async function registerMailRoutes(
     configured: keys.keys.has(keys.active),
     accounts: (
       await pool.query(
-        `SELECT ${accountFields},(SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "smtpState",
+        `SELECT ${accountFields},${signatureField},(SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "smtpState",
         (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS sender,
         (SELECT display_name FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "senderName",
         (SELECT count(*)::int FROM mailboxes b WHERE b.user_id=$1 AND b.account_id=a.id AND NOT b.initial_complete) AS "foldersRemaining"
@@ -343,6 +354,7 @@ export async function registerMailRoutes(
       account?: string;
       mailbox?: string;
       cursor?: string;
+      q?: string;
       limit?: string;
     };
   }>(
@@ -355,6 +367,7 @@ export async function registerMailRoutes(
           properties: {
             account: uuid,
             mailbox: uuid,
+            q: searchProperty,
             cursor: { type: 'string', maxLength: 256 },
             limit: { type: 'string', pattern: '^(?:[1-9]|[1-9][0-9]|100)$' },
           },
@@ -362,10 +375,11 @@ export async function registerMailRoutes(
       },
     },
     async (request, reply) => {
-      const { account, mailbox, cursor } = request.query;
+      const { account, mailbox, cursor, q = '' } = request.query;
       const limit = Number(request.query.limit ?? '50');
       const owner = request.mailUser;
-      const after = parseCursor(cursor);
+      const key = searchKey(owner ?? '', account, mailbox, q);
+      const after = parseCursor(cursor, key);
       if (after === false)
         return reply.code(400).send({ message: 'Invalid inbox cursor.' });
       if (
@@ -388,42 +402,65 @@ export async function registerMailRoutes(
         ).rowCount
       )
         return reply.code(404).send({ message: 'Folder not found.' });
+      const values: unknown[] = [
+        owner,
+        account ?? null,
+        mailbox ?? null,
+        after?.[0] ?? null,
+        after?.[1] ?? null,
+        limit + 1,
+      ];
+      let search: ReturnType<typeof searchCondition>;
+      try {
+        search = searchCondition(q, values);
+      } catch (error) {
+        if (error instanceof SearchError)
+          return reply.code(400).send({ message: error.message });
+        throw error;
+      }
       const result = await pool.query(
         `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
        m.received_at AS "receivedAt",m.sent_at AS "sentAt",
        to_char(m.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime",
-       NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id
-         AND ($3::uuid IS NULL OR COALESCE(seen.pending_mailbox_id,seen.mailbox_id)=$3) AND '\\Seen'=ANY(seen.flags)) AS unread
+       ${unreadCondition} AS unread
        FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
-       WHERE ${mailViewCondition}
+       WHERE ${search.condition}
        AND ($4::timestamptz IS NULL OR (m.received_at,m.id)<($4::timestamptz,$5::uuid))
        ORDER BY m.received_at DESC,m.id DESC LIMIT $6`,
-        [
-          owner,
-          account ?? null,
-          mailbox ?? null,
-          after?.[0] ?? null,
-          after?.[1] ?? null,
-          limit + 1,
-        ],
+        values,
       );
       const hasMore = result.rows.length > limit;
       const rows = result.rows.slice(0, limit);
       const last = rows.at(-1);
+      const coverage = q.trim()
+        ? (
+            await pool.query(
+              `SELECT count(*)::int AS messages,count(*) FILTER(WHERE EXISTS(SELECT 1 FROM mail_content c WHERE ${cachedBodyCondition}))::int AS "cachedBodies" FROM mail_messages m WHERE ${search.base}`,
+              [owner, account ?? null, mailbox ?? null],
+            )
+          ).rows[0]
+        : null;
       return {
+        coverage,
         messages: rows.map(
           ({ cursorTime: _cursorTime, ...message }) => message,
         ),
         nextCursor:
           hasMore && last
-            ? Buffer.from(JSON.stringify([last.cursorTime, last.id])).toString(
-                'base64url',
-              )
+            ? Buffer.from(
+                JSON.stringify(
+                  key
+                    ? [last.cursorTime, last.id, key]
+                    : [last.cursorTime, last.id],
+                ),
+              ).toString('base64url')
             : null,
       };
     },
   );
+  registerTriageRoutes(app, pool);
   registerReaderRoutes(app, pool, content);
+  registerSignatureRoutes(app, pool);
   registerDraftRoutes(app, pool, content);
   registerUploadRoutes(app, pool);
   registerProviderDraftRoutes(app, pool);

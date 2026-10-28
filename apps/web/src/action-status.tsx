@@ -164,6 +164,7 @@ export function ActionStatus({
               <button
                 type="button"
                 disabled={busy !== null}
+                data-mail-command="undo"
                 aria-label={`Undo: ${actionNotice(action)}`}
                 onClick={() => void change(action, 'undo')}
               >

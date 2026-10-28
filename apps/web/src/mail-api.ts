@@ -11,7 +11,12 @@ export class MailApiError extends Error {
 export async function mailApi<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(`/api/mail/${path}`, {
     ...options,
-    headers: { 'content-type': 'application/json', ...options.headers },
+    headers: {
+      ...(options.body === undefined
+        ? {}
+        : { 'content-type': 'application/json' }),
+      ...options.headers,
+    },
   });
   const data = await response.json();
   if (!response.ok)

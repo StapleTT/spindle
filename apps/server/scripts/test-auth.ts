@@ -26,8 +26,10 @@ try {
         ? [
             'apps/web/test/auth.browser.ts',
             'apps/web/test/mail.browser.ts',
+            'apps/web/test/search.browser.ts',
             'apps/web/test/reader.browser.ts',
             'apps/web/test/composer.browser.ts',
+            'apps/web/test/signatures.browser.ts',
             'apps/web/test/provider-drafts.browser.ts',
             'apps/web/test/smtp.browser.ts',
             'apps/web/test/replies.browser.ts',
@@ -36,9 +38,11 @@ try {
         : [
             'apps/server/test/auth.integration.ts',
             'apps/server/test/mail.integration.ts',
+            'apps/server/test/search.integration.ts',
             'apps/server/test/reader.integration.ts',
             'apps/server/test/mail-actions.integration.ts',
             'apps/server/test/drafts.integration.ts',
+            'apps/server/test/signatures.integration.ts',
             'apps/server/test/provider-drafts.integration.ts',
             'apps/server/test/smtp.integration.ts',
             'apps/server/test/replies.integration.ts',

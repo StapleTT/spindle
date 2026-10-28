@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
 export type MailLocation = {
+  q: string;
   account: string;
   mailbox: string;
   cursor: string;
@@ -12,6 +13,7 @@ export type MailLocation = {
 function readLocation(): MailLocation {
   const params = new URLSearchParams(window.location.hash.slice(1));
   return {
+    q: params.get('q') ?? '',
     account: params.get('account') ?? '',
     mailbox: params.get('mailbox') ?? '',
     cursor: params.get('cursor') ?? '',

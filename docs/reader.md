@@ -77,3 +77,7 @@ Newsletter-fix proof: 20 unit tests, 50 integration tests (including outer tests
 Live provider connection has been confirmed by the user. Live reader/image acceptance still awaits the user's review of their own mail; automated proof uses synthetic messages only.
 
 Local proof on 2026-10-27: lint, both typechecks, 17 unit tests, 49 integration tests (including outer tests), three Chromium journeys and both builds passed. The additive reader migration was applied twice to the local database with user, login-credential, session, account, folder, message and membership counts preserved. The restarted app returned 200 for readiness and 401 for anonymous mail access; the content service rejected an invalid grant with 403 and set no cookies. A live pg-boss worker heartbeat was confirmed. Checks used installed Node 26.12.0; CI remains configured for Node 24.
+
+## Search navigation
+
+The reader accepts the active local search/account/folder scope. Previous/Next shares the list's filters and received-date/UUID ordering, and Back restores list focus. Read/unread actions that remove the current search result advance to its neighbor. Optional split view preserves row versus reader keyboard context; [search and keyboard triage](search.md) documents coverage and shortcuts.

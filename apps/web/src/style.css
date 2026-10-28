@@ -43,6 +43,16 @@ button:disabled {
 .signed-in {
   max-width: 80rem;
 }
+dialog button {
+  width: auto;
+}
+dialog ul {
+  list-style: none;
+  padding: 0;
+}
+dialog li {
+  margin-block: 0.4rem;
+}
 .mail-layout {
   display: grid;
   grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr);
@@ -239,6 +249,42 @@ button[aria-pressed="true"] {
   flex: 1 1 15rem;
 }
 
+.saved-searches button,
 .signed-in > section > button {
   width: auto;
+}
+
+.search-filters,
+.split-mail {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+input[type="checkbox"] {
+  width: auto;
+  min-height: auto;
+}
+.saved-searches {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+dialog {
+  max-width: min(38rem, 90vw);
+  max-height: 85vh;
+  overflow: auto;
+}
+dialog::backdrop {
+  background: #0008;
+}
+.split-mail > * {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .split-mail,
+  .search-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

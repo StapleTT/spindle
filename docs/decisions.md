@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. SMTP outbox/sending, [reply/reply-all/forward](replies.md) and [outgoing file attachments](attachments.md) are also implemented. The live ClamAV service is verified. Remaining live mailbox/file acceptance, other providers and real-account provider Drafts acceptance remain pending; IMAP Drafts synchronization is implemented.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. SMTP outbox/sending, [reply/reply-all/forward](replies.md) and [outgoing file attachments](attachments.md) are also implemented. The live ClamAV service is verified. IMAP Drafts synchronization is implemented and user-confirmed; per-account signatures are implemented and reviewed. Remaining live workflow/file/restart acceptance and other providers remain pending. Send-as aliases are excluded by D018; the checked primary sender remains authoritative.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -174,7 +174,7 @@ Scanner startup acceptance: the user started the Docker service, and live checks
 
 Status: agent implementation choices for the user's reported missing sender name, before provider Drafts work.
 
-Store a bounded display name with each owned SMTP configuration and use Nodemailer's structured From field for both regular and attachment-bearing MIME. Default existing and new settings to the owner's normalized Spindle profile name; allow an explicit blank for email-only sending. The checked SMTP login remains the actual sender address. Expose the name in Outgoing SMTP and the composer preview; do not infer it from received mail or silently select an alternate sender address. Unicode names and punctuation are supported, controls are rejected, older clients preserve omitted names and blank-password edits preserve credentials under the existing connection rules. Existing immutable Outbox snapshots remain unchanged. See [sending](sending.md). Signatures and verified alternate email identities remain open I02 work.
+Store a bounded display name with each owned SMTP configuration and use Nodemailer's structured From field for both regular and attachment-bearing MIME. Default existing and new settings to the owner's normalized Spindle profile name; allow an explicit blank for email-only sending. The checked SMTP login remains the actual sender address. Expose the name in Outgoing SMTP and the composer preview; do not infer it from received mail or silently select an alternate sender address. Unicode names and punctuation are supported, controls are rejected, older clients preserve omitted names and blank-password edits preserve credentials under the existing connection rules. Existing immutable Outbox snapshots remain unchanged. See [sending](sending.md). Signatures were subsequently implemented under D017; alternate From identities were excluded by D018.
 
 ## D016 — IMAP provider Drafts synchronization
 
@@ -185,3 +185,31 @@ Extend local revisions and pg-boss with owned durable links/copy intents/import 
 Reuse MIME, isolated formatted-body preview/image consent, attachment quarantine, account fencing and connection limits. Complex imported HTML is preserved below an editable note; unsupported/oversized native drafts fail visibly. No new dependencies, provider adapters or environment settings. `0016_provider_drafts.sql` is additive and backfills existing selected-account drafts. See [provider drafts](provider-drafts.md) for recovery, upgrade/rollback, limitations and proof. Live I11 and M3 acceptance remain pending.
 
 Draft-navigation correction: designated provider Drafts folders open the account’s editable local-draft workspace, rather than the received-mail reader. Received lists/counts/navigation exclude active drafts, including draft-flagged virtual copies. Deleted/sent copies remain readable. A removed provider copy pauses synchronization until the user explicitly chooses **Save to provider Drafts again**; retain the previous copy and local text. A recipient-free live save/cleanup check confirmed the provider APPEND path without SMTP.
+
+User confirmation on 2026-10-28: drafts synchronization now works as intended after the navigation correction. This records live acceptance of the corrected drafts workflow; it does not close the remaining signatures/identities, other-provider or complete M3/I11 checks.
+
+## D017 — per-account email signatures
+
+Status: agent implementation choices for the user's requested rich/plain per-account signatures and separate new-message versus reply/forward defaults.
+
+Use the existing rich editor and server draft sanitizer, with a matching plain-text alternative. Store one private signature/default pair per connected account with revision checks; signatures are independent of SMTP settings and never alter the checked sender identity. Insert a body snapshot once when a new message or response is created, above quoted/forwarded content. Autosave, recovery, copied/native drafts, reopening, provider sync and sending preserve ordinary message content. Settings/account changes preserve text already in a draft; future drafts use the selected/receiving account's defaults.
+
+`0017_account_signatures.sql` is additive; no dependency, environment setting or worker feature is added. Rich/plain editing shares one lazy-loaded editor component. The migration preserves existing drafts, credentials and immutable MIME; rollback retains settings rows. See [signatures](signatures.md) for limits, defaults, upgrade and proof. Remaining M3/I11/provider acceptance stays separate. Alternate From identities are excluded by D018.
+
+User review on 2026-10-28: the signature feature looks good. Record this as UI/workflow review; real-recipient signature acceptance and the remaining M3/I11 checks stay separate.
+
+## D018 — send-as aliases excluded
+
+Status: confirmed by the user on 2026-10-28.
+
+Verified send-as aliases and alternate From identities are not required for this project. Do not build alias registration/verification, alternate-address selection or provider send-as management as a release prerequisite. Use the connected account's checked primary sender, with its display name and signature. Selecting among separately connected accounts remains supported.
+
+This removes the alias portion of I02 and supersedes earlier next-step recommendations and identity proposals in the brief/task plan. I02's scoped IMAP/SMTP sender/signature work is complete; Gmail/Graph parity and the remaining live M3/I11 checks stay at their owning tasks. Existing self-address exclusion/deduplication in replies remains a correctness requirement, distinct from adding send-as identities.
+
+## D019 — local search and keyboard triage
+
+Status: agent implementation choices for the user's requested search and keyboard triage.
+
+Use generated Postgres full-text vectors/GIN indexes over owned synchronized headers and current cached bodies, with 100,000-character index prefixes and visible cache/sync coverage. Lists and reader neighbors share filters and stable date/UUID ordering. Searches remain local; body/attachment matching never implies uncached mail has been searched. Persist up to 50 private named query/scopes; account/folder removal deletes the saved scope. Split reader is a user-scoped browser preference.
+
+Use a native command dialog and shortcuts that invoke existing enabled controls, ignore editing/IME/handled events and preserve row/reader focus. Explicit selected-page batches queue up to 50 existing durable per-message action intents, report refusals individually and retain stable operation IDs for unconfirmed-response recovery. Provider completion/conflicts and individual five-second undo remain in the existing status/worker pipeline. No new provider connection or queue mechanism is introduced. Remote fallback, automatic saved-view heuristics, measured large-mailbox virtualization and manual performance/accessibility acceptance remain separate work. See [search and keyboard triage](search.md).

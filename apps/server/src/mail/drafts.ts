@@ -15,6 +15,7 @@ import {
   responseDraft,
 } from './reply.js';
 import { SANITIZER_VERSION } from './sanitize.js';
+import { accountSignature, signatureContent } from './signatures.js';
 import { transaction } from './store.js';
 
 type Content = {
@@ -246,7 +247,12 @@ export function registerDraftRoutes(
                 : 'Unable to prepare recipients.',
           };
         }
-        const content = JSON.stringify(cleanDraft(generated.content));
+        const signature = await accountSignature(db, owner, source.account_id);
+        const content = JSON.stringify(
+          signature?.repliesForwards
+            ? signatureContent(generated.content, signature, true)
+            : cleanDraft(generated.content),
+        );
         if (kind === 'forward')
           generated.replyContext.warnings =
             generated.replyContext.warnings.filter(

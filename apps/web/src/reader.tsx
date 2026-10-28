@@ -175,6 +175,7 @@ function AttachmentItem({
 
 export function Reader({
   id,
+  query = '',
   account,
   mailbox,
   folders,
@@ -184,6 +185,7 @@ export function Reader({
   userId,
 }: {
   id: string;
+  query?: string;
   account: string;
   mailbox: string;
   folders: { id: string; accountId: string; path: string }[];
@@ -217,6 +219,7 @@ export function Reader({
   const params = new URLSearchParams();
   if (account) params.set('account', account);
   if (mailbox) params.set('mailbox', mailbox);
+  if (query) params.set('q', query);
   const endpoint = `messages/${id}?${params}`;
 
   useEffect(() => {
@@ -266,13 +269,16 @@ export function Reader({
       }
     }
     void load();
-    heading.current?.focus();
     return () => {
       controller.abort();
       imageRequest.current?.abort();
       if (timer) clearTimeout(timer);
     };
   }, [id, endpoint, attempt]);
+
+  useEffect(() => {
+    if (detail?.message.id) heading.current?.focus();
+  }, [detail?.message.id]);
 
   async function displayImages(show: boolean) {
     if (!show) {
@@ -351,7 +357,19 @@ export function Reader({
         target,
         undoMs,
       });
-      if (kind !== 'read' && kind !== 'unread') {
+      if (!responseActive.current) return;
+      let leftView = kind !== 'read' && kind !== 'unread';
+      if (!leftView && query) {
+        try {
+          await mailApi<Detail>(endpoint);
+        } catch (failure) {
+          if (failure instanceof MailApiError && failure.status === 404)
+            leftView = true;
+          else throw failure;
+        }
+      }
+      if (!responseActive.current) return;
+      if (leftView) {
         // The message has left this view; continue with its neighbor.
         navigateMail({ message: detail?.next ?? detail?.previous ?? '' });
         return;
@@ -463,16 +481,25 @@ export function Reader({
   return (
     <section className="reader" aria-labelledby="reader-title">
       <nav className="reader-navigation" aria-label="Message navigation">
-        <a href={mailHref({ message: '' })}>Back to message list</a>
+        <a data-mail-command="back" href={mailHref({ message: '' })}>
+          Back to message list
+        </a>
         {detail?.previous ? (
-          <a href={mailHref({ message: detail.previous })}>Previous message</a>
+          <a
+            data-mail-command="previous"
+            href={mailHref({ message: detail.previous })}
+          >
+            Previous message
+          </a>
         ) : (
           <button type="button" disabled>
             Previous message
           </button>
         )}
         {detail?.next ? (
-          <a href={mailHref({ message: detail.next })}>Next message</a>
+          <a data-mail-command="next" href={mailHref({ message: detail.next })}>
+            Next message
+          </a>
         ) : (
           <button type="button" disabled>
             Next message
@@ -488,6 +515,7 @@ export function Reader({
           <button
             type="button"
             disabled={responseBusy || detail.content.state !== 'ready'}
+            data-mail-command="reply"
             onClick={() => void respond('reply')}
           >
             Reply
@@ -495,6 +523,7 @@ export function Reader({
           <button
             type="button"
             disabled={responseBusy || detail.content.state !== 'ready'}
+            data-mail-command="reply-all"
             onClick={() => void respond('replyAll')}
           >
             Reply all
@@ -502,6 +531,7 @@ export function Reader({
           <button
             type="button"
             disabled={responseBusy || detail.content.state !== 'ready'}
+            data-mail-command="forward"
             onClick={() => void respond('forward')}
           >
             Forward
@@ -510,6 +540,7 @@ export function Reader({
           <button
             type="button"
             disabled={pendingAction}
+            data-mail-command="toggle"
             onClick={() => void mark(detail.message.unread ? 'read' : 'unread')}
           >
             {detail.message.unread ? 'Mark as read' : 'Mark as unread'}
@@ -517,6 +548,7 @@ export function Reader({
           <button
             type="button"
             disabled={pendingAction || !detail.message.canMove?.archive}
+            data-mail-command="archive"
             onClick={() => void mark('archive')}
           >
             Archive
@@ -524,6 +556,7 @@ export function Reader({
           <button
             type="button"
             disabled={pendingAction || !detail.message.canMove?.trash}
+            data-mail-command="trash"
             onClick={() => void mark('trash')}
           >
             Move to trash

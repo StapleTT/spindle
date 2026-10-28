@@ -10,6 +10,13 @@ export type DraftContent = {
   html: string;
   text: string;
 };
+export type Signature = {
+  html: string;
+  text: string;
+  newMessages: boolean;
+  repliesForwards: boolean;
+  revision: number;
+};
 export type ReplyContext = {
   kind: 'reply' | 'replyAll' | 'forward' | 'copy';
   sourceMessageId: string;
@@ -181,10 +188,16 @@ export function startDraft(
   user: string,
   account: string | null,
   value?: DraftValue,
+  signature?: Signature | null,
 ) {
   const id = crypto.randomUUID();
+  const content = emptyContent();
+  if (!value && account && signature?.newMessages) {
+    content.html += signature.html;
+    content.text = signature.text;
+  }
   const saved = writeRecovery(user, id, {
-    value: value ?? { accountId: account, content: emptyContent() },
+    value: value ?? { accountId: account, content },
     revision: 0,
     saveId: null,
     editId: crypto.randomUUID(),

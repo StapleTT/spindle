@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
+import { queueAction, undoMs } from './action-intent.js';
 import {
   type ActionKind,
   actionErrors,
   currentFolder,
-  moveDestination,
   moveKinds,
   moveRoles,
   refreshPendingFolder,
@@ -17,10 +17,13 @@ import type { ContentConfig } from './content-config.js';
 import { attachmentUrl, bodyUrl } from './content-server.js';
 import type { AttachmentInfo } from './media.js';
 import { SANITIZER_VERSION } from './sanitize.js';
+import {
+  SearchError,
+  searchCondition,
+  searchProperty,
+  unreadCondition,
+} from './search.js';
 import { transaction } from './store.js';
-import { mailViewCondition } from './view.js';
-
-const undoMs = `GREATEST(0,floor(extract(epoch FROM a.undo_until-clock_timestamp())*1000))::int AS "undoMs"`;
 
 const params = {
   type: 'object',
@@ -33,6 +36,7 @@ const view = {
   properties: {
     account: { type: 'string', format: 'uuid' },
     mailbox: { type: 'string', format: 'uuid' },
+    q: searchProperty,
   },
   additionalProperties: false,
 };
@@ -44,7 +48,7 @@ export function registerReaderRoutes(
 ) {
   app.get<{
     Params: { id: string };
-    Querystring: { account?: string; mailbox?: string };
+    Querystring: { account?: string; mailbox?: string; q?: string };
   }>(
     '/api/mail/messages/:id',
     {
@@ -53,18 +57,25 @@ export function registerReaderRoutes(
     async (request, reply) => {
       const owner = request.mailUser ?? '';
       const id = request.params.id;
-      const values = [
+      const values: unknown[] = [
         owner,
         request.query.account ?? null,
         request.query.mailbox ?? null,
         id,
       ];
+      let condition: string;
+      try {
+        condition = searchCondition(request.query.q ?? '', values).condition;
+      } catch (error) {
+        if (error instanceof SearchError)
+          return reply.code(400).send({ message: error.message });
+        throw error;
+      }
       const message = (
         await pool.query(
           `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
       m.received_at AS "receivedAt",m.sent_at AS "sentAt",m.message_id AS "messageId",m.in_reply_to AS "inReplyTo",
-      NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id
-        AND '\\Seen'=ANY(seen.flags)) AS unread,
+      ${unreadCondition} AS unread,
       (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state,'code',x.error_code) FROM mail_actions x
         WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction",
       (SELECT json_build_object('archive',bool_or(t.role='${moveRoles.archive}'),'trash',bool_or(t.role='${moveRoles.trash}'))
@@ -72,7 +83,7 @@ export function registerReaderRoutes(
         AND NOT EXISTS(SELECT 1 FROM mail_memberships here WHERE here.user_id=$1 AND here.message_id=m.id
           AND COALESCE(here.pending_mailbox_id,here.mailbox_id)=t.id)) AS "canMove"
       FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
-      WHERE ${mailViewCondition} AND m.id=$4`,
+      WHERE ${condition} AND m.id=$4`,
           values,
         )
       ).rows[0];
@@ -104,7 +115,7 @@ export function registerReaderRoutes(
           return (
             (
               await pool.query(
-                `SELECT m.id FROM mail_messages m WHERE ${mailViewCondition}
+                `SELECT m.id FROM mail_messages m WHERE ${condition}
         AND (m.received_at,m.id) ${operator} (SELECT received_at,id FROM mail_messages WHERE user_id=$1 AND id=$4)
         ORDER BY m.received_at ${order},m.id ${order} LIMIT 1`,
                 values,
@@ -213,63 +224,7 @@ export function registerReaderRoutes(
           .code(400)
           .send({ message: 'Choose a folder only when moving a message.' });
       const result = await transaction(pool, async (db) => {
-        // Locking the message serializes action order with its local changes.
-        const message = (
-          await db.query(
-            `SELECT m.account_id,m.subject FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
-        AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=m.id) FOR UPDATE`,
-            [owner, request.params.id],
-          )
-        ).rows[0];
-        if (!message) return null;
-        const recorded = `SELECT a.id,a.kind,a.state,t.path AS target,a.message_id,a.target_mailbox_id,${undoMs}
-          FROM mail_actions a LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.id=a.target_mailbox_id
-          WHERE a.id=$1 AND a.user_id=$2`;
-        // A retried request with the same operation ID returns the original intent.
-        const existing = (await db.query(recorded, [action, owner])).rows[0];
-        if (existing)
-          return existing.message_id === request.params.id &&
-            existing.kind === kind &&
-            (!mailbox || existing.target_mailbox_id === mailbox)
-            ? existing
-            : 'conflict';
-        let source: string | null = null;
-        let target: string | null = null;
-        if (moveKinds.includes(kind)) {
-          const destination = await moveDestination(
-            db,
-            owner,
-            message.account_id,
-            request.params.id,
-            kind as 'archive' | 'trash' | 'move' | 'restore',
-            mailbox,
-          );
-          if ('error' in destination) return destination;
-          source = destination.source;
-          target = destination.target.id;
-        }
-        const inserted = await db.query(
-          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,source_mailbox_id,target_mailbox_id,subject,undo_until,next_attempt_at)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,clock_timestamp()+interval '5 seconds',clock_timestamp()+interval '5 seconds')
-          ON CONFLICT (id) DO NOTHING`,
-          [
-            action,
-            owner,
-            message.account_id,
-            request.params.id,
-            kind,
-            source,
-            target,
-            message.subject,
-          ],
-        );
-        if (!inserted.rowCount) return 'conflict';
-        await db.query(
-          `UPDATE mail_memberships SET flags=${withSeen('flags', '$3::text')} WHERE user_id=$1 AND message_id=$2`,
-          [owner, request.params.id, kind],
-        );
-        await refreshPendingFolder(db, owner, request.params.id);
-        return (await db.query(recorded, [action, owner])).rows[0];
+        return queueAction(db, owner, request.params.id, action, kind, mailbox);
       });
       if (!result)
         return reply.code(404).send({ message: 'Message not found.' });

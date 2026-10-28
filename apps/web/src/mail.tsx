@@ -8,17 +8,26 @@ import {
   useState,
 } from 'react';
 import { ActionStatus } from './action-status.js';
-import { startDraft } from './draft-api.js';
+import { type Signature, startDraft } from './draft-api.js';
+
+const SignatureSettings = lazy(() =>
+  import('./signature-settings.js').then((module) => ({
+    default: module.SignatureSettings,
+  })),
+);
 
 const Composer = lazy(() =>
   import('./composer.js').then((module) => ({ default: module.Composer })),
 );
 
+import { BatchActions } from './batch-actions.js';
 import { DraftList } from './drafts.js';
+import { KeyboardTriage } from './keyboard-triage.js';
 import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { Outbox, OutboxFeedback, useOutbox } from './outbox.js';
 import { Reader } from './reader.js';
+import { SearchControls, type SearchCoverage } from './search-controls.js';
 import { SmtpSettings } from './smtp-settings.js';
 
 type Account = {
@@ -35,6 +44,7 @@ type Account = {
   smtpState: string | null;
   sender: string | null;
   senderName: string | null;
+  signature: Signature | null;
 };
 type Mailbox = {
   id: string;
@@ -55,15 +65,36 @@ type Message = {
   receivedAt: string;
   unread: boolean;
 };
-type Page = { messages: Message[]; nextCursor: string | null };
+type Page = {
+  messages: Message[];
+  nextCursor: string | null;
+  coverage?: SearchCoverage | null;
+};
 
 export function Mail({ userId }: { userId: string }) {
+  const root = useRef<HTMLElement>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [split, setSplit] = useState(() => {
+    try {
+      return localStorage.getItem(`spindle:split:${userId}`) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const focusNext = useRef<string | null>(null);
+  const previousMessage = useRef('');
+  const currentQuery = useRef('');
+  const generation = useRef(0);
   const outgoing = useOutbox();
+  const [signatureAccount, setSignatureAccount] = useState<Account | null>(
+    null,
+  );
   const [smtpAccount, setSmtpAccount] = useState<Account | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [configured, setConfigured] = useState(true);
   const {
+    q,
     account,
     mailbox,
     cursor,
@@ -86,9 +117,13 @@ export function Mail({ userId }: { userId: string }) {
   if (account) query.set('account', account);
   if (mailbox) query.set('mailbox', mailbox);
   if (cursor) query.set('cursor', cursor);
+  if (q) query.set('q', q);
   const queryString = query.toString();
+  currentQuery.current = queryString;
   const load = useCallback(
     async (signal: AbortSignal) => {
+      if (currentQuery.current !== queryString) return;
+      const requested = ++generation.current;
       const [connections, folders, messages] = await Promise.all([
         api<{ accounts: Account[]; configured: boolean }>('accounts', {
           signal,
@@ -96,7 +131,12 @@ export function Mail({ userId }: { userId: string }) {
         api<{ mailboxes: Mailbox[] }>('mailboxes', { signal }),
         api<Page>(`messages?${queryString}`, { signal }),
       ]);
-      if (signal.aborted) return;
+      if (
+        signal.aborted ||
+        currentQuery.current !== queryString ||
+        requested !== generation.current
+      )
+        return;
       setAccounts(connections.accounts);
       setConfigured(connections.configured);
       setMailboxes(folders.mailboxes);
@@ -122,6 +162,10 @@ export function Mail({ userId }: { userId: string }) {
 
   async function toggleRead(message: Message) {
     const kind = message.unread ? 'read' : 'unread';
+    const index = page.messages.findIndex((item) => item.id === message.id);
+    if (q.includes('is:'))
+      focusNext.current =
+        page.messages[index + 1]?.id ?? page.messages[index - 1]?.id ?? null;
     setPage((current) => ({
       ...current,
       messages: current.messages.map((item) =>
@@ -143,6 +187,9 @@ export function Mail({ userId }: { userId: string }) {
     message: Message,
     kind: 'archive' | 'trash' | 'restore',
   ) {
+    const index = page.messages.findIndex((item) => item.id === message.id);
+    focusNext.current =
+      page.messages[index + 1]?.id ?? page.messages[index - 1]?.id ?? null;
     setPage((current) => ({
       ...current,
       messages: current.messages.filter((item) => item.id !== message.id),
@@ -168,6 +215,32 @@ export function Mail({ userId }: { userId: string }) {
     );
   }
 
+  useEffect(() => {
+    if (!messageId && previousMessage.current)
+      focusNext.current = previousMessage.current;
+    previousMessage.current = messageId;
+  }, [messageId]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Selection belongs to the current query and page.
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [queryString]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Returning from the reader restores focus even when the page is unchanged.
+  useEffect(() => {
+    setSelectedIds((ids) =>
+      ids.filter((id) => page.messages.some((message) => message.id === id)),
+    );
+    if (focusNext.current) {
+      const target = root.current?.querySelector<HTMLElement>(
+        focusNext.current === 'first'
+          ? '[data-message-row] .message-open'
+          : `[data-message-row="${focusNext.current}"] .message-open`,
+      );
+      if (target) {
+        focusNext.current = null;
+        target.focus();
+      }
+    }
+  }, [page.messages, messageId]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit refresh reruns the same inbox query.
   useEffect(() => {
     const controller = new AbortController();
@@ -276,13 +349,201 @@ export function Mail({ userId }: { userId: string }) {
   }
 
   const selected = mailboxes.find((box) => box.id === mailbox);
+  const mailList = (
+    <section aria-label="Message list">
+      <h2>
+        {q
+          ? 'Search results'
+          : (selected?.path ??
+            (account
+              ? `${accounts.find((item) => item.id === account)?.name ?? 'Account'} inbox`
+              : 'Unified inbox'))}
+      </h2>
+      <p className="account-status">
+        Mail from local storage. Open a message to read it. Sync continues in
+        the background.
+      </p>
+      {loading ? (
+        <p role="status">Loading mail…</p>
+      ) : page.messages.length === 0 ? (
+        <p>
+          {accounts.length
+            ? 'No synchronized mail in this view yet. If you just connected an account, wait for the worker to finish its first check.'
+            : 'Connect an IMAP account to see your mail here.'}
+        </p>
+      ) : (
+        <>
+          <label>
+            <input
+              data-mail-command="select-page"
+              type="checkbox"
+              checked={
+                page.messages.length > 0 &&
+                selectedIds.length === page.messages.length
+              }
+              onChange={(event) =>
+                setSelectedIds(
+                  event.target.checked
+                    ? page.messages.map((item) => item.id)
+                    : [],
+                )
+              }
+            />
+            Select all messages on this page
+          </label>
+          <ul className="message-list" aria-label="Messages">
+            {page.messages.map((message) => (
+              <li
+                key={message.id}
+                data-message-row={message.id}
+                className={message.unread ? 'unread' : ''}
+              >
+                <label>
+                  <input
+                    data-mail-command="select"
+                    type="checkbox"
+                    checked={selectedIds.includes(message.id)}
+                    onChange={(event) =>
+                      setSelectedIds((ids) =>
+                        event.target.checked
+                          ? [...ids, message.id]
+                          : ids.filter((id) => id !== message.id),
+                      )
+                    }
+                  />
+                  Select {message.subject || '(No subject)'}
+                </label>
+                <div className="message-heading">
+                  <span>
+                    {message.sender
+                      .map((sender) => sender.name || sender.address)
+                      .join(', ') || 'Unknown sender'}
+                  </span>
+                  <time dateTime={message.receivedAt}>
+                    {new Date(message.receivedAt).toLocaleString()}
+                  </time>
+                </div>
+                <a
+                  className="message-subject message-open"
+                  href={mailHref({ message: message.id })}
+                >
+                  {message.subject || '(No subject)'}
+                </a>
+                <div className="account-status">
+                  {message.accountName}
+                  {message.unread ? ' · Unread' : ''}{' '}
+                  <button
+                    type="button"
+                    aria-label={`Mark “${message.subject || '(No subject)'}” as ${message.unread ? 'read' : 'unread'}`}
+                    data-mail-command="toggle"
+                    onClick={() => void toggleRead(message)}
+                  >
+                    {message.unread ? 'Mark read' : 'Mark unread'}
+                  </button>{' '}
+                  {canMove(message, '\\Archive') && (
+                    <button
+                      type="button"
+                      aria-label={`Archive “${message.subject || '(No subject)'}”`}
+                      data-mail-command="archive"
+                      onClick={() => void moveMessage(message, 'archive')}
+                    >
+                      Archive
+                    </button>
+                  )}{' '}
+                  {['\\Archive', '\\Trash'].includes(selected?.role ?? '') && (
+                    <button
+                      type="button"
+                      aria-label={`Restore “${message.subject || '(No subject)'}”`}
+                      onClick={() => void moveMessage(message, 'restore')}
+                    >
+                      Restore
+                    </button>
+                  )}{' '}
+                  {canMove(message, '\\Trash') && (
+                    <button
+                      type="button"
+                      aria-label={`Move “${message.subject || '(No subject)'}” to trash`}
+                      data-mail-command="trash"
+                      onClick={() => void moveMessage(message, 'trash')}
+                    >
+                      Trash
+                    </button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <div className="account-actions">
+        {cursor && (
+          <button
+            type="button"
+            data-mail-command="newest"
+            onClick={() => {
+              focusNext.current = 'first';
+              navigateMail({ cursor: '', message: '' });
+            }}
+          >
+            Newest messages
+          </button>
+        )}
+        {page.nextCursor && (
+          <button
+            type="button"
+            data-mail-command="older"
+            onClick={() => {
+              focusNext.current = 'first';
+              navigateMail({
+                cursor: page.nextCursor ?? '',
+                message: '',
+              });
+            }}
+          >
+            Older messages
+          </button>
+        )}
+      </div>
+    </section>
+  );
   return (
-    <section className="mail" aria-label="Your mail">
+    <section ref={root} className="mail" aria-label="Your mail">
       {notice && (
         <p ref={feedback} tabIndex={-1} role="status" className="notice">
           {notice}
         </p>
       )}
+      <KeyboardTriage root={root} />
+      <SearchControls
+        query={q}
+        account={account}
+        mailbox={mailbox}
+        accounts={accounts}
+        folders={mailboxes}
+        coverage={page.coverage ?? null}
+        split={split}
+        onSplit={() => {
+          setSplit((value) => {
+            try {
+              localStorage.setItem(`spindle:split:${userId}`, String(!value));
+            } catch {
+              /* Layout remains usable without storage. */
+            }
+            return !value;
+          });
+        }}
+      />
+      <BatchActions
+        key={userId}
+        user={userId}
+        selected={page.messages.filter((message) =>
+          selectedIds.includes(message.id),
+        )}
+        onComplete={() => {
+          setSelectedIds([]);
+          refreshActions();
+        }}
+      />
       <ActionStatus fresh={latestAction} onChange={refreshActions} />
       <OutboxFeedback messages={outgoing.messages} />
       {failure && (
@@ -306,12 +567,17 @@ export function Mail({ userId }: { userId: string }) {
         <aside aria-label="Mail accounts and folders">
           <h2>Mailboxes</h2>
           <button
+            data-mail-command="compose"
             type="button"
             onClick={() => {
+              const selectedId =
+                account || selected?.accountId || accounts[0]?.id || null;
               if (
                 !startDraft(
                   userId,
-                  account || selected?.accountId || accounts[0]?.id || null,
+                  selectedId,
+                  undefined,
+                  accounts.find((item) => item.id === selectedId)?.signature,
                 )
               )
                 setNotice(
@@ -323,6 +589,7 @@ export function Mail({ userId }: { userId: string }) {
           </button>
           <button
             type="button"
+            data-mail-command="drafts"
             aria-pressed={view === 'drafts'}
             onClick={() =>
               navigateMail({
@@ -338,12 +605,18 @@ export function Mail({ userId }: { userId: string }) {
             Local drafts
           </button>
           <button
+            data-mail-command="inbox"
             type="button"
             aria-pressed={
-              !account && !mailbox && view !== 'drafts' && view !== 'outbox'
+              !account &&
+              !mailbox &&
+              !q &&
+              view !== 'drafts' &&
+              view !== 'outbox'
             }
             onClick={() => {
               navigateMail({
+                q: '',
                 account: '',
                 mailbox: '',
                 cursor: '',
@@ -355,6 +628,7 @@ export function Mail({ userId }: { userId: string }) {
           </button>
           <button
             type="button"
+            data-mail-command="outbox"
             aria-pressed={view === 'outbox'}
             onClick={() =>
               navigateMail({ view: 'outbox', draft: '', message: '' })
@@ -430,6 +704,13 @@ export function Mail({ userId }: { userId: string }) {
                     </li>
                   ))}
               </ul>
+              <button
+                type="button"
+                aria-label={`Email signature for ${item.name}`}
+                onClick={() => setSignatureAccount(item)}
+              >
+                Email signature
+              </button>
               <button
                 type="button"
                 aria-label={`Outgoing SMTP for ${item.name}`}
@@ -644,6 +925,26 @@ export function Mail({ userId }: { userId: string }) {
               </form>
             </section>
           )}
+          {signatureAccount && (
+            <Suspense
+              fallback={<p role="status">Loading signature settings…</p>}
+            >
+              <SignatureSettings
+                key={signatureAccount.id}
+                account={signatureAccount}
+                onClose={() => setSignatureAccount(null)}
+                onChange={(signature) =>
+                  setAccounts((current) =>
+                    current.map((item) =>
+                      item.id === signatureAccount.id
+                        ? { ...item, signature }
+                        : item,
+                    ),
+                  )
+                }
+              />
+            </Suspense>
+          )}
           {draftId ? (
             <Suspense fallback={<p role="status">Loading composer…</p>}>
               <Composer
@@ -658,132 +959,27 @@ export function Mail({ userId }: { userId: string }) {
             <DraftList user={userId} accountId={account} />
           ) : view === 'outbox' ? (
             <Outbox data={outgoing} />
-          ) : messageId ? (
-            <Reader
-              key={`${messageId}:${account}:${mailbox}`}
-              id={messageId}
-              account={account}
-              mailbox={mailbox}
-              folders={mailboxes}
-              onChange={reload}
-              actionRevision={actionRevision}
-              userId={userId}
-              onAction={(action) => {
-                track(action);
-                reload();
-              }}
-            />
           ) : (
-            <>
-              <h2>
-                {selected?.path ??
-                  (account
-                    ? `${accounts.find((item) => item.id === account)?.name ?? 'Account'} inbox`
-                    : 'Unified inbox')}
-              </h2>
-              <p className="account-status">
-                Mail from local storage. Open a message to read it. Sync
-                continues in the background.
-              </p>
-              {loading ? (
-                <p role="status">Loading mail…</p>
-              ) : page.messages.length === 0 ? (
-                <p>
-                  {accounts.length
-                    ? 'No synchronized mail in this view yet. If you just connected an account, wait for the worker to finish its first check.'
-                    : 'Connect an IMAP account to see your mail here.'}
-                </p>
-              ) : (
-                <ul className="message-list" aria-label="Messages">
-                  {page.messages.map((message) => (
-                    <li
-                      key={message.id}
-                      className={message.unread ? 'unread' : ''}
-                    >
-                      <div className="message-heading">
-                        <span>
-                          {message.sender
-                            .map((sender) => sender.name || sender.address)
-                            .join(', ') || 'Unknown sender'}
-                        </span>
-                        <time dateTime={message.receivedAt}>
-                          {new Date(message.receivedAt).toLocaleString()}
-                        </time>
-                      </div>
-                      <a
-                        className="message-subject message-open"
-                        href={mailHref({ message: message.id })}
-                      >
-                        {message.subject || '(No subject)'}
-                      </a>
-                      <div className="account-status">
-                        {message.accountName}
-                        {message.unread ? ' · Unread' : ''}{' '}
-                        <button
-                          type="button"
-                          aria-label={`Mark “${message.subject || '(No subject)'}” as ${message.unread ? 'read' : 'unread'}`}
-                          onClick={() => void toggleRead(message)}
-                        >
-                          {message.unread ? 'Mark read' : 'Mark unread'}
-                        </button>{' '}
-                        {canMove(message, '\\Archive') && (
-                          <button
-                            type="button"
-                            aria-label={`Archive “${message.subject || '(No subject)'}”`}
-                            onClick={() => void moveMessage(message, 'archive')}
-                          >
-                            Archive
-                          </button>
-                        )}{' '}
-                        {['\\Archive', '\\Trash'].includes(
-                          selected?.role ?? '',
-                        ) && (
-                          <button
-                            type="button"
-                            aria-label={`Restore “${message.subject || '(No subject)'}”`}
-                            onClick={() => void moveMessage(message, 'restore')}
-                          >
-                            Restore
-                          </button>
-                        )}{' '}
-                        {canMove(message, '\\Trash') && (
-                          <button
-                            type="button"
-                            aria-label={`Move “${message.subject || '(No subject)'}” to trash`}
-                            onClick={() => void moveMessage(message, 'trash')}
-                          >
-                            Trash
-                          </button>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+            <div className={split && messageId ? 'split-mail' : ''}>
+              {(!messageId || split) && mailList}
+              {messageId && (
+                <Reader
+                  key={`${messageId}:${account}:${mailbox}:${q}`}
+                  id={messageId}
+                  query={q}
+                  account={account}
+                  mailbox={mailbox}
+                  folders={mailboxes}
+                  onChange={reload}
+                  actionRevision={actionRevision}
+                  userId={userId}
+                  onAction={(action) => {
+                    track(action);
+                    reload();
+                  }}
+                />
               )}
-              <div className="account-actions">
-                {cursor && (
-                  <button
-                    type="button"
-                    onClick={() => navigateMail({ cursor: '', message: '' })}
-                  >
-                    Newest messages
-                  </button>
-                )}
-                {page.nextCursor && (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      navigateMail({
-                        cursor: page.nextCursor ?? '',
-                        message: '',
-                      })
-                    }
-                  >
-                    Older messages
-                  </button>
-                )}
-              </div>
-            </>
+            </div>
           )}
         </div>
       </div>
