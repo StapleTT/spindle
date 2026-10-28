@@ -1,6 +1,6 @@
 # Composer and local drafts
 
-Choose **Compose** to start a private draft, or **Reply**, **Reply all** or **Forward** from a loaded message. **Local drafts** lists saved drafts and recovery edits from the current browser tab. See [sending and Outbox](sending.md), [response drafts and threading](replies.md) and [outgoing attachments](attachments.md). Provider Drafts sync, signatures and alternate send-as identities remain later work.
+Choose **Compose** to start a private draft, or **Reply**, **Reply all** or **Forward** from a loaded message. **Local drafts** lists saved drafts and recovery edits from the current browser tab. See [sending and Outbox](sending.md), [response drafts and threading](replies.md) and [outgoing attachments](attachments.md). See [provider Drafts synchronization](provider-drafts.md) for native-client imports, status and conflict resolution. Signatures and alternate send-as identities remain later work.
 
 ## Editing and saving
 
@@ -22,7 +22,7 @@ Before each save, the composer keeps its current text, base revision and operati
 
 Every save carries a client operation ID and base revision. Replaying an acknowledged request returns that saved revision without another write. A stale revision cannot overwrite a newer save or recreate a deleted draft. Conflicts stop autosave and preserve local edits, including across reloads. The user can compare the server copy, **Save my edits as a new draft**, or explicitly **Discard my edits and load saved version**. A conflict must be resolved before discarding the server draft.
 
-Removing a connected account preserves draft text, clears its account selection, increments its revision and invalidates stale editors. Autosave never contacts a provider. Sending queues an immutable snapshot for the separate worker; SMTP settings and Sent-copy policy are described in [sending](sending.md).
+Removing a connected account preserves draft text, clears its account selection, increments its revision and invalidates stale editors. Autosave writes local data and durable provider-sync intent; the worker synchronizes selected-account drafts separately. Sending queues an immutable snapshot for the separate worker; SMTP settings and Sent-copy policy are described in [sending](sending.md).
 
 ## Limits and ownership
 
@@ -35,3 +35,5 @@ Requests are bounded to 128 KiB and canonical draft content to 120,000 bytes, in
 Apply `0010_local_drafts.sql`, then deploy API and web together. It adds a table, index and trigger without modifying existing mail or action records. For application rollback, keep the migration and draft rows; earlier code ignores them. No provider state changes or worker deployment are needed.
 
 The disposable-database integration suite verifies ownership, foreign admin/account denial, verification/CSRF, persistence across API instances, sanitization, Unicode/partial recipients, size limits, idempotent replay, concurrent revisions, stale deletion/recreation, quotas, write budgets and preservation after account removal. The Chromium composer journey covers rich/plain editing, safe links/paste, reload/navigation, offline recovery, edits during a save, lost acknowledgements, two-tab conflicts, loading the saved version, saving a copy, safe discard and phone width. All fixtures are synthetic; these tests never send email.
+
+Provider synchronization additionally requires `0016_provider_drafts.sql` and the updated worker; see [upgrade, recovery and limits](provider-drafts.md). Clean open editors adopt synchronized native revisions; unsaved browser recovery is preserved.

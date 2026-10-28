@@ -9,6 +9,7 @@ import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
 import { registerUploadRoutes } from './file-uploads.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
+import { registerProviderDraftRoutes } from './provider-draft-routes.js';
 import { registerReaderRoutes } from './reader-routes.js';
 import { consumeLimit, transaction } from './store.js';
 import { mailViewCondition } from './view.js';
@@ -424,5 +425,6 @@ export async function registerMailRoutes(
   registerReaderRoutes(app, pool, content);
   registerDraftRoutes(app, pool, content);
   registerUploadRoutes(app, pool);
+  registerProviderDraftRoutes(app, pool);
   registerOutgoingRoutes(app, pool, keys);
 }

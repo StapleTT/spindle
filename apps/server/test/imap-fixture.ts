@@ -12,6 +12,7 @@ export async function imapFixture(
   starttls = true,
   plugins: string[] = [],
   sent = false,
+  drafts = false,
 ) {
   const server = imapkit({
     secureConnection: secure,
@@ -26,6 +27,7 @@ export async function imapFixture(
           Receipts: {},
           Trash: { specialUse: '\\Trash' },
           ...(sent ? { Sent: { specialUse: '\\Sent' } } : {}),
+          ...(drafts ? { Drafts: { specialUse: '\\Drafts' } } : {}),
         },
       },
     },

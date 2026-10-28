@@ -273,6 +273,18 @@ export function registerOutgoingRoutes(
         if (
           (
             await db.query(
+              "SELECT 1 FROM mail_draft_links WHERE user_id=$1 AND account_id=$2 AND source_draft_id=$3 AND state IN ('conflict','unknown') LIMIT 1",
+              [owner, at.account_id, draft.id],
+            )
+          ).rowCount
+        )
+          return {
+            error:
+              'Resolve the provider draft conflict before sending. Your local text is safe.',
+          };
+        if (
+          (
+            await db.query(
               "SELECT id FROM mail_outbox WHERE user_id=$1 AND draft_id=$2 AND state NOT IN ('failed','cancelled')",
               [owner, draft.id],
             )

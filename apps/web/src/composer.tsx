@@ -7,6 +7,7 @@ import { DraftAttachments } from './draft-attachments.js';
 import { ForwardPreview } from './forward-preview.js';
 import { MailApiError, mailApi } from './mail-api.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
+import { ProviderDraftStatus } from './provider-draft-status.js';
 import { useDraft } from './use-draft.js';
 
 type Account = {
@@ -324,9 +325,36 @@ export function Composer({
       )}
       <p>
         Drafts are saved privately in Spindle. Sending uses the selected
-        account’s checked SMTP settings. Provider Drafts synchronization is
-        coming later.
+        account’s checked SMTP settings.
       </p>
+      <ProviderDraftStatus
+        items={draft.providerSync}
+        accountId={value.accountId}
+        disabled={busy || draft.status === 'conflict' || Boolean(draft.outbox)}
+        onResolve={async (id, action) => {
+          setBusy(true);
+          setSendError('');
+          try {
+            if (!(await draft.flush())) return;
+            await mailApi(`draft-sync/${id}`, {
+              method: 'POST',
+              body: JSON.stringify({
+                action,
+                revision: draft.currentRevision(),
+              }),
+            });
+            await draft.loadSaved();
+          } catch (error) {
+            setSendError(
+              error instanceof Error
+                ? error.message
+                : 'Unable to resolve provider draft.',
+            );
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
       <p role="status" aria-live="polite">
         {
           {
@@ -506,9 +534,11 @@ export function Composer({
         {draft.forwarded &&
           (content.format === 'rich' ? (
             <ForwardPreview
+              key={draft.editorVersion}
               id={id}
               text={draft.forwarded.text}
               imageCount={draft.forwarded.imageCount}
+              origin={draft.forwarded.origin}
             />
           ) : (
             <section aria-label="Forwarded original">
@@ -540,6 +570,11 @@ export function Composer({
             busy ||
             Boolean(draft.outbox) ||
             !attachmentsReady ||
+            draft.providerSync.some(
+              (item) =>
+                item.accountId === value.accountId &&
+                ['conflict', 'unknown'].includes(item.state),
+            ) ||
             draft.status === 'conflict' ||
             selectedAccount?.smtpState !== 'ready'
           }

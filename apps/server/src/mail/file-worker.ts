@@ -153,7 +153,8 @@ export async function cleanupUploads(pool: Pool) {
         );
       await db.query(
         `DELETE FROM mail_uploads f WHERE user_id=$1 AND created_at<clock_timestamp()-interval '1 day'
-      AND NOT EXISTS(SELECT 1 FROM mail_draft_attachments d WHERE d.user_id=f.user_id AND d.file_id=f.id)`,
+      AND NOT EXISTS(SELECT 1 FROM mail_draft_attachments d WHERE d.user_id=f.user_id AND d.file_id=f.id)
+      AND NOT EXISTS(SELECT 1 FROM mail_draft_conflict_files c WHERE c.user_id=f.user_id AND c.file_id=f.id)`,
         [owner],
       );
     });

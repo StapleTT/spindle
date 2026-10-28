@@ -84,7 +84,7 @@ export function escapeHtml(value: string) {
     .replaceAll('"', '&quot;');
 }
 
-function htmlText(html: string) {
+export function htmlText(html: string) {
   let text = '',
     ignore = 0;
   const hidden = new Set([

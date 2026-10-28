@@ -34,6 +34,9 @@ export function useDraft(user: string, id: string) {
   const [editorVersion, setEditorVersion] = useState(0);
   const [replyContext, setReplyContext] = useState<Draft['replyContext']>(null);
   const [forwarded, setForwarded] = useState<Draft['forwarded']>(null);
+  const [providerSync, setProviderSync] = useState<
+    NonNullable<Draft['providerSync']>
+  >([]);
   const [outbox, setOutbox] = useState<Draft['outbox']>(null);
   const [conflict, setConflict] = useState<Draft | null>(null);
   const [changed, setChanged] = useState(0);
@@ -89,6 +92,7 @@ export function useDraft(user: string, id: string) {
         revision.current = draft.revision;
         if (alive.current) setReplyContext(draft.replyContext ?? null);
         if (alive.current) setForwarded(draft.forwarded ?? null);
+        if (alive.current) setProviderSync(draft.providerSync ?? []);
         pending.current = null;
         if (editId.current === attempt.editId) {
           latest.current = draftValue(draft);
@@ -124,6 +128,7 @@ export function useDraft(user: string, id: string) {
                   setOutbox(remote.outbox ?? null);
                   setReplyContext(remote.replyContext ?? null);
                   setForwarded(remote.forwarded ?? null);
+                  setProviderSync(remote.providerSync ?? []);
                 }
               })
               .catch(() => {});
@@ -186,6 +191,7 @@ export function useDraft(user: string, id: string) {
         setOutbox(remote?.outbox ?? null);
         setReplyContext(remote?.replyContext ?? null);
         setForwarded(remote?.forwarded ?? null);
+        setProviderSync(remote?.providerSync ?? []);
         setValue(latest.current);
         setConflict(blocked.current ? remote : null);
         setStatus(
@@ -270,9 +276,8 @@ export function useDraft(user: string, id: string) {
     } while (dirty.current);
     return true;
   }
-  async function loadSaved() {
-    try {
-      const remote = await getDraft(id);
+  const adoptSaved = useCallback(
+    (remote: Draft) => {
       latest.current = draftValue(remote);
       revision.current = remote.revision;
       editId.current = crypto.randomUUID();
@@ -281,6 +286,7 @@ export function useDraft(user: string, id: string) {
       setOutbox(remote.outbox ?? null);
       setReplyContext(remote.replyContext ?? null);
       setForwarded(remote.forwarded ?? null);
+      setProviderSync(remote.providerSync ?? []);
       pending.current = null;
       removeRecovery(user, id);
       setValue(latest.current);
@@ -288,6 +294,13 @@ export function useDraft(user: string, id: string) {
       setError('');
       setStatus(remote.outbox ? 'conflict' : 'saved');
       setEditorVersion((n) => n + 1);
+    },
+    [id, user],
+  );
+  async function loadSaved() {
+    try {
+      const remote = await getDraft(id);
+      adoptSaved(remote);
     } catch (failure) {
       setError(
         failure instanceof Error
@@ -296,6 +309,30 @@ export function useDraft(user: string, id: string) {
       );
     }
   }
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = setInterval(() => {
+      if (!latest.current) return;
+      void getDraft(id, controller.signal)
+        .then((remote) => {
+          if (controller.signal.aborted || remote.revision < revision.current)
+            return;
+          setProviderSync(remote.providerSync ?? []);
+          if (
+            !dirty.current &&
+            !saving.current &&
+            !blocked.current &&
+            remote.revision > revision.current
+          )
+            adoptSaved(remote);
+        })
+        .catch(() => {});
+    }, 5000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [id, adoptSaved]);
   async function discard() {
     if (saving.current) await saving.current;
     if (blocked.current) {
@@ -339,6 +376,7 @@ export function useDraft(user: string, id: string) {
     value,
     replyContext,
     forwarded,
+    providerSync,
     outbox,
     currentRevision: () => revision.current,
     status,

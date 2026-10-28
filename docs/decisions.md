@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. SMTP outbox/sending, [reply/reply-all/forward](replies.md) and [outgoing file attachments](attachments.md) are also implemented. The live ClamAV service is verified. Remaining live mailbox/file acceptance, other providers and provider Drafts synchronization remain pending.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. SMTP outbox/sending, [reply/reply-all/forward](replies.md) and [outgoing file attachments](attachments.md) are also implemented. The live ClamAV service is verified. Remaining live mailbox/file acceptance, other providers and real-account provider Drafts acceptance remain pending; IMAP Drafts synchronization is implemented.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -175,3 +175,11 @@ Scanner startup acceptance: the user started the Docker service, and live checks
 Status: agent implementation choices for the user's reported missing sender name, before provider Drafts work.
 
 Store a bounded display name with each owned SMTP configuration and use Nodemailer's structured From field for both regular and attachment-bearing MIME. Default existing and new settings to the owner's normalized Spindle profile name; allow an explicit blank for email-only sending. The checked SMTP login remains the actual sender address. Expose the name in Outgoing SMTP and the composer preview; do not infer it from received mail or silently select an alternate sender address. Unicode names and punctuation are supported, controls are rejected, older clients preserve omitted names and blank-password edits preserve credentials under the existing connection rules. Existing immutable Outbox snapshots remain unchanged. See [sending](sending.md). Signatures and verified alternate email identities remain open I02 work.
+
+## D016 — IMAP provider Drafts synchronization
+
+Status: agent implementation choices for the user's requested drafts synchronization.
+
+Extend local revisions and pg-boss with owned durable links/copy intents/import intents. The worker mirrors selected-account drafts to designated SPECIAL-USE Drafts folders and imports native drafts from synchronized metadata within the chosen history horizon. Clean revisions adopt outside edits; concurrent changes and remote removals become visible conflicts. Unknown APPENDs reconcile by operation/Message-ID without a second blind write. Replacement/cleanup require UIDPLUS and content rechecks. SMTP preflight refuses known outside changes; full acceptance, discard and account changes schedule tracked-copy cleanup, while uncertain delivery preserves drafts.
+
+Reuse MIME, isolated formatted-body preview/image consent, attachment quarantine, account fencing and connection limits. Complex imported HTML is preserved below an editable note; unsupported/oversized native drafts fail visibly. No new dependencies, provider adapters or environment settings. `0016_provider_drafts.sql` is additive and backfills existing selected-account drafts. See [provider drafts](provider-drafts.md) for recovery, upgrade/rollback, limitations and proof. Live I11 and M3 acceptance remain pending.

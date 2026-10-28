@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { outboxStream } from './file-storage.js';
 import { connectImap } from './imap.js';
+import { checkProviderDraftBeforeSend } from './provider-drafts.js';
 import { connectSmtp } from './smtp.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
 
@@ -98,6 +99,24 @@ export async function processOutgoing(
           ),
         );
       } else {
+        smtp?.close();
+        smtp = undefined;
+        const conflict = await checkProviderDraftBeforeSend(
+          pool,
+          keys,
+          account,
+          row.source_draft_id,
+          imapConnect,
+        );
+        if (conflict) {
+          await withLease(pool, account, (db) =>
+            db.query(
+              "UPDATE mail_outbox SET state='failed',error_code=$3,completed_at=clock_timestamp() WHERE user_id=$1 AND id=$2 AND state='queued'",
+              [owner, row.id, conflict],
+            ),
+          );
+          return;
+        }
         const claimed = await withLease(pool, account, (db) =>
           db.query(
             `UPDATE mail_outbox SET state='sending',started_at=clock_timestamp(),attempts=attempts+1

@@ -2,6 +2,7 @@ import { rasterType, remoteImageUrl } from './media.js';
 import { type ImageResource, renderMessage } from './sanitize.js';
 
 export type ForwardContent = {
+  origin?: 'provider';
   html: string;
   text: string;
   resources: ImageResource[];

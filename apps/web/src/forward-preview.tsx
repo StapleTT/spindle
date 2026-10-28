@@ -5,10 +5,12 @@ export function ForwardPreview({
   id,
   text,
   imageCount,
+  origin,
 }: {
   id: string;
   text: string;
   imageCount: number;
+  origin?: 'provider' | undefined;
 }) {
   const [images, setImages] = useState(false);
   const [htmlUrl, setHtmlUrl] = useState<string | null>(null);
@@ -38,9 +40,21 @@ export function ForwardPreview({
     return () => controller.abort();
   }, [id, images, attempt]);
   return (
-    <section aria-label="Forwarded original">
-      <h3>Forwarded original</h3>
-      <p>The original formatting will be included below your note.</p>
+    <section
+      aria-label={
+        origin === 'provider' ? 'Original draft content' : 'Forwarded original'
+      }
+    >
+      <h3>
+        {origin === 'provider'
+          ? 'Original draft content'
+          : 'Forwarded original'}
+      </h3>
+      <p>
+        {origin === 'provider'
+          ? 'The original draft formatting is preserved below. Add your edits above, or continue editing the body in your other mail client.'
+          : 'The original formatting will be included below your note.'}
+      </p>
       {imageCount > 0 && (
         <div className="reader-images">
           <p>
@@ -75,7 +89,11 @@ export function ForwardPreview({
       ) : htmlUrl ? (
         <iframe
           className="message-frame"
-          title="Forwarded message body"
+          title={
+            origin === 'provider'
+              ? 'Original draft body'
+              : 'Forwarded message body'
+          }
           src={htmlUrl}
           referrerPolicy="no-referrer"
           sandbox="allow-popups allow-popups-to-escape-sandbox"

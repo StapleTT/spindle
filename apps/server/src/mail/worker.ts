@@ -7,6 +7,7 @@ import type { MailKeys } from './credentials.js';
 import { cleanupUploads, fetchForwardFile, scanUpload } from './file-worker.js';
 import { MAX_ATTACHMENTS } from './media.js';
 import { processOutgoing } from './outgoing-worker.js';
+import { syncProviderDrafts } from './provider-drafts.js';
 import { syncAccount } from './sync.js';
 
 // User-requested fetches and mail actions take priority over another metadata pass.
@@ -16,7 +17,7 @@ const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_
   UNION ALL SELECT 1 FROM mail_outbox WHERE user_id=$1 AND account_id=$2 AND state IN ('queued','sending') LIMIT 1`;
 
 type ActionJob = {
-  kind: 'actions' | 'outgoing' | 'draft-attachment';
+  kind: 'actions' | 'outgoing' | 'draft-attachment' | 'provider-drafts';
   userId: string;
   accountId: string;
   fileId?: string;
@@ -69,6 +70,28 @@ export async function startMailWorker(
         { singletonKey: row.id },
       );
     if (!keys.keys.size) return;
+    await pool.query(`INSERT INTO mail_draft_imports(user_id,account_id,path,uid_validity,uid,subject)
+      SELECT m.user_id,m.account_id,b.path,mm.uid_validity::text,mm.uid::text,left(m.subject,1000)
+      FROM mail_memberships mm JOIN mail_messages m ON m.user_id=mm.user_id AND m.id=mm.message_id
+      JOIN mailboxes b ON b.user_id=mm.user_id AND b.id=mm.mailbox_id JOIN users u ON u.id=m.user_id
+      WHERE b.role='\\Drafts' AND u.email_verified AND NOT('\\Deleted'=ANY(mm.flags))
+      AND NOT EXISTS(SELECT 1 FROM mail_draft_imports i WHERE i.user_id=m.user_id AND i.account_id=m.account_id AND i.path=b.path AND i.uid_validity=mm.uid_validity::text AND i.uid=mm.uid::text)
+      AND NOT EXISTS(SELECT 1 FROM mail_draft_copies c JOIN mail_draft_links l ON l.user_id=c.user_id AND l.id=c.link_id
+        WHERE l.user_id=m.user_id AND l.account_id=m.account_id AND ((c.path=b.path AND c.uid_validity=mm.uid_validity::text AND c.uid=mm.uid::text) OR (c.message_id IS NOT NULL AND c.message_id=m.message_id)))
+      LIMIT 20 ON CONFLICT DO NOTHING`);
+    for (const row of (
+      await pool.query(`SELECT p.user_id,p.account_id FROM mail_draft_links p JOIN users u ON u.id=p.user_id WHERE p.state NOT IN ('conflict','removed','unknown') AND p.next_attempt_at<=clock_timestamp() AND u.email_verified
+      UNION SELECT i.user_id,i.account_id FROM mail_draft_imports i JOIN users u ON u.id=i.user_id WHERE i.state='pending' AND i.next_attempt_at<=clock_timestamp() AND u.email_verified LIMIT 100`)
+    ).rows)
+      await boss.send(
+        'mail-content',
+        {
+          kind: 'provider-drafts',
+          userId: row.user_id,
+          accountId: row.account_id,
+        },
+        { singletonKey: `drafts:${row.account_id}` },
+      );
     await pool.query(
       'DELETE FROM mail_content WHERE expires_at<clock_timestamp()',
     );
@@ -197,7 +220,12 @@ export async function startMailWorker(
       if (data && 'kind' in data) {
         const { userId, accountId } = data;
         if (
-          !['actions', 'outgoing', 'draft-attachment'].includes(data.kind) ||
+          ![
+            'actions',
+            'outgoing',
+            'draft-attachment',
+            'provider-drafts',
+          ].includes(data.kind) ||
           typeof userId !== 'string' ||
           !userId ||
           userId.length > 128 ||
@@ -215,6 +243,8 @@ export async function startMailWorker(
             accountId,
             data.fileId ?? '',
           );
+        if (data.kind === 'provider-drafts')
+          return syncProviderDrafts(pool, keys, userId, accountId);
         return data.kind === 'outgoing'
           ? processOutgoing(pool, keys, userId, accountId)
           : applyMailActions(pool, keys, userId, accountId);

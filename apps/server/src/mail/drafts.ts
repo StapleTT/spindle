@@ -7,6 +7,7 @@ import { forwardBodyUrl } from './content-server.js';
 import { AttachmentError, setDraftAttachments } from './file-storage.js';
 import { addForwardFiles } from './file-uploads.js';
 import { forwardContent } from './forward.js';
+import { draftSyncField } from './provider-draft-routes.js';
 import {
   type ReplyContext,
   type ReplyKind,
@@ -34,8 +35,8 @@ type Save = {
   attachmentIds?: string[];
 };
 const fields = `id,account_id AS "accountId",content,revision,last_save_id AS "saveId",updated_at AS "updatedAt",reply_context AS "replyContext",
-  CASE WHEN forward_content IS NULL THEN NULL ELSE jsonb_build_object('text',forward_content->>'text','imageCount',jsonb_array_length(forward_content->'resources')) END AS forwarded,
-  COALESCE((SELECT jsonb_agg(da.file_id ORDER BY da.position) FROM mail_draft_attachments da WHERE da.user_id=mail_drafts.user_id AND da.draft_id=mail_drafts.id),'[]') AS "attachmentIds"`;
+  CASE WHEN forward_content IS NULL THEN NULL ELSE jsonb_build_object('text',forward_content->>'text','imageCount',jsonb_array_length(forward_content->'resources'),'origin',forward_content->>'origin') END AS forwarded,
+  COALESCE((SELECT jsonb_agg(da.file_id ORDER BY da.position) FROM mail_draft_attachments da WHERE da.user_id=mail_drafts.user_id AND da.draft_id=mail_drafts.id),'[]') AS "attachmentIds",${draftSyncField}`;
 const uuid = { type: 'string', format: 'uuid' };
 const params = {
   type: 'object',
@@ -307,7 +308,7 @@ export function registerDraftRoutes(
   app.get('/api/mail/drafts', async (request) => ({
     drafts: (
       await pool.query(
-        `SELECT id,account_id AS "accountId",content->>'subject' AS subject,revision,updated_at AS "updatedAt"
+        `SELECT id,account_id AS "accountId",content->>'subject' AS subject,revision,updated_at AS "updatedAt",${draftSyncField}
        FROM mail_drafts WHERE user_id=$1 ORDER BY updated_at DESC,id LIMIT 100`,
         [request.mailUser],
       )
@@ -564,14 +565,25 @@ export function registerDraftRoutes(
             request.params.id,
             attachmentIds,
           );
-          return { draft: { ...inserted, attachmentIds } };
+          return {
+            draft: (
+              await db.query(
+                `SELECT ${fields} FROM mail_drafts WHERE user_id=$1 AND id=$2`,
+                [owner, request.params.id],
+              )
+            ).rows[0],
+          };
         }
         await setDraftAttachments(db, owner, request.params.id, attachmentIds);
+        await db.query(
+          'UPDATE mail_drafts SET account_id=$3,content=$4,last_save_id=$5 WHERE user_id=$1 AND id=$2',
+          [owner, request.params.id, accountId, content, saveId],
+        );
         return {
           draft: (
             await db.query(
-              `UPDATE mail_drafts SET account_id=$3,content=$4,last_save_id=$5 WHERE user_id=$1 AND id=$2 RETURNING ${fields}`,
-              [owner, request.params.id, accountId, content, saveId],
+              `SELECT ${fields} FROM mail_drafts WHERE user_id=$1 AND id=$2`,
+              [owner, request.params.id],
             )
           ).rows[0],
         };

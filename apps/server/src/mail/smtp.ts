@@ -23,6 +23,10 @@ export function defaultSenderName(profileName: string) {
     .join('');
 }
 export const smtpErrors: Record<string, string> = {
+  provider_draft_changed:
+    'This draft changed or was removed in another mail client. Open the draft and review the provider version before sending.',
+  draft_check_failed:
+    'The provider draft could not be checked before sending. Your draft and attachments are safe; retry when the provider is reachable.',
   smtp_unavailable:
     'The SMTP server could not be reached securely. Check the server, encryption and credentials.',
   smtp_rejected:

@@ -22,7 +22,7 @@ Once Send succeeds, the Outbox holds an independent immutable MIME snapshot, inc
 
 Uploads, scanner reads, MIME persistence and SMTP reads use Postgres chunks of at most 256 KiB with bounded read batches. The queue transaction freezes MIME and starts the five-second undo window after construction completes. No attachment file paths, URLs or declared MIME types grant server file/network access; filenames are normalized and ordinary files are sent as `application/octet-stream` with encoded filenames. Both file references and chunk rows enforce the owner boundary in APIs, worker queries and composite foreign keys. Platform admins have no implicit file access.
 
-Optional Spindle-managed Sent copying uses ImapFlow's byte-buffer APPEND API, so that one operation buffers at most the bounded 30 MiB snapshot. SMTP transmission stays streamed. Provider-managed Sent mode avoids that APPEND. Streamed APPEND and broader M3/release acceptance remain open.
+Provider Drafts synchronization also imports native files through quarantine and retains conflict-file references; see [provider drafts](provider-drafts.md). Provider Drafts and optional Spindle-managed Sent copying use ImapFlow's byte-buffer APPEND API, so that one operation buffers at most the bounded 30 MiB snapshot. SMTP transmission stays streamed. Provider-managed Sent mode avoids that APPEND. Streamed APPEND and broader M3/release acceptance remain open.
 
 ## Start the scanner locally
 
