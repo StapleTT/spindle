@@ -245,7 +245,7 @@ export function sanitizeMessage(html: string) {
 
 export function renderMessage(
   html: string,
-  imageUrl: ((index: number) => string) | null,
+  imageUrl: ((index: number) => string | null) | null,
   resourceCount: number,
 ) {
   const rewrite: RewriteImage = (src) => {
@@ -258,6 +258,7 @@ export function renderMessage(
     .join('\n');
   const safe = sanitizeHtml(html, {
     ...policy,
+    allowedSchemesByTag: { img: ['https', 'http', 'cid'] },
     allowedAttributes: {
       ...policy.allowedAttributes,
       img: ['src', 'alt', 'width', 'height'],
@@ -270,11 +271,13 @@ export function renderMessage(
       }),
       img: (_tag, attrs) => {
         const index = Number(attrs['data-spindle-image']);
-        if (
-          !imageUrl ||
-          !/^\d{1,2}$/.test(attrs['data-spindle-image'] ?? '') ||
-          index >= resourceCount
-        )
+        const src =
+          imageUrl &&
+          /^\d{1,2}$/.test(attrs['data-spindle-image'] ?? '') &&
+          index < resourceCount
+            ? imageUrl(index)
+            : null;
+        if (!src)
           return {
             tagName: 'span',
             attribs: {
@@ -287,7 +290,7 @@ export function renderMessage(
           tagName: 'img',
           attribs: {
             ...attrs,
-            src: imageUrl(index),
+            src,
             alt: attrs.alt ?? 'Email image',
           },
         };

@@ -415,6 +415,6 @@ export async function registerMailRoutes(
     },
   );
   registerReaderRoutes(app, pool, content);
-  registerDraftRoutes(app, pool);
+  registerDraftRoutes(app, pool, content);
   registerOutgoingRoutes(app, pool, keys);
 }

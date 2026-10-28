@@ -3,6 +3,7 @@ import type { Pool } from 'pg';
 import { loggerOptions } from '../logger.js';
 import { trimContentCache } from './content-cache.js';
 import type { ContentConfig } from './content-config.js';
+import type { ForwardContent } from './forward.js';
 import {
   type ContentGrant,
   signContentGrant,
@@ -43,6 +44,48 @@ async function grantedContent(pool: Pool, grant: ContentGrant) {
       [grant.owner, grant.message, grant.version, grant.session],
     )
   ).rows[0];
+}
+
+async function grantedForward(
+  pool: Pool,
+  grant: ContentGrant,
+): Promise<ForwardContent | null> {
+  return (
+    (
+      await pool.query(
+        `SELECT d.forward_content FROM mail_drafts d JOIN users u ON u.id=d.user_id
+    JOIN auth_sessions s ON s.user_id=d.user_id AND s.id=$4
+    WHERE d.user_id=$1 AND d.id::text=$2 AND d.id::text=$3
+    AND d.forward_content IS NOT NULL AND s.expires_at>clock_timestamp() AND u.email_verified`,
+        [grant.owner, grant.message, grant.version, grant.session],
+      )
+    ).rows[0]?.forward_content ?? null
+  );
+}
+
+export function forwardBodyUrl(
+  config: ContentConfig,
+  owner: string,
+  session: string,
+  draft: string,
+  images = false,
+) {
+  const token = signContentGrant(
+    {
+      owner,
+      session,
+      message: draft,
+      version: draft,
+      images,
+      kind: 'forward-body',
+    },
+    config.secret,
+  );
+  return `${config.origin}/forward?token=${token}`;
+}
+
+function htmlDocument(html: string) {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.55 system-ui,sans-serif;margin:0;color:#202124;background:#fff;overflow-wrap:anywhere}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
 }
 
 export function bodyUrl(
@@ -172,11 +215,93 @@ export function buildContentApp(
           : null,
         content.resources.length,
       );
-      return reply
-        .type('text/html; charset=utf-8')
-        .send(
-          `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.55 system-ui,sans-serif;margin:0;color:#202124;background:#fff;overflow-wrap:anywhere}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`,
-        );
+      return reply.type('text/html; charset=utf-8').send(htmlDocument(html));
+    },
+  );
+  app.get<{ Querystring: { token: string } }>(
+    '/forward',
+    { schema: { querystring: query } },
+    async (request, reply) => {
+      const grant = verifyContentGrant(request.query.token, config.secret);
+      if (grant?.kind !== 'forward-body')
+        return reply
+          .code(403)
+          .send('Forward preview permission expired. Reopen the draft.');
+      const content = await grantedForward(pool, grant);
+      if (!content)
+        return reply
+          .code(404)
+          .send('Forwarded original is no longer available.');
+      if (!(await consumeLimit(pool, grant.owner, 'content-body', 120)))
+        return reply.code(429).send('Too many requests.');
+      const imageToken = grant.images
+        ? signContentGrant({ ...grant, kind: 'forward-image' }, config.secret)
+        : null;
+      const html = renderMessage(
+        content.html,
+        imageToken
+          ? (index) =>
+              `${config.origin}/forward-image?token=${imageToken}&index=${index}`
+          : null,
+        content.resources.length,
+      );
+      return reply.type('text/html; charset=utf-8').send(htmlDocument(html));
+    },
+  );
+  app.get<{ Querystring: { token: string; index?: string } }>(
+    '/forward-image',
+    { schema: { querystring: query } },
+    async (request, reply) => {
+      const grant = verifyContentGrant(request.query.token, config.secret);
+      if (
+        grant?.kind !== 'forward-image' ||
+        !grant.images ||
+        request.query.index === undefined
+      )
+        return reply.code(403).send('Image permission required.');
+      const content = await grantedForward(pool, grant);
+      const index = Number(request.query.index),
+        resource = content?.resources[index];
+      if (!content || !resource)
+        return reply.code(404).send('Image unavailable.');
+      if (!(await consumeLimit(pool, grant.owner, 'content-image', 120)))
+        return reply.code(429).send('Too many image requests.');
+      const key = `forward:${grant.owner}:${grant.message}:${index}`;
+      let pending: Promise<{ type: string; data: Buffer }>;
+      if (resource.kind === 'inline') {
+        const image = content.images.find((image) => image.position === index);
+        if (!image) return reply.code(404).send('Image unavailable.');
+        pending = Promise.resolve({
+          type: image.type,
+          data: Buffer.from(image.data, 'base64'),
+        });
+      } else {
+        if (!inFlight.has(key) && inFlight.size >= 32)
+          return reply.code(429).send('Image proxy is busy. Try again.');
+        pending =
+          inFlight.get(key) ??
+          queueImage(async () => {
+            if (!(await grantedForward(pool, grant)))
+              throw new Error('Image permission expired');
+            return fetchImage(resource.url);
+          });
+        inFlight.set(key, pending);
+      }
+      try {
+        const image = await pending;
+        if (!(await grantedForward(pool, grant)))
+          return reply.code(404).send('Image unavailable.');
+        if (
+          image.data.length > MAX_IMAGE_BYTES ||
+          rasterType(image.data) !== image.type
+        )
+          throw new Error('Invalid image');
+        return reply.type(image.type).send(image.data);
+      } catch {
+        return reply.code(404).send('Image unavailable.');
+      } finally {
+        if (inFlight.get(key) === pending) inFlight.delete(key);
+      }
     },
   );
   app.get<{ Querystring: { token: string } }>(

@@ -3,7 +3,7 @@ import { trimContentCache } from './content-cache.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
 import { listAttachments, MAX_ATTACHMENT_BYTES } from './media.js';
-import { MAX_RAW_BYTES, parseMessage } from './parse.js';
+import { MAX_RAW_BYTES, parseMessage, parseReplyHeaders } from './parse.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import {
   claimAccount,
@@ -23,7 +23,7 @@ export type ContentJob = {
 type Located = { uid: string; uid_validity: string; path: string };
 type Client = Awaited<ReturnType<typeof connectImap>>;
 
-const locate = `SELECT m.size_bytes,mm.uid,mm.uid_validity,b.path,c.attachments
+const locate = `SELECT m.size_bytes,mm.uid,mm.uid_validity,b.path,c.attachments,c.state,c.reply_headers_pending
   FROM mail_content c JOIN mail_messages m ON m.user_id=c.user_id AND m.id=c.message_id
   JOIN mail_memberships mm ON mm.user_id=c.user_id AND mm.account_id=c.account_id AND mm.message_id=c.message_id
   JOIN mailboxes b ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=mm.mailbox_id
@@ -107,17 +107,21 @@ export async function fetchMessageContent(
   if (!account) return;
   try {
     const message = (
-      await pool.query(`${locate} AND c.state='pending' LIMIT 1`, [
-        owner,
-        accountId,
-        messageId,
-        version,
-      ])
+      await pool.query(
+        `${locate} AND (c.state='pending' OR c.reply_headers_pending) LIMIT 1`,
+        [owner, accountId, messageId, version],
+      )
     ).rows[0];
     if (!message) {
       await pool.query(
         "DELETE FROM mail_content WHERE user_id=$1 AND message_id=$2 AND version=$3 AND state='pending'",
         [owner, messageId, version],
+      );
+      await pool.query(
+        `UPDATE mail_content c SET reply_headers_pending=false,error_code='reply_headers_unavailable'
+        WHERE c.user_id=$1 AND c.account_id=$2 AND c.message_id=$3 AND c.version=$4
+        AND c.state='ready' AND c.reply_headers_pending AND ${leased('$5')}`,
+        [owner, accountId, messageId, version, account.lease_token],
       );
       return;
     }
@@ -128,6 +132,53 @@ export async function fetchMessageContent(
         [owner, messageId, version],
       );
     });
+    if (message.state === 'ready' && message.reply_headers_pending) {
+      const metadata = await withMailbox(
+        account,
+        keys,
+        message,
+        connect,
+        async (client) => {
+          const fetched = await client.fetchOne(
+            String(message.uid),
+            {
+              headers: [
+                'from',
+                'to',
+                'cc',
+                'reply-to',
+                'subject',
+                'message-id',
+                'in-reply-to',
+                'references',
+              ],
+            },
+            { uid: true },
+          );
+          if (!fetched || !Buffer.isBuffer(fetched.headers))
+            throw new Error('Headers unavailable');
+          return parseReplyHeaders(fetched.headers);
+        },
+      );
+      await withLease(pool, account, async (db) => {
+        const encoded = JSON.stringify(metadata);
+        const updated = await db.query(
+          `UPDATE mail_content SET reply_metadata=$5,reply_headers_pending=false,error_code=NULL,byte_size=byte_size+$6
+          WHERE user_id=$1 AND account_id=$2 AND message_id=$3 AND version=$4
+          AND state='ready' AND reply_headers_pending AND reply_metadata IS NULL RETURNING message_id`,
+          [
+            owner,
+            accountId,
+            messageId,
+            version,
+            encoded,
+            Buffer.byteLength(encoded),
+          ],
+        );
+        if (updated.rowCount) await trimContentCache(db, owner, messageId);
+      });
+      return;
+    }
     if (Number(message.size_bytes) > MAX_RAW_BYTES)
       throw new Error('Message size limit');
     const { source, attachments } = await withMailbox(
@@ -156,8 +207,8 @@ export async function fetchMessageContent(
     const parsed = await parseMessage(source);
     await withLease(pool, account, async (db) => {
       const updated = await db.query(
-        `UPDATE mail_content SET state='ready',plain_text=$5,html=$6,resources=$7,byte_size=$8,attachments=$9,
-        sanitizer_version=${SANITIZER_VERSION},error_code=NULL,expires_at=clock_timestamp()+interval '7 days',accessed_at=clock_timestamp()
+        `UPDATE mail_content SET state='ready',plain_text=$5,html=$6,resources=$7,byte_size=$8,attachments=$9,reply_metadata=$10,
+        sanitizer_version=${SANITIZER_VERSION},reply_headers_pending=false,error_code=NULL,expires_at=clock_timestamp()+interval '7 days',accessed_at=clock_timestamp()
         WHERE user_id=$1 AND account_id=$2 AND message_id=$3 AND version=$4 AND state='pending' RETURNING message_id`,
         [
           owner,
@@ -169,6 +220,7 @@ export async function fetchMessageContent(
           JSON.stringify(parsed.resources),
           parsed.bytes,
           JSON.stringify(attachments),
+          JSON.stringify(parsed.reply),
         ],
       );
       if (!updated.rowCount) return;
@@ -182,8 +234,10 @@ export async function fetchMessageContent(
     });
   } catch {
     await pool.query(
-      `UPDATE mail_content c SET state='failed',error_code='content_unavailable'
-      WHERE c.user_id=$1 AND c.account_id=$2 AND c.message_id=$3 AND c.version=$4 AND c.state='pending' AND ${leased('$5')}`,
+      `UPDATE mail_content c SET state=CASE WHEN state='pending' THEN 'failed' ELSE state END,
+      error_code=CASE WHEN state='pending' THEN 'content_unavailable' ELSE 'reply_headers_unavailable' END,reply_headers_pending=false
+      WHERE c.user_id=$1 AND c.account_id=$2 AND c.message_id=$3 AND c.version=$4
+      AND (c.state='pending' OR c.reply_headers_pending) AND ${leased('$5')}`,
       [owner, accountId, messageId, version, account.lease_token],
     );
   } finally {

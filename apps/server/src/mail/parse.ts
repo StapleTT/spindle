@@ -1,9 +1,23 @@
 import { simpleParser } from 'mailparser';
 import { MAX_IMAGE_BYTES, rasterType } from './media.js';
+import { replyMetadata } from './reply.js';
 import { sanitizeMessage } from './sanitize.js';
 
 export const MAX_RAW_BYTES = 10 * 1024 * 1024;
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+export async function parseReplyHeaders(headers: Buffer) {
+  if (headers.length > 64 * 1024) throw new Error('Header size limit');
+  return replyMetadata(
+    await simpleParser(Buffer.concat([headers, Buffer.from('\r\n\r\n')]), {
+      skipHtmlToText: true,
+      skipTextToHtml: true,
+      skipTextLinks: true,
+      maxHeadSize: 64 * 1024,
+      maxChildNodes: 1,
+    }),
+  );
+}
 
 export async function parseMessage(source: Buffer) {
   if (source.length > MAX_RAW_BYTES) throw new Error('Message size limit');
@@ -21,7 +35,7 @@ export async function parseMessage(source: Buffer) {
     typeof parsed.html === 'string' ? parsed.html.replace(/\0/g, '') : '';
   if (Buffer.byteLength(plain) + Buffer.byteLength(rawHtml) > MAX_BODY_BYTES)
     throw new Error('Message body limit');
-  const safe = sanitizeMessage(rawHtml);
+  const safe = rawHtml ? sanitizeMessage(rawHtml) : { html: '', resources: [] };
   if (Buffer.byteLength(plain) + Buffer.byteLength(safe.html) > MAX_BODY_BYTES)
     throw new Error('Sanitized body size limit');
   const images: { position: number; type: string; data: Buffer }[] = [];
@@ -38,11 +52,17 @@ export async function parseMessage(source: Buffer) {
     imageBytes += attachment.content.length;
     images.push({ position, type, data: attachment.content });
   });
+  const reply = replyMetadata(parsed);
   return {
+    reply,
     plain,
     html: safe.html,
     resources: safe.resources,
     images,
-    bytes: Buffer.byteLength(plain) + Buffer.byteLength(safe.html) + imageBytes,
+    bytes:
+      Buffer.byteLength(plain) +
+      Buffer.byteLength(safe.html) +
+      imageBytes +
+      Buffer.byteLength(JSON.stringify(reply)),
   };
 }

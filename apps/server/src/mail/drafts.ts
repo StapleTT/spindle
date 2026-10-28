@@ -2,6 +2,16 @@ import type { FastifyInstance } from 'fastify';
 import { Parser } from 'htmlparser2';
 import type { Pool } from 'pg';
 import sanitizeHtml from 'sanitize-html';
+import type { ContentConfig } from './content-config.js';
+import { forwardBodyUrl } from './content-server.js';
+import { forwardContent } from './forward.js';
+import {
+  type ReplyContext,
+  type ReplyKind,
+  type ReplyMetadata,
+  responseDraft,
+} from './reply.js';
+import { SANITIZER_VERSION } from './sanitize.js';
 import { transaction } from './store.js';
 
 type Content = {
@@ -18,8 +28,10 @@ type Save = {
   content: Content;
   revision: number;
   saveId: string;
+  copyOf?: string;
 };
-const fields = `id,account_id AS "accountId",content,revision,last_save_id AS "saveId",updated_at AS "updatedAt"`;
+const fields = `id,account_id AS "accountId",content,revision,last_save_id AS "saveId",updated_at AS "updatedAt",reply_context AS "replyContext",
+  CASE WHEN forward_content IS NULL THEN NULL ELSE jsonb_build_object('text',forward_content->>'text','imageCount',jsonb_array_length(forward_content->'resources')) END AS forwarded`;
 const uuid = { type: 'string', format: 'uuid' };
 const params = {
   type: 'object',
@@ -77,7 +89,192 @@ export function cleanDraft(content: Content): Content {
   return { ...content, html, text: text.replace(/\n$/, '') };
 }
 
-export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
+export function registerDraftRoutes(
+  app: FastifyInstance,
+  pool: Pool,
+  config: ContentConfig | null = null,
+) {
+  app.post<{ Params: { id: string }; Body: { id: string; kind: ReplyKind } }>(
+    '/api/mail/messages/:id/compose',
+    {
+      schema: {
+        params,
+        body: {
+          type: 'object',
+          required: ['id', 'kind'],
+          additionalProperties: false,
+          properties: {
+            id: uuid,
+            kind: { type: 'string', enum: ['reply', 'replyAll', 'forward'] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const owner = request.mailUser ?? '',
+        kind = request.body.kind;
+      const result = await transaction(pool, async (db) => {
+        await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
+        const existing = (
+          await db.query(
+            'SELECT id,reply_context FROM mail_drafts WHERE user_id=$1 AND id=$2',
+            [owner, request.body.id],
+          )
+        ).rows[0];
+        if (existing)
+          return existing.reply_context?.kind === kind &&
+            existing.reply_context?.sourceMessageId === request.params.id
+            ? { id: existing.id }
+            : { error: 'This draft ID was already used.' };
+        if (
+          (
+            await db.query(
+              'SELECT id FROM mail_outbox WHERE user_id=$1 AND source_draft_id=$2 LIMIT 1',
+              [owner, request.body.id],
+            )
+          ).rowCount
+        )
+          return {
+            error:
+              'This response draft was already submitted. Review Outbox before starting another response.',
+          };
+        const source = (
+          await db.query(
+            `SELECT m.* FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
+        AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=m.id)`,
+            [owner, request.params.id],
+          )
+        ).rows[0];
+        if (!source) return null;
+        if (
+          !(
+            await db.query(
+              'SELECT id FROM mail_accounts WHERE user_id=$1 AND id=$2 FOR KEY SHARE',
+              [owner, source.account_id],
+            )
+          ).rowCount
+        )
+          return null;
+        const body = (
+          await db.query(
+            `SELECT plain_text,html,reply_metadata,attachments,resources FROM mail_content WHERE user_id=$1 AND message_id=$2
+        AND state='ready' AND expires_at>clock_timestamp() AND sanitizer_version=$3 FOR UPDATE`,
+            [owner, source.id, SANITIZER_VERSION],
+          )
+        ).rows[0];
+        if (!body)
+          return {
+            error:
+              'Open the original message and wait for its body to load before composing a response.',
+          };
+        if (!body.reply_metadata) {
+          await db.query(
+            `UPDATE mail_content SET reply_headers_pending=true,next_attempt_at=clock_timestamp(),error_code=NULL
+            WHERE user_id=$1 AND message_id=$2 AND NOT reply_headers_pending`,
+            [owner, source.id],
+          );
+          return { preparing: true };
+        }
+        if (
+          (
+            await db.query(
+              'SELECT count(*)::int AS count FROM mail_drafts WHERE user_id=$1',
+              [owner],
+            )
+          ).rows[0].count >= 100
+        )
+          return {
+            error:
+              'You can keep up to 100 local drafts. Discard a draft before creating another.',
+          };
+        const identities = (
+          await db.query(
+            `SELECT email AS address FROM users WHERE id=$1 UNION SELECT username FROM mail_accounts WHERE user_id=$1
+        UNION SELECT username FROM mail_smtp WHERE user_id=$1`,
+            [owner],
+          )
+        ).rows.map((row) => row.address as string);
+        let generated: ReturnType<typeof responseDraft>;
+        let forwarded: ReturnType<typeof forwardContent> | null = null;
+        try {
+          generated = responseDraft(
+            kind,
+            {
+              id: source.id,
+              accountId: source.account_id,
+              date: source.sent_at ?? source.received_at,
+              plain: body.plain_text,
+              html: body.html ?? '',
+              metadata: body.reply_metadata as ReplyMetadata,
+              attachments: body.attachments.length,
+            },
+            identities,
+          );
+          if (generated.forwarded) {
+            const images = (
+              await db.query(
+                'SELECT position,content_type,data FROM mail_content_images WHERE user_id=$1 AND message_id=$2',
+                [owner, source.id],
+              )
+            ).rows;
+            forwarded = forwardContent(
+              generated.forwarded,
+              body.resources,
+              images,
+            );
+            if (
+              body.resources.some(
+                (resource: { kind: string }, index: number) =>
+                  resource.kind === 'inline' &&
+                  !forwarded?.images.some((image) => image.position === index),
+              )
+            )
+              generated.replyContext.warnings.push(
+                'Some embedded images are unavailable and will be omitted.',
+              );
+          }
+        } catch (error) {
+          return {
+            error:
+              error instanceof Error
+                ? error.message
+                : 'Unable to prepare recipients.',
+          };
+        }
+        const content = JSON.stringify(cleanDraft(generated.content));
+        if (Buffer.byteLength(content) > 120000)
+          return {
+            error:
+              'This quote is too large for a draft. Compose a new message with a shorter excerpt.',
+          };
+        const inserted = (
+          await db.query(
+            `INSERT INTO mail_drafts(id,user_id,account_id,content,last_save_id,reply_context,forward_content)
+        VALUES($1,$2,$3,$4,$1,$5,$6) ON CONFLICT(id) DO NOTHING RETURNING id`,
+            [
+              request.body.id,
+              owner,
+              source.account_id,
+              content,
+              JSON.stringify(generated.replyContext),
+              forwarded ? JSON.stringify(forwarded) : null,
+            ],
+          )
+        ).rows[0];
+        return inserted
+          ? { id: inserted.id }
+          : { error: 'This draft ID was already used.' };
+      });
+      if (!result)
+        return reply.code(404).send({ message: 'Message not found.' });
+      if ('error' in result)
+        return reply.code(409).send({ message: result.error });
+      if ('preparing' in result)
+        return reply.code(202).send({ state: 'preparing' });
+      return reply.code(201).send({ draft: { id: result.id } });
+    },
+  );
+
   app.get('/api/mail/drafts', async (request) => ({
     drafts: (
       await pool.query(
@@ -87,6 +284,44 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
       )
     ).rows,
   }));
+
+  app.post<{ Params: { id: string }; Body: { images?: boolean } }>(
+    '/api/mail/drafts/:id/forward-preview',
+    {
+      schema: {
+        params,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { images: { type: 'boolean' } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const owned = await pool.query(
+        'SELECT 1 FROM mail_drafts WHERE user_id=$1 AND id=$2 AND forward_content IS NOT NULL',
+        [request.mailUser, request.params.id],
+      );
+      if (!owned.rowCount)
+        return reply
+          .code(404)
+          .send({ message: 'Forwarded original not found.' });
+      if (!config)
+        return reply.code(503).send({
+          message:
+            'Formatted preview needs the isolated content server. The original formatting will still be sent.',
+        });
+      return {
+        htmlUrl: forwardBodyUrl(
+          config,
+          request.mailUser ?? '',
+          request.mailSession ?? '',
+          request.params.id,
+          request.body.images ?? false,
+        ),
+      };
+    },
+  );
 
   app.get<{ Params: { id: string } }>(
     '/api/mail/drafts/:id',
@@ -123,6 +358,7 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
           properties: {
             accountId: { anyOf: [uuid, { type: 'null' }] },
             saveId: uuid,
+            copyOf: uuid,
             revision: { type: 'integer', minimum: 0, maximum: 2147483646 },
             content: {
               type: 'object',
@@ -223,6 +459,29 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
           return { error: 'conflict' };
         if (!accountAvailable) return { error: 'account' };
         if (!existing) {
+          let context: ReplyContext | null = null;
+          let forwarded = null;
+          if (request.body.copyOf) {
+            const original = (
+              await db.query(
+                'SELECT reply_context,forward_content FROM mail_drafts WHERE user_id=$1 AND id=$2',
+                [owner, request.body.copyOf],
+              )
+            ).rows[0];
+            forwarded = original?.forward_content ?? null;
+            context = original
+              ? original.reply_context
+              : {
+                  kind: 'copy',
+                  sourceMessageId: '',
+                  originalSubject: '',
+                  inReplyTo: null,
+                  references: [],
+                  warnings: [
+                    'The original draft is unavailable. This copy starts a new conversation and cannot include a stored formatted original; review recipients and content before sending.',
+                  ],
+                };
+          }
           const count = (
             await db.query(
               'SELECT count(*)::int AS count FROM mail_drafts WHERE user_id=$1',
@@ -232,9 +491,17 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
           if (count >= 100) return { error: 'limit' };
           const inserted = (
             await db.query(
-              `INSERT INTO mail_drafts(id,user_id,account_id,content,last_save_id) VALUES($1,$2,$3,$4,$5)
+              `INSERT INTO mail_drafts(id,user_id,account_id,content,last_save_id,reply_context,forward_content) VALUES($1,$2,$3,$4,$5,$6,$7)
            ON CONFLICT(id) DO NOTHING RETURNING ${fields}`,
-              [request.params.id, owner, accountId, content, saveId],
+              [
+                request.params.id,
+                owner,
+                accountId,
+                content,
+                saveId,
+                context ? JSON.stringify(context) : null,
+                forwarded ? JSON.stringify(forwarded) : null,
+              ],
             )
           ).rows[0];
           return inserted ? { draft: inserted } : { error: 'conflict' };

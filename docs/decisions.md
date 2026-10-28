@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. See [authentication](authentication.md), [IMAP](imap.md), [mail actions](actions.md) and [composer/drafts](compose.md). The first SMTP outbox/sending slice is also implemented. Live mailbox acceptance, other providers, outgoing attachments and provider Drafts synchronization remain pending.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. See [authentication](authentication.md), [IMAP](imap.md), [mail actions](actions.md) and [composer/drafts](compose.md). SMTP outbox/sending and [reply/reply-all/forward](replies.md) are also implemented. Remaining live mailbox acceptance, other providers, outgoing attachments and provider Drafts synchronization remain pending.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -145,3 +145,15 @@ Use Tiptap for a small rich-text schema with a plain-text alternative, safe text
 Status: agent implementation choices on 2026-10-28 for the user's requested SMTP sending.
 
 Use the installed Nodemailer MIME/SMTP primitives with TLS, public DNS pinning, separately encrypted per-account credentials and a worker-only connection check. From is restricted to the authenticated SMTP login email; aliases/non-email logins/OAuth remain later scope. Freeze a saved owned draft into an immutable outbox snapshot with a stable Message-ID, five-second minimum dispatch delay and cancel-before-claim. Record full/partial acceptance, known failure or unknown delivery truthfully. Retry only definite safe failures; a durable sending marker makes crash redelivery unknown. Sent handling defaults to checking provider-managed copies; explicit Spindle copies use a one-APPEND marker and Message-ID reconciliation. Mail accepted by SMTP is not guaranteed delivered to the recipient. See [SMTP sending](sending.md) for limits, retention, recovery and acceptance.
+
+User confirmation on 2026-10-28: messages send successfully from the connected account. Record this as live SMTP sending acceptance; the remaining M3/I11 workflows are still pending.
+
+## D013 — IMAP response drafts and SMTP threading
+
+Status: agent implementation choices on 2026-10-28 for the requested reply, reply all and forward work.
+
+Create response drafts from owned cached content on the receiving account, using the existing composer, autosave and immutable SMTP Outbox. Honor Reply-To, exclude known self identities and deduplicate visible recipients; never propagate original Bcc. Preserve validated bounded In-Reply-To/References as immutable server-owned draft context. Forward starts with blank recipients and no reply headers. Quote escaped text, with an HTML-to-text fallback and visible truncation/attachment warnings. Original attachments are not included.
+
+Fetch missing headers from older ready caches only after a response is requested, through the existing fenced worker and connection budget; preserve cached bodies, images, content versions/grants and read state even when the provider is offline. Stable operation IDs recover unacknowledged draft creation; conflict copies retain only owned context and explicitly warn when the original is gone. Unknown aliases require recipient review. Provider Drafts synchronization, outgoing attachments and real-client threading acceptance remain open. See [reply behavior and upgrade](replies.md).
+
+Forwarding correction requested by the user on 2026-10-28: preserve the original HTML and styling instead of flattening HTML forwards into text. Store a bounded immutable sanitized original and supported inline image bytes separately from the editable note; preview it on the isolated content host with image opt-in, and append it to outgoing HTML. Preserve it through autosave/recovery and source deletion. Plain-text selection converts the outgoing forward explicitly; oversized originals fail visibly without silent shortening. Existing drafts are preserved. General file attachments and executable/unsafe email content remain excluded. This supersedes D013's initial plain-quote choice for HTML forwarding.

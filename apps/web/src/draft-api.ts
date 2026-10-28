@@ -10,12 +10,26 @@ export type DraftContent = {
   html: string;
   text: string;
 };
-export type DraftValue = { accountId: string | null; content: DraftContent };
+export type ReplyContext = {
+  kind: 'reply' | 'replyAll' | 'forward' | 'copy';
+  sourceMessageId: string;
+  originalSubject: string;
+  inReplyTo: string | null;
+  references: string[];
+  warnings: string[];
+};
+export type DraftValue = {
+  accountId: string | null;
+  content: DraftContent;
+  copyOf?: string;
+};
 export type Draft = DraftValue & {
   id: string;
   revision: number;
   saveId: string | null;
   updatedAt: string;
+  replyContext?: ReplyContext | null;
+  forwarded?: { text: string; imageCount: number } | null;
   outbox?: { id: string; state: string } | null;
 };
 export type DraftSummary = Pick<
@@ -65,6 +79,11 @@ export function readRecovery(user: string, id: string): Recovery | null {
         item.value.accountId === null ||
         typeof item.value.accountId === 'string'
       )
+    )
+      return null;
+    if (
+      item.value.copyOf !== undefined &&
+      typeof item.value.copyOf !== 'string'
     )
       return null;
     const content = item.value.content;

@@ -137,6 +137,13 @@ export function registerReaderRoutes(
         content: {
           state,
           configured: Boolean(config),
+          replyHeaders: cached?.reply_metadata
+            ? 'ready'
+            : cached?.reply_headers_pending
+              ? 'pending'
+              : cached?.error_code === 'reply_headers_unavailable'
+                ? 'failed'
+                : 'missing',
           ...(state === 'ready'
             ? {
                 plainText: cached.plain_text,

@@ -5,7 +5,7 @@ export type ContentGrant = {
   session: string;
   message: string;
   version: string;
-  kind: 'body' | 'image' | 'attachment';
+  kind: 'body' | 'image' | 'attachment' | 'forward-body' | 'forward-image';
   images: boolean;
   attachment?: number;
   expires: number;
@@ -50,7 +50,13 @@ export function verifyContentGrant(
       ![value.owner, value.session, value.message, value.version].every(
         (field) => field.length > 0 && field.length <= 128,
       ) ||
-      !['body', 'image', 'attachment'].includes(value.kind) ||
+      ![
+        'body',
+        'image',
+        'attachment',
+        'forward-body',
+        'forward-image',
+      ].includes(value.kind) ||
       (value.kind === 'attachment') !==
         (Number.isInteger(value.attachment) &&
           Number(value.attachment) >= 0 &&

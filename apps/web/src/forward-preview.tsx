@@ -1,0 +1,88 @@
+import { useEffect, useState } from 'react';
+import { mailApi } from './mail-api.js';
+
+export function ForwardPreview({
+  id,
+  text,
+  imageCount,
+}: {
+  id: string;
+  text: string;
+  imageCount: number;
+}) {
+  const [images, setImages] = useState(false);
+  const [htmlUrl, setHtmlUrl] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [attempt, setAttempt] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly renews the content grant.
+  useEffect(() => {
+    const controller = new AbortController();
+    setHtmlUrl(null);
+    setError('');
+    void mailApi<{ htmlUrl: string }>(`drafts/${id}/forward-preview`, {
+      method: 'POST',
+      body: JSON.stringify({ images }),
+      signal: controller.signal,
+    })
+      .then((result) => {
+        if (!controller.signal.aborted) setHtmlUrl(result.htmlUrl);
+      })
+      .catch((failure: unknown) => {
+        if (!controller.signal.aborted)
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : 'Unable to load the formatted original.',
+          );
+      });
+    return () => controller.abort();
+  }, [id, images, attempt]);
+  return (
+    <section aria-label="Forwarded original">
+      <h3>Forwarded original</h3>
+      <p>The original formatting will be included below your note.</p>
+      {imageCount > 0 && (
+        <div className="reader-images">
+          <p>
+            {images
+              ? 'Images are enabled in this preview.'
+              : 'Images are blocked in this preview. Remote images may notify the sender when loaded.'}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setHtmlUrl(null);
+              setImages(!images);
+            }}
+          >
+            {images ? 'Hide images' : 'Display images'}
+          </button>
+        </div>
+      )}
+      {error ? (
+        <>
+          <p role="alert">
+            {error}{' '}
+            <button
+              type="button"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              Retry preview
+            </button>
+          </p>
+          <pre className="plain-message">{text}</pre>
+        </>
+      ) : htmlUrl ? (
+        <iframe
+          className="message-frame"
+          title="Forwarded message body"
+          src={htmlUrl}
+          referrerPolicy="no-referrer"
+          sandbox="allow-popups allow-popups-to-escape-sandbox"
+        />
+      ) : (
+        <p role="status">Loading formatted original…</p>
+      )}
+    </section>
+  );
+}

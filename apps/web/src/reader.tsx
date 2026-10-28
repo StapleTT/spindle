@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   actionText,
   type MailAction,
+  MailApiError,
   mailApi,
   requestAction,
   type Undoable,
@@ -36,6 +37,7 @@ type Detail = {
   next: string | null;
   content: {
     state: 'missing' | 'pending' | 'ready' | 'failed';
+    replyHeaders: 'missing' | 'pending' | 'ready' | 'failed';
     configured: boolean;
     plainText?: string;
     hasHtml?: boolean;
@@ -179,6 +181,7 @@ export function Reader({
   onChange,
   onAction,
   actionRevision,
+  userId,
 }: {
   id: string;
   account: string;
@@ -187,6 +190,7 @@ export function Reader({
   onChange: () => void;
   onAction: (action: Undoable) => void;
   actionRevision: number;
+  userId: string;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -198,6 +202,15 @@ export function Reader({
   const [imageError, setImageError] = useState('');
   const [ownAction, setOwnAction] = useState('');
   const [actionError, setActionError] = useState('');
+  const [responseBusy, setResponseBusy] = useState(false);
+  const responseIds = useRef(new Map<string, string>());
+  const responseActive = useRef(true);
+  useEffect(() => {
+    responseActive.current = true;
+    return () => {
+      responseActive.current = false;
+    };
+  }, []);
   const [destination, setDestination] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
   const imageRequest = useRef<AbortController | null>(null);
@@ -364,6 +377,84 @@ export function Reader({
     }
   }
 
+  async function respond(kind: 'reply' | 'replyAll' | 'forward') {
+    setResponseBusy(true);
+    setActionError('');
+    const key = `spindle:respond:${userId}:${id}:${kind}`;
+    let operation = responseIds.current.get(key);
+    try {
+      operation ??= sessionStorage.getItem(key) || undefined;
+    } catch {
+      /* Server draft creation still works without browser storage. */
+    }
+    operation ??= crypto.randomUUID();
+    responseIds.current.set(key, operation);
+    try {
+      sessionStorage.setItem(key, operation);
+    } catch {
+      /* The in-memory ID still protects retries. */
+    }
+    const clear = () => {
+      try {
+        if (sessionStorage.getItem(key) === operation)
+          sessionStorage.removeItem(key);
+      } catch {
+        /* Storage may be disabled. */
+      }
+      responseIds.current.delete(key);
+    };
+    try {
+      const deadline = Date.now() + 60000;
+      while (responseActive.current) {
+        const result = await mailApi<
+          { draft: { id: string } } | { state: 'preparing' }
+        >(`messages/${id}/compose`, {
+          method: 'POST',
+          body: JSON.stringify({ id: operation, kind }),
+        });
+        if ('draft' in result) {
+          clear();
+          if (responseActive.current)
+            navigateMail({
+              draft: result.draft.id,
+              view: 'drafts',
+              message: '',
+            });
+          return;
+        }
+        for (;;) {
+          if (!responseActive.current) return;
+          if (Date.now() >= deadline)
+            throw new Error(
+              'Headers are still being fetched. Try this response again shortly.',
+            );
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+          if (!responseActive.current) return;
+          const current = await mailApi<Detail>(endpoint);
+          if (current.content.replyHeaders === 'ready') break;
+          if (current.content.replyHeaders === 'failed')
+            throw new Error(
+              'Unable to fetch response headers. The cached message is still available. Try again when the provider is reachable.',
+            );
+          if (current.content.state !== 'ready')
+            throw new Error(
+              'Reload the original message before preparing a response.',
+            );
+        }
+      }
+    } catch (failure) {
+      if (failure instanceof MailApiError && failure.status < 500) clear();
+      if (responseActive.current)
+        setActionError(
+          failure instanceof Error
+            ? failure.message
+            : 'Unable to prepare this response.',
+        );
+    } finally {
+      if (responseActive.current) setResponseBusy(false);
+    }
+  }
+
   async function showHtml() {
     setView('html');
     await displayImages(images);
@@ -394,6 +485,28 @@ export function Reader({
       </h2>
       {detail && (
         <div className="account-actions">
+          <button
+            type="button"
+            disabled={responseBusy || detail.content.state !== 'ready'}
+            onClick={() => void respond('reply')}
+          >
+            Reply
+          </button>
+          <button
+            type="button"
+            disabled={responseBusy || detail.content.state !== 'ready'}
+            onClick={() => void respond('replyAll')}
+          >
+            Reply all
+          </button>
+          <button
+            type="button"
+            disabled={responseBusy || detail.content.state !== 'ready'}
+            onClick={() => void respond('forward')}
+          >
+            Forward
+          </button>
+          {responseBusy && <span role="status">Preparing response…</span>}
           <button
             type="button"
             disabled={pendingAction}

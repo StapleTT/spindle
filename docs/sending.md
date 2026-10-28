@@ -36,7 +36,9 @@ Changing SMTP settings changes their version and invalidates queued snapshots ma
 
 Connection/TLS/login failures happen before message submission. Transient connection failures and explicit SMTP 4xx rejections retry at 15-second intervals, with three total attempts. Permanent 5xx rejections fail immediately. An unacknowledged DATA/send attempt is unknown, not a retryable failure. A durable `sending` marker survives process death; a subsequent leased worker marks it unknown rather than resending. A database failure after SMTP acceptance also leaves this conservative outcome.
 
-Nodemailer constructs rich multipart/plain alternatives, UTF-8 headers, encodings and MIME boundaries. Bcc recipients are included in the envelope but omitted from transmitted MIME and the Sent copy. Input does not grant file/URL access. Outgoing attachments, replies/threading, signatures, provider Drafts sync and provider API sending remain later Phase I work.
+Nodemailer constructs rich multipart/plain alternatives, UTF-8 headers, encodings and MIME boundaries. Bcc recipients are included in the envelope but omitted from transmitted MIME and the Sent copy. Input does not grant file/URL access. [Reply and reply-all drafts](replies.md) now include validated In-Reply-To/References; forwards start without these headers. Outgoing attachments, signatures, provider Drafts sync and provider API sending remain later Phase I work.
+
+HTML forwards append the server-owned original after the editable note, preserving sanitized email styles/tables and embedding supported cached images as CID MIME parts. Remote images remain references to their original URLs and are not fetched while queuing or sending. The encoded-message cap includes all forwarded HTML and embedded images; oversized sends preserve the draft and report an error. General file attachments remain later work.
 
 ## Sent reconciliation
 
@@ -61,3 +63,5 @@ Apply `0011_smtp_outbox.sql`, then deploy API, web and worker together. It adds 
 Integration tests use synthetic TLS SMTP and IMAP servers. They cover encrypted/owned settings, TLS/STARTTLS refusal, recipient/revision validation, draft freezing, concurrent/replayed sends, MIME/Bcc privacy, cancellation, definite failure retry, partial and unknown outcomes, lost SMTP/APPEND acknowledgements, delayed provider copies, killed-worker markers, configuration changes, quotas, deletion and pg-boss dispatch. Chromium covers setup, lost submit responses, reload/cancel, successful acceptance, validation errors, safe retry and unknown delivery. No real recipients are used by automated tests. Real-account sender/recipient-side acceptance remains user-owned I11 work.
 
 Local verification on 2026-10-28: 21 unit tests, 92 integration tests (including outer tests), five Chromium journeys and `npm run check` passed. Migration `0011` was applied and replayed with all existing record counts preserved, including 3,644 messages and four drafts; SMTP settings and outbox started empty.
+
+Live-account update — 2026-10-28: the user confirmed that messages send successfully. This records working SMTP sending for the connected account. Remaining I11 acceptance covers recipient-side reply/threading, provider Drafts visibility, attachments, undo-send and restart recovery as those features are completed/reviewed.

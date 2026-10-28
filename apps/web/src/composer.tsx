@@ -3,6 +3,7 @@ import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useRef, useState } from 'react';
 import { plainHtml, removeRecovery, startDraft } from './draft-api.js';
+import { ForwardPreview } from './forward-preview.js';
 import { MailApiError, mailApi } from './mail-api.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
 import { useDraft } from './use-draft.js';
@@ -284,6 +285,14 @@ export function Composer({
   const selectedAccount = accounts.find(
     (account) => account.id === value.accountId,
   );
+  const composeTitle = draft.replyContext
+    ? {
+        reply: 'Reply',
+        replyAll: 'Reply all',
+        forward: 'Forward',
+        copy: 'Recovered draft copy',
+      }[draft.replyContext.kind]
+    : 'New message';
   const content = value.content;
   const accountMissing =
     value.accountId &&
@@ -291,8 +300,26 @@ export function Composer({
   return (
     <section className="composer" aria-labelledby="composer-heading">
       <h2 id="composer-heading" ref={heading} tabIndex={-1}>
-        New message
+        {composeTitle}
       </h2>
+      {draft.replyContext && (
+        <div className="reply-context">
+          {draft.replyContext.sourceMessageId && (
+            <a href={mailHref({ message: draft.replyContext.sourceMessageId })}>
+              Back to original message
+            </a>
+          )}
+          {draft.replyContext.warnings.map((warning) => (
+            <p key={warning} role="status">
+              {warning}
+            </p>
+          ))}
+          <p>
+            Review To and Cc before sending, especially for mailing lists or
+            aliases.
+          </p>
+        </div>
+      )}
       <p>
         Drafts are saved privately in Spindle. Sending uses the selected
         account’s checked SMTP settings. Provider Drafts synchronization is
@@ -342,7 +369,7 @@ export function Composer({
           <button
             type="button"
             onClick={() => {
-              if (startDraft(user, value.accountId, value))
+              if (startDraft(user, value.accountId, { ...value, copyOf: id }))
                 removeRecovery(user, id);
               else
                 setCopyError(
@@ -448,7 +475,11 @@ export function Composer({
           </select>
         </label>
         <p className="account-status">
-          Switching to plain text removes formatting.
+          Switching to plain text removes formatting
+          {draft.forwarded
+            ? ' from the note and forwarded original when sending'
+            : ''}
+          .
         </p>
         {content.format === 'rich' ? (
           <RichEditor
@@ -470,6 +501,19 @@ export function Composer({
             />
           </label>
         )}
+        {draft.forwarded &&
+          (content.format === 'rich' ? (
+            <ForwardPreview
+              id={id}
+              text={draft.forwarded.text}
+              imageCount={draft.forwarded.imageCount}
+            />
+          ) : (
+            <section aria-label="Forwarded original">
+              <h3>Forwarded original</h3>
+              <pre className="plain-message">{draft.forwarded.text}</pre>
+            </section>
+          ))}
       </fieldset>
       {selectedAccount?.smtpState === 'ready' ? (
         <p>From: {selectedAccount.sender}</p>

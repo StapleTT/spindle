@@ -29,6 +29,7 @@ try {
             'apps/web/test/reader.browser.ts',
             'apps/web/test/composer.browser.ts',
             'apps/web/test/smtp.browser.ts',
+            'apps/web/test/replies.browser.ts',
           ]
         : [
             'apps/server/test/auth.integration.ts',
@@ -37,6 +38,7 @@ try {
             'apps/server/test/mail-actions.integration.ts',
             'apps/server/test/drafts.integration.ts',
             'apps/server/test/smtp.integration.ts',
+            'apps/server/test/replies.integration.ts',
           ]),
     ],
     {

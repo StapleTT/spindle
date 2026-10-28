@@ -656,6 +656,7 @@ export function Mail({ userId }: { userId: string }) {
               folders={mailboxes}
               onChange={reload}
               actionRevision={actionRevision}
+              userId={userId}
               onAction={(action) => {
                 track(action);
                 reload();

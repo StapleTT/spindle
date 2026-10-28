@@ -1,6 +1,12 @@
 import addressparser from 'nodemailer/lib/addressparser';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import { cleanDraft } from './drafts.js';
+import { type ForwardContent, outgoingForward } from './forward.js';
+import {
+  type ReplyContext,
+  referenceIds,
+  messageId as validMessageId,
+} from './reply.js';
 import { emailAddress } from './smtp.js';
 
 export type OutgoingContent = Parameters<typeof cleanDraft>[0];
@@ -9,6 +15,8 @@ export async function outgoingMessage(
   id: string,
   sender: string,
   content: OutgoingContent,
+  context?: ReplyContext | null,
+  forward?: ForwardContent | null,
 ) {
   if (!emailAddress(sender))
     throw new Error('Configure an SMTP login email before sending.');
@@ -47,16 +55,28 @@ export async function outgoingMessage(
   if (recipients.length < 1 || recipients.length > 50)
     throw new Error('Choose between 1 and 50 recipients.');
   const safe = cleanDraft(content);
+  const forwarded =
+    forward && safe.format === 'rich' ? outgoingForward(forward, id) : null;
   const messageId = `<${id}@${sender.split('@')[1]}>`;
+  const parent =
+    context && ['reply', 'replyAll'].includes(context.kind)
+      ? validMessageId(context.inReplyTo)
+      : null;
   const raw = await new MailComposer({
     from: { address: sender, name: '' },
     to,
     cc,
     bcc,
     subject: safe.subject,
-    text: safe.text,
-    ...(safe.format === 'rich' ? { html: safe.html } : {}),
+    text: [safe.text, forward?.text].filter(Boolean).join('\n\n'),
+    ...(safe.format === 'rich'
+      ? { html: safe.html + (forwarded?.html ?? '') }
+      : {}),
+    ...(forwarded ? { attachments: forwarded.attachments } : {}),
     messageId,
+    ...(parent
+      ? { inReplyTo: parent, references: referenceIds(context?.references) }
+      : {}),
     date: new Date(),
     disableFileAccess: true,
     disableUrlAccess: true,

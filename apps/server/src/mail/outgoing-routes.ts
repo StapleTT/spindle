@@ -262,6 +262,8 @@ export function registerOutgoingRoutes(
             operation,
             smtp.username,
             draft.content,
+            draft.reply_context,
+            draft.forward_content,
           );
         } catch (error) {
           return {

@@ -9,7 +9,7 @@ import { processOutgoing } from './outgoing-worker.js';
 import { syncAccount } from './sync.js';
 
 // User-requested fetches and mail actions take priority over another metadata pass.
-const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending'
+const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND (state='pending' OR reply_headers_pending)
   UNION ALL SELECT 1 FROM mail_content_attachments WHERE user_id=$1 AND account_id=$2 AND state='pending'
   UNION ALL SELECT 1 FROM mail_actions WHERE user_id=$1 AND account_id=$2 AND state='pending'
   UNION ALL SELECT 1 FROM mail_outbox WHERE user_id=$1 AND account_id=$2 AND state IN ('queued','sending') LIMIT 1`;
@@ -81,7 +81,7 @@ export async function startMailWorker(
       );
     const pending =
       await pool.query(`SELECT user_id,account_id,message_id,version FROM mail_content
-      WHERE state='pending' AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
+      WHERE (state='pending' OR reply_headers_pending) AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
     for (const row of pending.rows)
       await boss.send(
         'mail-content',

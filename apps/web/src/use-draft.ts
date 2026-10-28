@@ -32,6 +32,8 @@ export function useDraft(user: string, id: string) {
   const [error, setError] = useState('');
   const [recoveryFailed, setRecoveryFailed] = useState(false);
   const [editorVersion, setEditorVersion] = useState(0);
+  const [replyContext, setReplyContext] = useState<Draft['replyContext']>(null);
+  const [forwarded, setForwarded] = useState<Draft['forwarded']>(null);
   const [outbox, setOutbox] = useState<Draft['outbox']>(null);
   const [conflict, setConflict] = useState<Draft | null>(null);
   const [changed, setChanged] = useState(0);
@@ -85,6 +87,8 @@ export function useDraft(user: string, id: string) {
         const ownsRecovery =
           stored?.editId === editId.current && stored.saveId === attempt.saveId;
         revision.current = draft.revision;
+        if (alive.current) setReplyContext(draft.replyContext ?? null);
+        if (alive.current) setForwarded(draft.forwarded ?? null);
         pending.current = null;
         if (editId.current === attempt.editId) {
           latest.current = draftValue(draft);
@@ -118,6 +122,8 @@ export function useDraft(user: string, id: string) {
                 if (alive.current) {
                   setConflict(remote);
                   setOutbox(remote.outbox ?? null);
+                  setReplyContext(remote.replyContext ?? null);
+                  setForwarded(remote.forwarded ?? null);
                 }
               })
               .catch(() => {});
@@ -178,6 +184,8 @@ export function useDraft(user: string, id: string) {
         );
         blocked.current = Boolean(remote?.outbox || (recovery && !canRecover));
         setOutbox(remote?.outbox ?? null);
+        setReplyContext(remote?.replyContext ?? null);
+        setForwarded(remote?.forwarded ?? null);
         setValue(latest.current);
         setConflict(blocked.current ? remote : null);
         setStatus(
@@ -271,6 +279,8 @@ export function useDraft(user: string, id: string) {
       dirty.current = false;
       blocked.current = Boolean(remote.outbox);
       setOutbox(remote.outbox ?? null);
+      setReplyContext(remote.replyContext ?? null);
+      setForwarded(remote.forwarded ?? null);
       pending.current = null;
       removeRecovery(user, id);
       setValue(latest.current);
@@ -327,6 +337,8 @@ export function useDraft(user: string, id: string) {
   }
   return {
     value,
+    replyContext,
+    forwarded,
     outbox,
     currentRevision: () => revision.current,
     status,
