@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. See [authentication](authentication.md), [IMAP](imap.md), [mail actions](actions.md) and [composer/drafts](compose.md). Live mailbox review, other providers, provider Drafts synchronization and sending remain pending.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. See [authentication](authentication.md), [IMAP](imap.md), [mail actions](actions.md) and [composer/drafts](compose.md). The first SMTP outbox/sending slice is also implemented. Live mailbox acceptance, other providers, outgoing attachments and provider Drafts synchronization remain pending.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -139,3 +139,9 @@ Newsletter rendering correction: preserve parsed/filtered inline CSS, style bloc
 Status: agent implementation choices on 2026-10-28 for the requested composer + autosaved-drafts slice.
 
 Use Tiptap for a small rich-text schema with a plain-text alternative, safe text-only paste and HTTP/HTTPS/mailto links. Persist owned local drafts in Postgres with revision checks and idempotent save tokens. Serialize autosaves, preserve text through account removal, and use user/draft-scoped tab recovery for interrupted writes. A stale tab cannot overwrite newer text; conflicts preserve local edits and offer an explicit copy or reload. Drafts have no provider effects or Send control. Provider Drafts synchronization, SMTP sending, recipient/identity verification, reply rules and attachments remain their owning Phase I work. See [composer behavior](compose.md).
+
+## D012 — SMTP sending and immutable outbox
+
+Status: agent implementation choices on 2026-10-28 for the user's requested SMTP sending.
+
+Use the installed Nodemailer MIME/SMTP primitives with TLS, public DNS pinning, separately encrypted per-account credentials and a worker-only connection check. From is restricted to the authenticated SMTP login email; aliases/non-email logins/OAuth remain later scope. Freeze a saved owned draft into an immutable outbox snapshot with a stable Message-ID, five-second minimum dispatch delay and cancel-before-claim. Record full/partial acceptance, known failure or unknown delivery truthfully. Retry only definite safe failures; a durable sending marker makes crash redelivery unknown. Sent handling defaults to checking provider-managed copies; explicit Spindle copies use a one-APPEND marker and Message-ID reconciliation. Mail accepted by SMTP is not guaranteed delivered to the recipient. See [SMTP sending](sending.md) for limits, retention, recovery and acceptance.

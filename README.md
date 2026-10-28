@@ -33,7 +33,7 @@ Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, Vite on `127
 
 Click a message to read it. The API also starts isolated content at `http://localhost:3001` for the default app origin. Images start blocked; **Display images** enables them for the selected message. See [reader setup, cache limits and hosted content configuration](docs/reader.md).
 
-Choose **Compose** to write rich or plain text with To/Cc/Bcc and autosaved private drafts. **Local drafts** reopens them. Conflicts preserve edits from both tabs; sending and provider Drafts synchronization remain future work. See [composer and draft recovery](docs/compose.md).
+Choose **Compose** to write rich or plain text with To/Cc/Bcc and autosaved private drafts. **Local drafts** reopens them. Conflicts preserve edits from both tabs; provider Drafts synchronization remains future work. Configure **Outgoing SMTP** under an account to enable **Send**, then review **Outbox** for acceptance, cancellation, failure or uncertainty. See [SMTP setup and sending](docs/sending.md). See [composer and draft recovery](docs/compose.md).
 
 If Docker reports permission denied, start the development database with `sudo docker compose up -d --wait` in your terminal, then run `npm run dev` normally. Do not run npm or the application as root.
 

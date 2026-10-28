@@ -30,6 +30,8 @@
     "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.0.0",
     "@types/sanitize-html": "^2.16.2",
-    "imapkit": "^5.2.0"
+    "@types/smtp-server": "^3.5.13",
+    "imapkit": "^5.2.0",
+    "smtp-server": "^3.21.1"
   }
 }

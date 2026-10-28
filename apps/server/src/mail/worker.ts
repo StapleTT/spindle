@@ -5,14 +5,20 @@ import { applyMailActions } from './actions.js';
 import { type ContentJob, fetchMessageContent } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
 import { MAX_ATTACHMENTS } from './media.js';
+import { processOutgoing } from './outgoing-worker.js';
 import { syncAccount } from './sync.js';
 
 // User-requested fetches and mail actions take priority over another metadata pass.
 const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending'
   UNION ALL SELECT 1 FROM mail_content_attachments WHERE user_id=$1 AND account_id=$2 AND state='pending'
-  UNION ALL SELECT 1 FROM mail_actions WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1`;
+  UNION ALL SELECT 1 FROM mail_actions WHERE user_id=$1 AND account_id=$2 AND state='pending'
+  UNION ALL SELECT 1 FROM mail_outbox WHERE user_id=$1 AND account_id=$2 AND state IN ('queued','sending') LIMIT 1`;
 
-type ActionJob = { kind: 'actions'; userId: string; accountId: string };
+type ActionJob = {
+  kind: 'actions' | 'outgoing';
+  userId: string;
+  accountId: string;
+};
 
 export async function startMailWorker(
   boss: PgBoss,
@@ -50,6 +56,19 @@ export async function startMailWorker(
       `DELETE FROM mail_actions WHERE state<>'pending' AND (state IN ('applied','cancelled') OR dismissed_at IS NOT NULL)
       AND completed_at<clock_timestamp()-interval '7 days'`,
     );
+    await pool.query(`DELETE FROM mail_outbox WHERE completed_at<clock_timestamp()-interval '7 days'
+      AND (state='cancelled' OR (state='accepted' AND sent_copy IN ('saved','unavailable','failed')))`);
+    const outgoing =
+      await pool.query(`SELECT user_id,account_id FROM mail_smtp WHERE state='pending'
+      UNION SELECT user_id,account_id FROM mail_outbox WHERE account_id IS NOT NULL AND
+      ((state='queued' AND next_attempt_at<=clock_timestamp()) OR state='sending' OR
+       (state IN ('accepted','partial','unknown') AND sent_copy IN ('pending','appending','unknown') AND next_attempt_at<=clock_timestamp())) LIMIT 100`);
+    for (const row of outgoing.rows)
+      await boss.send(
+        'mail-content',
+        { kind: 'outgoing', userId: row.user_id, accountId: row.account_id },
+        { singletonKey: `outgoing:${row.account_id}` },
+      );
     const actions =
       await pool.query(`SELECT DISTINCT user_id,account_id FROM mail_actions
       WHERE state='pending' AND next_attempt_at<=clock_timestamp() LIMIT 100`);
@@ -144,7 +163,7 @@ export async function startMailWorker(
       if (data && 'kind' in data) {
         const { userId, accountId } = data;
         if (
-          data.kind !== 'actions' ||
+          !['actions', 'outgoing'].includes(data.kind) ||
           typeof userId !== 'string' ||
           !userId ||
           userId.length > 128 ||
@@ -152,7 +171,9 @@ export async function startMailWorker(
           !uuid.test(accountId)
         )
           throw new Error('Invalid action job');
-        return applyMailActions(pool, keys, userId, accountId);
+        return data.kind === 'outgoing'
+          ? processOutgoing(pool, keys, userId, accountId)
+          : applyMailActions(pool, keys, userId, accountId);
       }
       if (
         !data ||

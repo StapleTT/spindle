@@ -99,6 +99,13 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
         )
       ).rows[0];
       if (!draft) return reply.code(404).send({ message: 'Draft not found.' });
+      draft.outbox =
+        (
+          await pool.query(
+            "SELECT id,state FROM mail_outbox WHERE user_id=$1 AND draft_id=$2 AND state NOT IN ('failed','cancelled') ORDER BY seq DESC LIMIT 1",
+            [request.mailUser, request.params.id],
+          )
+        ).rows[0] ?? null;
       return { draft };
     },
   );
@@ -198,6 +205,15 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
             [owner, request.params.id, saveId, accountId, content],
           )
         ).rows[0];
+        if (
+          (
+            await db.query(
+              "SELECT id FROM mail_outbox WHERE user_id=$1 AND draft_id=$2 AND state NOT IN ('failed','cancelled') LIMIT 1",
+              [owner, request.params.id],
+            )
+          ).rowCount
+        )
+          return { error: 'outbox' };
         if (existing?.replay && existing.revision === revision + 1)
           return { draft: existing };
         if (
@@ -235,15 +251,17 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
       if (result.error)
         return reply.code(409).send({
           message:
-            result.error === 'account'
-              ? 'That mail account is unavailable. Choose another account or keep this draft without one.'
-              : result.error === 'limit'
-                ? 'You can keep up to 100 local drafts. Discard a draft before saving another.'
-                : 'This draft changed or was removed elsewhere. Your edits have not overwritten the saved version.',
+            result.error === 'outbox'
+              ? 'This draft is frozen in Outbox. Review its send status before editing; keep a separate copy of any unsaved changes.'
+              : result.error === 'account'
+                ? 'That mail account is unavailable. Choose another account or keep this draft without one.'
+                : result.error === 'limit'
+                  ? 'You can keep up to 100 local drafts. Discard a draft before saving another.'
+                  : 'This draft changed or was removed elsewhere. Your edits have not overwritten the saved version.',
           code: result.error,
         });
       const { replay: _replay, ...draft } = result.draft;
-      return { draft };
+      return { draft: { ...draft, outbox: null } };
     },
   );
 
@@ -263,10 +281,29 @@ export function registerDraftRoutes(app: FastifyInstance, pool: Pool) {
       },
     },
     async (request, reply) => {
-      const removed = await pool.query(
-        'DELETE FROM mail_drafts WHERE user_id=$1 AND id=$2 AND revision=$3 RETURNING id',
-        [request.mailUser, request.params.id, request.body.revision],
-      );
+      const removed = await transaction(pool, async (db) => {
+        await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [
+          request.mailUser,
+        ]);
+        if (
+          (
+            await db.query(
+              "SELECT id FROM mail_outbox WHERE user_id=$1 AND draft_id=$2 AND state NOT IN ('failed','cancelled') LIMIT 1",
+              [request.mailUser, request.params.id],
+            )
+          ).rowCount
+        )
+          return null;
+        return db.query(
+          'DELETE FROM mail_drafts WHERE user_id=$1 AND id=$2 AND revision=$3 RETURNING id',
+          [request.mailUser, request.params.id, request.body.revision],
+        );
+      });
+      if (!removed)
+        return reply.code(409).send({
+          message:
+            'This draft is frozen in Outbox. Review its send status before discarding.',
+        });
       if (removed.rowCount) return { discarded: true };
       const exists = (
         await pool.query(

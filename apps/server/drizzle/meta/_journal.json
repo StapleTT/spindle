@@ -78,6 +78,13 @@
       "when": 1793200000000,
       "tag": "0010_local_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793210000000,
+      "tag": "0011_smtp_outbox",
+      "breakpoints": true
     }
   ]
 }

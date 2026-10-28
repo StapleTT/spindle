@@ -17,7 +17,9 @@ const Composer = lazy(() =>
 import { DraftList } from './drafts.js';
 import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
+import { Outbox, OutboxFeedback, useOutbox } from './outbox.js';
 import { Reader } from './reader.js';
+import { SmtpSettings } from './smtp-settings.js';
 
 type Account = {
   id: string;
@@ -30,6 +32,8 @@ type Account = {
   lastSyncedAt: string | null;
   foldersRemaining: number;
   historySince: string | null;
+  smtpState: string | null;
+  sender: string | null;
 };
 type Mailbox = {
   id: string;
@@ -53,6 +57,8 @@ type Message = {
 type Page = { messages: Message[]; nextCursor: string | null };
 
 export function Mail({ userId }: { userId: string }) {
+  const outgoing = useOutbox();
+  const [smtpAccount, setSmtpAccount] = useState<Account | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [configured, setConfigured] = useState(true);
@@ -277,6 +283,7 @@ export function Mail({ userId }: { userId: string }) {
         </p>
       )}
       <ActionStatus fresh={latestAction} onChange={refreshActions} />
+      <OutboxFeedback messages={outgoing.messages} />
       {failure && (
         <p role="alert" className="error">
           {failure}{' '}
@@ -324,7 +331,9 @@ export function Mail({ userId }: { userId: string }) {
           </button>
           <button
             type="button"
-            aria-pressed={!account && !mailbox && view !== 'drafts'}
+            aria-pressed={
+              !account && !mailbox && view !== 'drafts' && view !== 'outbox'
+            }
             onClick={() => {
               navigateMail({
                 account: '',
@@ -335,6 +344,15 @@ export function Mail({ userId }: { userId: string }) {
             }}
           >
             Unified inbox
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'outbox'}
+            onClick={() =>
+              navigateMail({ view: 'outbox', draft: '', message: '' })
+            }
+          >
+            Outbox
           </button>
           {accounts.map((item) => (
             <section
@@ -402,6 +420,13 @@ export function Mail({ userId }: { userId: string }) {
                     </li>
                   ))}
               </ul>
+              <button
+                type="button"
+                aria-label={`Outgoing SMTP for ${item.name}`}
+                onClick={() => setSmtpAccount(item)}
+              >
+                Outgoing SMTP
+              </button>
               <div className="account-actions">
                 <button
                   type="button"
@@ -447,6 +472,14 @@ export function Mail({ userId }: { userId: string }) {
           </button>
         </aside>
         <div className="mail-content">
+          {smtpAccount && (
+            <SmtpSettings
+              key={smtpAccount.id}
+              account={smtpAccount}
+              onClose={() => setSmtpAccount(null)}
+              onChange={reload}
+            />
+          )}
           {showConnect && (
             <section aria-labelledby="connect-title">
               <h2 id="connect-title">
@@ -612,6 +645,8 @@ export function Mail({ userId }: { userId: string }) {
             </Suspense>
           ) : view === 'drafts' ? (
             <DraftList user={userId} />
+          ) : view === 'outbox' ? (
+            <Outbox data={outgoing} />
           ) : messageId ? (
             <Reader
               key={`${messageId}:${account}:${mailbox}`}

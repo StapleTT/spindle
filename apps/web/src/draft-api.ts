@@ -16,6 +16,7 @@ export type Draft = DraftValue & {
   revision: number;
   saveId: string | null;
   updatedAt: string;
+  outbox?: { id: string; state: string } | null;
 };
 export type DraftSummary = Pick<
   Draft,

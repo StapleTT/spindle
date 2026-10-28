@@ -32,6 +32,7 @@ export function useDraft(user: string, id: string) {
   const [error, setError] = useState('');
   const [recoveryFailed, setRecoveryFailed] = useState(false);
   const [editorVersion, setEditorVersion] = useState(0);
+  const [outbox, setOutbox] = useState<Draft['outbox']>(null);
   const [conflict, setConflict] = useState<Draft | null>(null);
   const [changed, setChanged] = useState(0);
   const alive = useRef(false);
@@ -107,14 +108,17 @@ export function useDraft(user: string, id: string) {
         if (
           failure instanceof MailApiError &&
           failure.status === 409 &&
-          failure.code === 'conflict'
+          ['conflict', 'outbox'].includes(failure.code ?? '')
         ) {
           blocked.current = true;
           if (alive.current) {
             setStatus('conflict');
             getDraft(id)
               .then((remote) => {
-                if (alive.current) setConflict(remote);
+                if (alive.current) {
+                  setConflict(remote);
+                  setOutbox(remote.outbox ?? null);
+                }
               })
               .catch(() => {});
           }
@@ -172,7 +176,8 @@ export function useDraft(user: string, id: string) {
         dirty.current = Boolean(
           recovery && (!remote || !sameValue(recovery.value, remote)),
         );
-        blocked.current = Boolean(recovery && !canRecover);
+        blocked.current = Boolean(remote?.outbox || (recovery && !canRecover));
+        setOutbox(remote?.outbox ?? null);
         setValue(latest.current);
         setConflict(blocked.current ? remote : null);
         setStatus(
@@ -180,7 +185,9 @@ export function useDraft(user: string, id: string) {
         );
         if (blocked.current)
           setError(
-            'This draft changed or was removed elsewhere. Your recovered edits are preserved.',
+            remote?.outbox
+              ? 'This draft is frozen in Outbox. Review its send status; keep a separate copy of any unsaved edits.'
+              : 'This draft changed or was removed elsewhere. Your recovered edits are preserved.',
           );
         else if (dirty.current) {
           remember();
@@ -262,13 +269,14 @@ export function useDraft(user: string, id: string) {
       revision.current = remote.revision;
       editId.current = crypto.randomUUID();
       dirty.current = false;
-      blocked.current = false;
+      blocked.current = Boolean(remote.outbox);
+      setOutbox(remote.outbox ?? null);
       pending.current = null;
       removeRecovery(user, id);
       setValue(latest.current);
       setConflict(null);
       setError('');
-      setStatus('saved');
+      setStatus(remote.outbox ? 'conflict' : 'saved');
       setEditorVersion((n) => n + 1);
     } catch (failure) {
       setError(
@@ -319,6 +327,8 @@ export function useDraft(user: string, id: string) {
   }
   return {
     value,
+    outbox,
+    currentRevision: () => revision.current,
     status,
     error,
     recoveryFailed,

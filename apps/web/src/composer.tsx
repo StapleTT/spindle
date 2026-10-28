@@ -3,10 +3,17 @@ import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useRef, useState } from 'react';
 import { plainHtml, removeRecovery, startDraft } from './draft-api.js';
-import { navigateMail } from './mail-navigation.js';
+import { MailApiError, mailApi } from './mail-api.js';
+import { mailHref, navigateMail } from './mail-navigation.js';
 import { useDraft } from './use-draft.js';
 
-type Account = { id: string; name: string; username: string };
+type Account = {
+  id: string;
+  name: string;
+  username: string;
+  smtpState?: string | null;
+  sender?: string | null;
+};
 const safeLink = (value: string) => {
   try {
     const url = new URL(value);
@@ -19,8 +26,10 @@ const safeLink = (value: string) => {
 function RichEditor({
   html,
   onChange,
+  disabled,
 }: {
   html: string;
+  disabled: boolean;
   onChange: (html: string, text: string) => void;
 }) {
   const [link, setLink] = useState('');
@@ -75,6 +84,9 @@ function RichEditor({
     onUpdate: ({ editor: current }) =>
       onChange(current.getHTML(), current.getText({ blockSeparator: '\n' })),
   });
+  useEffect(() => {
+    editor?.setEditable(!disabled, false);
+  }, [editor, disabled]);
   const marks = useEditorState({
     editor,
     selector: ({ editor: current }) => ({
@@ -204,6 +216,7 @@ export function Composer({
   const draft = useDraft(user, id);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState('');
   const [copyError, setCopyError] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -228,6 +241,49 @@ export function Composer({
         </button>
       </section>
     );
+  async function send() {
+    setBusy(true);
+    setSendError('');
+    const cacheKey = `spindle:send:${user}:${id}`;
+    try {
+      let operation: { id: string; revision: number } | null = JSON.parse(
+        sessionStorage.getItem(cacheKey) ?? 'null',
+      );
+      if (!operation) {
+        if (!(await draft.flush())) return;
+        operation = {
+          id: crypto.randomUUID(),
+          revision: draft.currentRevision(),
+        };
+        sessionStorage.setItem(cacheKey, JSON.stringify(operation));
+      }
+      const result = await mailApi<{ outbox: { state: string } }>(
+        `drafts/${id}/send`,
+        { method: 'POST', body: JSON.stringify(operation) },
+      );
+      sessionStorage.removeItem(cacheKey);
+      if (result.outbox.state === 'cancelled') {
+        setSendError(
+          'The previous send was cancelled. Review your draft before sending again.',
+        );
+        return;
+      }
+      navigateMail({ draft: '', view: 'outbox', message: '' });
+    } catch (error) {
+      if (error instanceof MailApiError && error.status < 500)
+        sessionStorage.removeItem(cacheKey);
+      setSendError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to queue this message. Your draft is preserved.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  const selectedAccount = accounts.find(
+    (account) => account.id === value.accountId,
+  );
   const content = value.content;
   const accountMissing =
     value.accountId &&
@@ -238,8 +294,9 @@ export function Composer({
         New message
       </h2>
       <p>
-        Drafts are saved privately in Spindle. Sending and synchronization to
-        your provider’s Drafts folder are coming later.
+        Drafts are saved privately in Spindle. Sending uses the selected
+        account’s checked SMTP settings. Provider Drafts synchronization is
+        coming later.
       </p>
       <p role="status" aria-live="polite">
         {
@@ -303,97 +360,136 @@ export function Composer({
           {copyError && <p role="alert">{copyError}</p>}
         </div>
       )}
-      <label>
-        Sending account
-        <select
-          value={value.accountId ?? ''}
-          onChange={(event) =>
-            draft.update({ accountId: event.target.value || null })
-          }
-        >
-          <option value="">No account selected</option>
-          {accountMissing && (
-            <option value={value.accountId ?? ''}>
-              Unavailable account — choose another
-            </option>
-          )}
-          {accounts.map((account) => (
-            <option key={account.id} value={account.id}>
-              {account.name} ({account.username})
-            </option>
-          ))}
-        </select>
-      </label>
-      {(['to', 'cc', 'bcc'] as const).map((field) => (
-        <label key={field}>
-          {field === 'to' ? 'To' : field === 'cc' ? 'Cc' : 'Bcc'}
+      {draft.outbox && (
+        <p className="notice">
+          This draft is in Outbox. Sending may already have started.{' '}
+          <a href={mailHref({ view: 'outbox', draft: '', message: '' })}>
+            Review Outbox before making another copy.
+          </a>
+        </p>
+      )}
+      {sendError && (
+        <p role="alert" className="error">
+          <span>{sendError}</span>{' '}
+          <a href={mailHref({ view: 'outbox', draft: '', message: '' })}>
+            Review Outbox
+          </a>
+        </p>
+      )}
+      <fieldset disabled={busy} className="composer-fields">
+        <label>
+          Sending account
+          <select
+            value={value.accountId ?? ''}
+            onChange={(event) =>
+              draft.update({ accountId: event.target.value || null })
+            }
+          >
+            <option value="">No account selected</option>
+            {accountMissing && (
+              <option value={value.accountId ?? ''}>
+                Unavailable account — choose another
+              </option>
+            )}
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.name} ({account.username})
+              </option>
+            ))}
+          </select>
+        </label>
+        {(['to', 'cc', 'bcc'] as const).map((field) => (
+          <label key={field}>
+            {field === 'to' ? 'To' : field === 'cc' ? 'Cc' : 'Bcc'}
+            <input
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={4000}
+              value={content[field]}
+              onChange={(event) =>
+                draft.update({}, { [field]: event.target.value })
+              }
+            />
+          </label>
+        ))}
+        <p className="account-status">
+          Separate recipients with commas. Incomplete addresses can be saved
+          while you compose.
+        </p>
+        <label>
+          Subject
           <input
             type="text"
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={4000}
-            value={content[field]}
+            maxLength={1000}
+            value={content.subject}
             onChange={(event) =>
-              draft.update({}, { [field]: event.target.value })
+              draft.update({}, { subject: event.target.value })
             }
           />
         </label>
-      ))}
-      <p className="account-status">
-        Separate recipients with commas. Incomplete addresses can be saved while
-        you compose.
-      </p>
-      <label>
-        Subject
-        <input
-          type="text"
-          maxLength={1000}
-          value={content.subject}
-          onChange={(event) =>
-            draft.update({}, { subject: event.target.value })
-          }
-        />
-      </label>
-      <label>
-        Message format
-        <select
-          value={content.format}
-          onChange={(event) => {
-            const format = event.target.value as 'rich' | 'plain';
-            draft.update(
-              {},
-              {
-                format,
-                html: format === 'rich' ? plainHtml(content.text) : '',
-              },
-            );
-          }}
-        >
-          <option value="rich">Rich text</option>
-          <option value="plain">Plain text</option>
-        </select>
-      </label>
-      <p className="account-status">
-        Switching to plain text removes formatting.
-      </p>
-      {content.format === 'rich' ? (
-        <RichEditor
-          key={draft.editorVersion}
-          html={content.html}
-          onChange={(html, text) => draft.update({}, { html, text })}
-        />
-      ) : (
         <label>
-          Message body
-          <textarea
-            rows={12}
-            maxLength={100000}
-            value={content.text}
-            onChange={(event) => draft.update({}, { text: event.target.value })}
-          />
+          Message format
+          <select
+            value={content.format}
+            onChange={(event) => {
+              const format = event.target.value as 'rich' | 'plain';
+              draft.update(
+                {},
+                {
+                  format,
+                  html: format === 'rich' ? plainHtml(content.text) : '',
+                },
+              );
+            }}
+          >
+            <option value="rich">Rich text</option>
+            <option value="plain">Plain text</option>
+          </select>
         </label>
+        <p className="account-status">
+          Switching to plain text removes formatting.
+        </p>
+        {content.format === 'rich' ? (
+          <RichEditor
+            key={draft.editorVersion}
+            disabled={busy}
+            html={content.html}
+            onChange={(html, text) => draft.update({}, { html, text })}
+          />
+        ) : (
+          <label>
+            Message body
+            <textarea
+              rows={12}
+              maxLength={100000}
+              value={content.text}
+              onChange={(event) =>
+                draft.update({}, { text: event.target.value })
+              }
+            />
+          </label>
+        )}
+      </fieldset>
+      {selectedAccount?.smtpState === 'ready' ? (
+        <p>From: {selectedAccount.sender}</p>
+      ) : (
+        <p>Configure outgoing SMTP for this account before sending.</p>
       )}
       <div className="account-actions">
+        <button
+          type="button"
+          disabled={
+            busy ||
+            Boolean(draft.outbox) ||
+            draft.status === 'conflict' ||
+            selectedAccount?.smtpState !== 'ready'
+          }
+          onClick={() => void send()}
+        >
+          Send
+        </button>
+
         <button
           type="button"
           disabled={busy || draft.status === 'conflict'}
