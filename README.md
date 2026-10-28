@@ -2,7 +2,7 @@
 
 Spindle syncs all your mailboxes into one unified inbox you can drive from the keyboard. Use the hosted service or run it on your own server.
 
-The 2.0 rewrite supports invite-only signup, verified-email/password login, recovery, private IMAP account connections, background metadata sync and a paginated unified inbox backed by Postgres. The visual design system will be imported from Claude Design later.
+The 2.0 rewrite supports invite-only signup, verified-email/password login, recovery, private IMAP connections, background sync, a unified inbox and a cached message reader with isolated HTML and optional images. The visual design system will be imported from Claude Design later.
 
 See the [confirmed decisions](docs/decisions.md), [rebuild brief](REBUILD_BRIEF.md), and [task checklist](REBUILD_TASKS.md).
 
@@ -30,6 +30,8 @@ With the example Mailpit settings, open **http://127.0.0.1:8025** to read captur
 `npm run dev` starts Vite, the Fastify API, and a separate pg-boss worker. Vite forwards `/api` to the API, so the browser uses one origin. Forms use temporary accessible styling pending Claude Design.
 
 Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, Vite on `127.0.0.1:5173`, and Mailpit SMTP on `127.0.0.1:1025`. The worker owns pg-boss's queue schema and IMAP synchronization; `npm run db:migrate` applies versioned application migrations. After signing in, choose **Connect IMAP account**. See [IMAP setup, coverage and recovery](docs/imap.md).
+
+Click a message to read it. The API also starts isolated content at `http://localhost:3001` for the default app origin. Images start blocked; **Display images** enables them for the selected message. See [reader setup, cache limits and hosted content configuration](docs/reader.md).
 
 If Docker reports permission denied, start the development database with `sudo docker compose up -d --wait` in your terminal, then run `npm run dev` normally. Do not run npm or the application as root.
 

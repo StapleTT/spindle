@@ -4,6 +4,8 @@ import { createAuth } from './auth/auth.js';
 import { readAuthConfig } from './auth/config.js';
 import { readConfig } from './config.js';
 import { logger } from './logger.js';
+import { readContentConfig } from './mail/content-config.js';
+import { buildContentApp } from './mail/content-server.js';
 
 const config = readConfig();
 const authConfig = readAuthConfig();
@@ -17,6 +19,13 @@ database.on('error', () =>
   logger.error('Unexpected database connection error'),
 );
 const app = buildApp(database, createAuth(database, authConfig), authConfig);
+const contentConfig = readContentConfig(authConfig);
+const contentApp = contentConfig
+  ? buildContentApp(database, contentConfig)
+  : null;
+app.addHook('preClose', async () => {
+  await contentApp?.close();
+});
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
   process.once(signal, () => {
@@ -29,6 +38,12 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 try {
   await database.query('SELECT id FROM users LIMIT 0');
   await database.query('SELECT id FROM mail_accounts LIMIT 0');
+  await database.query('SELECT message_id FROM mail_content LIMIT 0');
+  if (contentConfig && contentApp)
+    await contentApp.listen({
+      host: contentConfig.host,
+      port: contentConfig.port,
+    });
   await app.listen({ host: config.host, port: config.port });
 } catch {
   logger.error(

@@ -23,10 +23,15 @@ try {
       '--test',
       '--test-concurrency=1',
       ...(process.argv.includes('--browser')
-        ? ['apps/web/test/auth.browser.ts', 'apps/web/test/mail.browser.ts']
+        ? [
+            'apps/web/test/auth.browser.ts',
+            'apps/web/test/mail.browser.ts',
+            'apps/web/test/reader.browser.ts',
+          ]
         : [
             'apps/server/test/auth.integration.ts',
             'apps/server/test/mail.integration.ts',
+            'apps/server/test/reader.integration.ts',
           ]),
     ],
     {

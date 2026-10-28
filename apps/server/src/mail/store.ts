@@ -39,15 +39,20 @@ export async function transaction<T>(
   }
 }
 
-export async function claimAccount(pool: Pool, userId: string, id: string) {
+export async function claimAccount(
+  pool: Pool,
+  userId: string,
+  id: string,
+  syncing = true,
+) {
   const result = await pool.query<MailAccount>(
     `UPDATE mail_accounts a SET lease_token=gen_random_uuid(),
-       lease_until=clock_timestamp()+interval '90 seconds', status='syncing'
+       lease_until=clock_timestamp()+interval '90 seconds', status=CASE WHEN $3 THEN 'syncing' ELSE status END
      WHERE a.id=$1 AND a.user_id=$2
        AND (lease_until IS NULL OR lease_until<clock_timestamp())
        AND EXISTS (SELECT 1 FROM users u WHERE u.id=a.user_id AND u.email_verified)
      RETURNING a.*`,
-    [id, userId],
+    [id, userId, syncing],
   );
   return result.rows[0];
 }
@@ -58,6 +63,11 @@ export async function withLease<T>(
   operation: (client: PoolClient) => Promise<T>,
 ) {
   return transaction(pool, async (client) => {
+    const owner = await client.query(
+      'SELECT id FROM users WHERE id=$1 AND email_verified FOR UPDATE',
+      [account.user_id],
+    );
+    if (!owner.rowCount) throw new Error('Mail owner is unavailable');
     const valid = await client.query(
       `SELECT a.id FROM mail_accounts a JOIN users u ON u.id=a.user_id
        WHERE a.id=$1 AND a.user_id=$2 AND a.lease_token=$3

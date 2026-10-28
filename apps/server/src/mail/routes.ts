@@ -4,12 +4,16 @@ import type { Pool } from 'pg';
 import type { Auth } from '../auth/auth.js';
 import type { AuthConfig } from '../auth/config.js';
 import { authHeaders } from '../auth/routes.js';
+import type { ContentConfig } from './content-config.js';
 import { encryptCredential, type MailKeys } from './credentials.js';
+import { registerReaderRoutes } from './reader-routes.js';
 import { consumeLimit, transaction } from './store.js';
+import { mailViewCondition } from './view.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
     mailUser?: string;
+    mailSession?: string;
   }
 }
 
@@ -55,8 +59,10 @@ export async function registerMailRoutes(
   auth: Auth,
   config: AuthConfig,
   keys: MailKeys,
+  content: ContentConfig | null,
 ) {
   app.decorateRequest('mailUser', '');
+  app.decorateRequest('mailSession', '');
   app.addHook('preHandler', async (request, reply) => {
     reply.header('cache-control', 'no-store');
     if (request.method !== 'GET' && request.headers.origin !== config.appUrl)
@@ -73,12 +79,21 @@ export async function registerMailRoutes(
         .code(403)
         .send({ message: 'Verify your email to continue.' });
     request.mailUser = current.user.id;
+    request.mailSession = current.session.id;
     if (
       !(await consumeLimit(
         pool,
         current.user.id,
-        request.method === 'GET' ? 'read' : 'write',
-        request.method === 'GET' ? 240 : 10,
+        request.method === 'GET'
+          ? 'read'
+          : request.routeOptions.url?.startsWith('/api/mail/messages/')
+            ? 'reader'
+            : 'write',
+        request.method === 'GET'
+          ? 240
+          : request.routeOptions.url?.startsWith('/api/mail/messages/')
+            ? 60
+            : 10,
       ))
     )
       return reply
@@ -359,10 +374,7 @@ export async function registerMailRoutes(
        NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id
          AND ($3::uuid IS NULL OR seen.mailbox_id=$3) AND '\\Seen'=ANY(seen.flags)) AS unread
        FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
-       WHERE m.user_id=$1 AND ($2::uuid IS NULL OR m.account_id=$2)
-       AND EXISTS(SELECT 1 FROM mail_memberships mm JOIN mailboxes b ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=mm.mailbox_id
-         WHERE mm.user_id=$1 AND mm.message_id=m.id AND
-         CASE WHEN $3::uuid IS NOT NULL THEN b.id=$3 ELSE b.role='inbox' END)
+       WHERE ${mailViewCondition}
        AND ($4::timestamptz IS NULL OR (m.received_at,m.id)<($4::timestamptz,$5::uuid))
        ORDER BY m.received_at DESC,m.id DESC LIMIT $6`,
         [
@@ -390,4 +402,5 @@ export async function registerMailRoutes(
       };
     },
   );
+  registerReaderRoutes(app, pool, content);
 }

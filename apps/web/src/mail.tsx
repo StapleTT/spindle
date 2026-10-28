@@ -5,6 +5,9 @@ import {
   useRef,
   useState,
 } from 'react';
+import { mailApi as api } from './mail-api.js';
+import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
+import { Reader } from './reader.js';
 
 type Account = {
   id: string;
@@ -39,25 +42,12 @@ type Message = {
 };
 type Page = { messages: Message[]; nextCursor: string | null };
 
-async function api<T>(path: string, options: RequestInit = {}) {
-  const response = await fetch(`/api/mail/${path}`, {
-    ...options,
-    headers: { 'content-type': 'application/json', ...options.headers },
-  });
-  const data = await response.json();
-  if (!response.ok)
-    throw new Error(data.message ?? 'Unable to load your mail.');
-  return data as T;
-}
-
 export function Mail() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [configured, setConfigured] = useState(true);
-  const [account, setAccount] = useState('');
-  const [mailbox, setMailbox] = useState('');
+  const { account, mailbox, cursor, message: messageId } = useMailLocation();
   const [page, setPage] = useState<Page>({ messages: [], nextCursor: null });
-  const [cursor, setCursor] = useState('');
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState('');
   const [notice, setNotice] = useState('');
@@ -186,9 +176,7 @@ export function Mail() {
       });
       form.reset();
       setDisconnect(null);
-      setAccount('');
-      setMailbox('');
-      setCursor('');
+      navigateMail({ account: '', mailbox: '', cursor: '', message: '' });
       setNotice(
         'Disconnected. Only the local mirror was removed. Your provider mail is unchanged.',
       );
@@ -234,9 +222,12 @@ export function Mail() {
             type="button"
             aria-pressed={!account && !mailbox}
             onClick={() => {
-              setAccount('');
-              setMailbox('');
-              setCursor('');
+              navigateMail({
+                account: '',
+                mailbox: '',
+                cursor: '',
+                message: '',
+              });
             }}
           >
             Unified inbox
@@ -272,9 +263,12 @@ export function Mail() {
                 type="button"
                 aria-pressed={account === item.id && !mailbox}
                 onClick={() => {
-                  setAccount(item.id);
-                  setMailbox('');
-                  setCursor('');
+                  navigateMail({
+                    account: item.id,
+                    mailbox: '',
+                    cursor: '',
+                    message: '',
+                  });
                 }}
               >
                 Inbox
@@ -288,9 +282,12 @@ export function Mail() {
                         type="button"
                         aria-pressed={mailbox === box.id}
                         onClick={() => {
-                          setAccount(item.id);
-                          setMailbox(box.id);
-                          setCursor('');
+                          navigateMail({
+                            account: item.id,
+                            mailbox: box.id,
+                            cursor: '',
+                            message: '',
+                          });
                         }}
                       >
                         {box.path}{' '}
@@ -449,8 +446,8 @@ export function Mail() {
                   />
                 )}
                 <p>
-                  Stores mail headers and flags locally. Bodies and attachments
-                  are not downloaded in this version. Up to five accounts.
+                  Stores mail headers and flags locally. Message bodies are
+                  cached when opened. Up to five accounts.
                 </p>
                 <button type="submit" disabled={busy}>
                   {busy ? 'Saving…' : 'Save and sync'}
@@ -499,64 +496,89 @@ export function Mail() {
               </form>
             </section>
           )}
-          <h2>
-            {selected?.path ??
-              (account
-                ? `${accounts.find((item) => item.id === account)?.name ?? 'Account'} inbox`
-                : 'Unified inbox')}
-          </h2>
-          <p className="account-status">
-            Read-only mail headers from local storage. Sync continues in the
-            background.
-          </p>
-          {loading ? (
-            <p role="status">Loading mail…</p>
-          ) : page.messages.length === 0 ? (
-            <p>
-              {accounts.length
-                ? 'No synchronized mail in this view yet. If you just connected an account, wait for the worker to finish its first check.'
-                : 'Connect an IMAP account to see your mail here.'}
-            </p>
+          {messageId ? (
+            <Reader
+              key={`${messageId}:${account}:${mailbox}`}
+              id={messageId}
+              account={account}
+              mailbox={mailbox}
+            />
           ) : (
-            <ul className="message-list" aria-label="Messages">
-              {page.messages.map((message) => (
-                <li key={message.id} className={message.unread ? 'unread' : ''}>
-                  <div className="message-heading">
-                    <span>
-                      {message.sender
-                        .map((sender) => sender.name || sender.address)
-                        .join(', ') || 'Unknown sender'}
-                    </span>
-                    <time dateTime={message.receivedAt}>
-                      {new Date(message.receivedAt).toLocaleString()}
-                    </time>
-                  </div>
-                  <div className="message-subject">
-                    {message.subject || '(No subject)'}
-                  </div>
-                  <div className="account-status">
-                    {message.accountName}
-                    {message.unread ? ' · Unread' : ''}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <>
+              <h2>
+                {selected?.path ??
+                  (account
+                    ? `${accounts.find((item) => item.id === account)?.name ?? 'Account'} inbox`
+                    : 'Unified inbox')}
+              </h2>
+              <p className="account-status">
+                Mail from local storage. Open a message to read it. Sync
+                continues in the background.
+              </p>
+              {loading ? (
+                <p role="status">Loading mail…</p>
+              ) : page.messages.length === 0 ? (
+                <p>
+                  {accounts.length
+                    ? 'No synchronized mail in this view yet. If you just connected an account, wait for the worker to finish its first check.'
+                    : 'Connect an IMAP account to see your mail here.'}
+                </p>
+              ) : (
+                <ul className="message-list" aria-label="Messages">
+                  {page.messages.map((message) => (
+                    <li
+                      key={message.id}
+                      className={message.unread ? 'unread' : ''}
+                    >
+                      <div className="message-heading">
+                        <span>
+                          {message.sender
+                            .map((sender) => sender.name || sender.address)
+                            .join(', ') || 'Unknown sender'}
+                        </span>
+                        <time dateTime={message.receivedAt}>
+                          {new Date(message.receivedAt).toLocaleString()}
+                        </time>
+                      </div>
+                      <a
+                        className="message-subject message-open"
+                        href={mailHref({ message: message.id })}
+                      >
+                        {message.subject || '(No subject)'}
+                      </a>
+                      <div className="account-status">
+                        {message.accountName}
+                        {message.unread ? ' · Unread' : ''}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="account-actions">
+                {cursor && (
+                  <button
+                    type="button"
+                    onClick={() => navigateMail({ cursor: '', message: '' })}
+                  >
+                    Newest messages
+                  </button>
+                )}
+                {page.nextCursor && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      navigateMail({
+                        cursor: page.nextCursor ?? '',
+                        message: '',
+                      })
+                    }
+                  >
+                    Older messages
+                  </button>
+                )}
+              </div>
+            </>
           )}
-          <div className="account-actions">
-            {cursor && (
-              <button type="button" onClick={() => setCursor('')}>
-                Newest messages
-              </button>
-            )}
-            {page.nextCursor && (
-              <button
-                type="button"
-                onClick={() => setCursor(page.nextCursor ?? '')}
-              >
-                Older messages
-              </button>
-            )}
-          </div>
         </div>
       </div>
     </section>

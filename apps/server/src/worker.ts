@@ -32,6 +32,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 try {
   await pool.query('SELECT id FROM mail_accounts LIMIT 0');
+  await pool.query('SELECT message_id FROM mail_content LIMIT 0');
   await boss.start();
   stopMail = await startMailWorker(boss, pool, keys);
   logger.info('Worker ready for private IMAP synchronization');

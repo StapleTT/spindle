@@ -84,9 +84,6 @@ button:disabled {
 .folder-list span {
   font-size: 0.8rem;
 }
-.signed-in > section > button {
-  width: auto;
-}
 button[aria-pressed="true"] {
   outline: 2px solid Highlight;
   outline-offset: -2px;
@@ -133,4 +130,60 @@ button[aria-pressed="true"] {
 #password-hint {
   margin: 0;
   font-size: 0.9rem;
+}
+
+.message-open {
+  display: block;
+  padding-block: 0.5rem;
+  color: inherit;
+}
+.reader {
+  min-width: 0;
+}
+.reader-navigation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.reader-navigation a,
+.reader-navigation button {
+  width: auto;
+  padding: 0.6rem;
+}
+.message-details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  overflow-wrap: anywhere;
+}
+.message-details dt {
+  font-weight: 600;
+}
+.message-details dd {
+  margin: 0;
+}
+.plain-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
+}
+.message-frame {
+  width: 100%;
+  min-height: 65vh;
+  border: 1px solid GrayText;
+  background: white;
+  box-sizing: border-box;
+}
+.reader-images {
+  margin-block: 1rem;
+  padding: 0.75rem;
+  border: 1px solid GrayText;
+}
+.reader-images button {
+  width: auto;
+}
+
+.signed-in > section > button {
+  width: auto;
 }

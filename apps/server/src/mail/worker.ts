@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import type { PgBoss } from 'pg-boss';
 import { logger } from '../logger.js';
+import { type ContentJob, fetchMessageContent } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
 import { syncAccount } from './sync.js';
 
@@ -22,15 +23,48 @@ export async function startMailWorker(
     retryDelay: 10,
     expireInSeconds: 60,
   });
+  await boss.createQueue('mail-content', {
+    policy: 'exclusive',
+    retryLimit: 3,
+    retryDelay: 10,
+    retryBackoff: true,
+    expireInSeconds: 120,
+  });
   // next_sync_at is a transactional outbox: committed connect/sync requests survive
   // API/queue outages. The dispatcher can safely replay them after a restart.
   async function dispatch() {
     if (!keys.keys.size) return;
+    await pool.query(
+      'DELETE FROM mail_content WHERE expires_at<clock_timestamp()',
+    );
+    const pending =
+      await pool.query(`SELECT user_id,account_id,message_id,version FROM mail_content
+      WHERE state='pending' AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
+    for (const row of pending.rows)
+      await boss.send(
+        'mail-content',
+        {
+          userId: row.user_id,
+          accountId: row.account_id,
+          messageId: row.message_id,
+          version: row.version,
+        },
+        { singletonKey: row.message_id },
+      );
     const due =
       await pool.query(`SELECT a.id,a.user_id FROM mail_accounts a JOIN users u ON u.id=a.user_id
       WHERE a.next_sync_at<=clock_timestamp() AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())
       AND u.email_verified ORDER BY a.next_sync_at LIMIT 100`);
     for (const account of due.rows) {
+      if (
+        (
+          await pool.query(
+            "SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1",
+            [account.user_id, account.id],
+          )
+        ).rowCount
+      )
+        continue;
       await boss.send(
         'mail-sync',
         { accountId: account.id, userId: account.user_id },
@@ -43,7 +77,7 @@ export async function startMailWorker(
   );
   await boss.work<{ accountId: string; userId: string }>(
     'mail-sync',
-    { localConcurrency: 2, pollingIntervalSeconds: 1 },
+    { localConcurrency: 1, pollingIntervalSeconds: 1 },
     async ([job]) => {
       if (
         !job ||
@@ -56,7 +90,35 @@ export async function startMailWorker(
         job.data.userId.length > 128
       )
         throw new Error('Invalid mail job');
+      if (
+        (
+          await pool.query(
+            "SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1",
+            [job.data.userId, job.data.accountId],
+          )
+        ).rowCount
+      )
+        return;
       await syncAccount(pool, keys, job.data.userId, job.data.accountId);
+    },
+  );
+  await boss.work<ContentJob>(
+    'mail-content',
+    { localConcurrency: 1, pollingIntervalSeconds: 1 },
+    async ([job]) => {
+      const uuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      if (
+        !job ||
+        typeof job.data?.userId !== 'string' ||
+        !job.data.userId ||
+        job.data.userId.length > 128 ||
+        ![job.data.accountId, job.data.messageId, job.data.version].every(
+          (id) => typeof id === 'string' && uuid.test(id),
+        )
+      )
+        throw new Error('Invalid content job');
+      await fetchMessageContent(pool, keys, job.data);
     },
   );
   await boss.schedule('mail-dispatch', '* * * * *');

@@ -15,6 +15,20 @@
       "when": 1793110000000,
       "tag": "0001_mail",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793120000000,
+      "tag": "0002_reader",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793130000000,
+      "tag": "0003_reader_styles",
+      "breakpoints": true
     }
   ]
 }

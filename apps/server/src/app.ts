@@ -5,6 +5,7 @@ import type { Auth } from './auth/auth.js';
 import type { AuthConfig } from './auth/config.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { loggerOptions } from './logger.js';
+import { readContentConfig } from './mail/content-config.js';
 import { type MailKeys, readMailKeys } from './mail/credentials.js';
 import { registerMailRoutes } from './mail/routes.js';
 
@@ -13,6 +14,7 @@ export function buildApp(
   auth: Auth,
   config: AuthConfig,
   mailKeys: MailKeys = readMailKeys(),
+  content = readContentConfig(config),
 ) {
   const app = Fastify({
     logger: loggerOptions,
@@ -20,10 +22,14 @@ export function buildApp(
     ajv: { customOptions: { coerceTypes: false } },
     trustProxy: config.trustProxy,
   });
-  app.register(helmet);
+  app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: { frameSrc: content ? [content.origin] : ["'none'"] },
+    },
+  });
   registerAuthRoutes(app, auth, config);
   app.register(async (mail) =>
-    registerMailRoutes(mail, database, auth, config, mailKeys),
+    registerMailRoutes(mail, database, auth, config, mailKeys, content),
   );
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     const status =
