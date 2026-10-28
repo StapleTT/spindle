@@ -1,14 +1,18 @@
 import type { Pool } from 'pg';
 import type { PgBoss } from 'pg-boss';
 import { logger } from '../logger.js';
+import { applyMailActions } from './actions.js';
 import { type ContentJob, fetchMessageContent } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
 import { MAX_ATTACHMENTS } from './media.js';
 import { syncAccount } from './sync.js';
 
-// Body and attachment fetches take priority over another metadata pass.
+// User-requested fetches and mail actions take priority over another metadata pass.
 const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending'
-  UNION ALL SELECT 1 FROM mail_content_attachments WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1`;
+  UNION ALL SELECT 1 FROM mail_content_attachments WHERE user_id=$1 AND account_id=$2 AND state='pending'
+  UNION ALL SELECT 1 FROM mail_actions WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1`;
+
+type ActionJob = { kind: 'actions'; userId: string; accountId: string };
 
 export async function startMailWorker(
   boss: PgBoss,
@@ -42,6 +46,19 @@ export async function startMailWorker(
     await pool.query(
       'DELETE FROM mail_content WHERE expires_at<clock_timestamp()',
     );
+    await pool.query(
+      `DELETE FROM mail_actions WHERE state<>'pending' AND completed_at<clock_timestamp()-interval '7 days'`,
+    );
+    const actions =
+      await pool.query(`SELECT DISTINCT user_id,account_id FROM mail_actions
+      WHERE state='pending' AND next_attempt_at<=clock_timestamp() LIMIT 100`);
+    // Actions share the content queue so each worker keeps two provider connections at most.
+    for (const row of actions.rows)
+      await boss.send(
+        'mail-content',
+        { kind: 'actions', userId: row.user_id, accountId: row.account_id },
+        { singletonKey: `actions:${row.account_id}` },
+      );
     const pending =
       await pool.query(`SELECT user_id,account_id,message_id,version FROM mail_content
       WHERE state='pending' AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
@@ -96,52 +113,63 @@ export async function startMailWorker(
     'mail-sync',
     { localConcurrency: 1, pollingIntervalSeconds: 1 },
     async ([job]) => {
+      const data = job?.data;
       if (
-        !job ||
-        typeof job.data?.userId !== 'string' ||
-        typeof job.data?.accountId !== 'string' ||
+        !data ||
+        typeof data.userId !== 'string' ||
+        typeof data.accountId !== 'string' ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(
-          job.data.accountId,
+          data.accountId,
         ) ||
-        job.data.userId.length === 0 ||
-        job.data.userId.length > 128
+        data.userId.length === 0 ||
+        data.userId.length > 128
       )
         throw new Error('Invalid mail job');
       if (
-        (
-          await pool.query(contentPending, [
-            job.data.userId,
-            job.data.accountId,
-          ])
-        ).rowCount
+        (await pool.query(contentPending, [data.userId, data.accountId]))
+          .rowCount
       )
         return;
-      await syncAccount(pool, keys, job.data.userId, job.data.accountId);
+      await syncAccount(pool, keys, data.userId, data.accountId);
     },
   );
-  await boss.work<ContentJob>(
+  await boss.work<ContentJob | ActionJob>(
     'mail-content',
     { localConcurrency: 1, pollingIntervalSeconds: 1 },
     async ([job]) => {
       const uuid =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+      const data = job?.data;
+      if (data && 'kind' in data) {
+        const { userId, accountId } = data;
+        if (
+          data.kind !== 'actions' ||
+          typeof userId !== 'string' ||
+          !userId ||
+          userId.length > 128 ||
+          typeof accountId !== 'string' ||
+          !uuid.test(accountId)
+        )
+          throw new Error('Invalid action job');
+        return applyMailActions(pool, keys, userId, accountId);
+      }
       if (
-        !job ||
-        typeof job.data?.userId !== 'string' ||
-        !job.data.userId ||
-        job.data.userId.length > 128 ||
-        ![job.data.accountId, job.data.messageId, job.data.version].every(
+        !data ||
+        typeof data.userId !== 'string' ||
+        !data.userId ||
+        data.userId.length > 128 ||
+        ![data.accountId, data.messageId, data.version].every(
           (id) => typeof id === 'string' && uuid.test(id),
         ) ||
-        (job.data.attachment !== undefined &&
+        (data.attachment !== undefined &&
           !(
-            Number.isInteger(job.data.attachment) &&
-            job.data.attachment >= 0 &&
-            job.data.attachment < MAX_ATTACHMENTS
+            Number.isInteger(data.attachment) &&
+            data.attachment >= 0 &&
+            data.attachment < MAX_ATTACHMENTS
           ))
       )
         throw new Error('Invalid content job');
-      await fetchMessageContent(pool, keys, job.data);
+      await fetchMessageContent(pool, keys, data);
     },
   );
   await boss.schedule('mail-dispatch', '* * * * *');

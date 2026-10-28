@@ -79,6 +79,13 @@ export async function withLease<T>(
   });
 }
 
+export async function releaseLease(pool: Pool, account: MailAccount) {
+  await pool.query(
+    'UPDATE mail_accounts SET lease_token=NULL,lease_until=NULL WHERE user_id=$1 AND id=$2 AND lease_token=$3',
+    [account.user_id, account.id, account.lease_token],
+  );
+}
+
 export async function consumeLimit(
   pool: Pool,
   user: string,

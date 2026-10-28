@@ -1,5 +1,6 @@
 import type { FetchMessageObject } from 'imapflow';
 import type { Pool, PoolClient } from 'pg';
+import { pendingKind, withSeen } from './actions.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
 import {
@@ -72,8 +73,8 @@ async function saveMessage(
   );
   await client.query(
     `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,uid_validity,uid,flags)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (mailbox_id,uid_validity,uid)
-     DO UPDATE SET flags=EXCLUDED.flags`,
+     VALUES ($1,$2,$3,$4,$5,$6,${withSeen('$7::text[]', pendingKind('$1', '$4'))})
+     ON CONFLICT (mailbox_id,uid_validity,uid) DO UPDATE SET flags=EXCLUDED.flags`,
     [
       account.user_id,
       account.id,

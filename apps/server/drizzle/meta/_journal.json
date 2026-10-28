@@ -36,6 +36,13 @@
       "when": 1793140000000,
       "tag": "0004_attachments",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793150000000,
+      "tag": "0005_mail_actions",
+      "breakpoints": true
     }
   ]
 }

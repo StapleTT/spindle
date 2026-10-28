@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { mailApi as api } from './mail-api.js';
+import { mailApi as api, markMessage } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { Reader } from './reader.js';
 
@@ -82,6 +82,32 @@ export function Mail() {
     },
     [queryString],
   );
+
+  // Refreshes counts and rows in place, without the loading state of a new view.
+  const reload = useCallback(() => {
+    load(new AbortController().signal).catch(() => {});
+  }, [load]);
+
+  async function toggleRead(message: Message) {
+    const kind = message.unread ? 'read' : 'unread';
+    setPage((current) => ({
+      ...current,
+      messages: current.messages.map((item) =>
+        item.id === message.id ? { ...item, unread: !message.unread } : item,
+      ),
+    }));
+    try {
+      await markMessage(message.id, kind);
+      setNotice(
+        `Marked “${message.subject || '(No subject)'}” as ${kind}. Saving to your provider.`,
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : 'Unable to update mail.',
+      );
+    }
+    reload();
+  }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit refresh reruns the same inbox query.
   useEffect(() => {
@@ -502,6 +528,7 @@ export function Mail() {
               id={messageId}
               account={account}
               mailbox={mailbox}
+              onChange={reload}
             />
           ) : (
             <>
@@ -548,7 +575,14 @@ export function Mail() {
                       </a>
                       <div className="account-status">
                         {message.accountName}
-                        {message.unread ? ' · Unread' : ''}
+                        {message.unread ? ' · Unread' : ''}{' '}
+                        <button
+                          type="button"
+                          aria-label={`Mark “${message.subject || '(No subject)'}” as ${message.unread ? 'read' : 'unread'}`}
+                          onClick={() => void toggleRead(message)}
+                        >
+                          {message.unread ? 'Mark read' : 'Mark unread'}
+                        </button>
                       </div>
                     </li>
                   ))}

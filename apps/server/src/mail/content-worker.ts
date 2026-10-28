@@ -5,7 +5,12 @@ import { connectImap } from './imap.js';
 import { listAttachments, MAX_ATTACHMENT_BYTES } from './media.js';
 import { MAX_RAW_BYTES, parseMessage } from './parse.js';
 import { SANITIZER_VERSION } from './sanitize.js';
-import { claimAccount, type MailAccount, withLease } from './store.js';
+import {
+  claimAccount,
+  type MailAccount,
+  releaseLease,
+  withLease,
+} from './store.js';
 
 export type ContentJob = {
   userId: string;
@@ -87,13 +92,6 @@ async function download(
     chunks.push(value);
   }
   return Buffer.concat(chunks);
-}
-
-async function releaseLease(pool: Pool, account: MailAccount) {
-  await pool.query(
-    'UPDATE mail_accounts SET lease_token=NULL,lease_until=NULL WHERE user_id=$1 AND id=$2 AND lease_token=$3',
-    [account.user_id, account.id, account.lease_token],
-  );
 }
 
 export async function fetchMessageContent(

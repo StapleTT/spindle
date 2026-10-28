@@ -383,6 +383,40 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page
       .getByRole('heading', { name: 'Reader message 49', exact: true })
       .waitFor();
+    const inboxCount = (unread: number) =>
+      page
+        .getByRole('button', { name: `INBOX (${unread} unread / 51)` })
+        .waitFor();
+    await inboxCount(51);
+    await page
+      .getByRole('button', { name: 'Mark as read', exact: true })
+      .click();
+    await inboxCount(50);
+    await page.getByText('Marked as read.', { exact: true }).waitFor();
+    assert.ok(server.control.getMessage('INBOX', 50).flags.includes('\\Seen'));
+    await page
+      .getByRole('link', { name: 'Back to message list', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Mark “Reader message 48” as read' })
+      .click();
+    await page
+      .getByRole('button', { name: 'Mark “Reader message 48” as unread' })
+      .waitFor();
+    await inboxCount(49);
+    const deadline = Date.now() + 15000;
+    while (
+      Date.now() < deadline &&
+      !server.control.getMessage('INBOX', 49).flags.includes('\\Seen')
+    )
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.ok(server.control.getMessage('INBOX', 49).flags.includes('\\Seen'));
+    await page.evaluate((id) => {
+      window.location.hash = `message=${id}`;
+    }, next);
+    await page
+      .getByRole('heading', { name: 'Reader message 49', exact: true })
+      .waitFor();
     stop?.();
     stop = undefined;
     await boss.stop({ graceful: true, timeout: 10000 });

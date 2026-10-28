@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { mailApi } from './mail-api.js';
+import { type MailAction, mailApi, markMessage } from './mail-api.js';
 import { mailHref } from './mail-navigation.js';
 
 type Person = { name: string; address: string };
@@ -19,6 +19,8 @@ type Detail = {
     accountName: string;
     receivedAt: string;
     messageId: string | null;
+    unread: boolean;
+    lastAction: MailAction | null;
   };
   previous: string | null;
   next: string | null;
@@ -159,14 +161,21 @@ function AttachmentItem({
   );
 }
 
+const actionText = {
+  read: { pending: 'Marking as read', done: 'Marked as read' },
+  unread: { pending: 'Marking as unread', done: 'Marked as unread' },
+};
+
 export function Reader({
   id,
   account,
   mailbox,
+  onChange,
 }: {
   id: string;
   account: string;
   mailbox: string;
+  onChange: () => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -176,6 +185,8 @@ export function Reader({
   const [images, setImages] = useState(false);
   const [busy, setBusy] = useState(false);
   const [imageError, setImageError] = useState('');
+  const [ownAction, setOwnAction] = useState('');
+  const [actionError, setActionError] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
   const imageRequest = useRef<AbortController | null>(null);
   const params = new URLSearchParams();
@@ -272,6 +283,58 @@ export function Reader({
     }
   }
 
+  const lastAction = detail?.message.lastAction ?? null;
+  const pendingAction = lastAction?.state === 'pending';
+
+  // Follow the durable action until the worker reports the provider outcome.
+  useEffect(() => {
+    if (!pendingAction) return;
+    const controller = new AbortController();
+    const timer = setInterval(async () => {
+      try {
+        const current = await mailApi<Detail>(endpoint, {
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setDetail((value) =>
+          value ? { ...value, message: current.message } : value,
+        );
+        if (current.message.lastAction?.state !== 'pending') onChange();
+      } catch {
+        // The interval keeps polling while the action is pending.
+      }
+    }, 1500);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, [pendingAction, endpoint, onChange]);
+
+  async function mark(kind: MailAction['kind']) {
+    setActionError('');
+    try {
+      const action = await markMessage(id, kind);
+      setOwnAction(action.id);
+      setDetail((value) =>
+        value
+          ? {
+              ...value,
+              message: {
+                ...value.message,
+                unread: kind === 'unread',
+                lastAction: action,
+              },
+            }
+          : value,
+      );
+      onChange();
+    } catch (failure) {
+      setActionError(
+        failure instanceof Error ? failure.message : 'Unable to update mail.',
+      );
+    }
+  }
+
   async function showHtml() {
     setView('html');
     await displayImages(images);
@@ -300,6 +363,38 @@ export function Reader({
         {detail?.message.subject ||
           (detail ? '(No subject)' : 'Loading message…')}
       </h2>
+      {detail && (
+        <div className="account-actions">
+          <button
+            type="button"
+            disabled={pendingAction}
+            onClick={() => void mark(detail.message.unread ? 'read' : 'unread')}
+          >
+            {detail.message.unread ? 'Mark as read' : 'Mark as unread'}
+          </button>
+          <span role="status">
+            {lastAction?.state === 'pending'
+              ? `${actionText[lastAction.kind].pending}… saving to your provider.`
+              : lastAction?.state === 'applied' && lastAction.id === ownAction
+                ? `${actionText[lastAction.kind].done}.`
+                : ''}
+          </span>
+          {lastAction?.state === 'failed' && (
+            <span role="alert" className="error">
+              {actionText[lastAction.kind].pending} failed at your provider; the
+              change was undone.{' '}
+              <button type="button" onClick={() => void mark(lastAction.kind)}>
+                Try again
+              </button>
+            </span>
+          )}
+          {actionError && (
+            <span role="alert" className="error">
+              {actionError}
+            </span>
+          )}
+        </div>
+      )}
       {detail && (
         <dl className="message-details">
           <dt>From</dt>

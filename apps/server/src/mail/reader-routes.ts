@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
+import { type ActionKind, withSeen } from './actions.js';
 import { trimContentCache } from './content-cache.js';
 import type { ContentConfig } from './content-config.js';
 import { attachmentUrl, bodyUrl } from './content-server.js';
@@ -48,7 +49,11 @@ export function registerReaderRoutes(
       const message = (
         await pool.query(
           `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
-      m.received_at AS "receivedAt",m.sent_at AS "sentAt",m.message_id AS "messageId",m.in_reply_to AS "inReplyTo"
+      m.received_at AS "receivedAt",m.sent_at AS "sentAt",m.message_id AS "messageId",m.in_reply_to AS "inReplyTo",
+      NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id
+        AND '\\Seen'=ANY(seen.flags)) AS unread,
+      (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state) FROM mail_actions x
+        WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction"
       FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
       WHERE ${mailViewCondition} AND m.id=$4`,
           values,
@@ -134,6 +139,69 @@ export function registerReaderRoutes(
             : {}),
         },
       };
+    },
+  );
+
+  app.post<{
+    Params: { id: string };
+    Body: { id: string; kind: ActionKind };
+  }>(
+    '/api/mail/messages/:id/actions',
+    {
+      schema: {
+        params,
+        body: {
+          type: 'object',
+          required: ['id', 'kind'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            kind: { type: 'string', enum: ['read', 'unread'] },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (request, reply) => {
+      const owner = request.mailUser ?? '';
+      const { id: action, kind } = request.body;
+      const result = await transaction(pool, async (db) => {
+        // Locking the message serializes action order with its local flag changes.
+        const message = (
+          await db.query(
+            `SELECT m.account_id FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
+        AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=m.id) FOR UPDATE`,
+            [owner, request.params.id],
+          )
+        ).rows[0];
+        if (!message) return null;
+        const inserted = await db.query(
+          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind) VALUES($1,$2,$3,$4,$5)
+        ON CONFLICT (id) DO NOTHING RETURNING id,kind,state`,
+          [action, owner, message.account_id, request.params.id, kind],
+        );
+        // A retried request with the same operation ID returns the original intent.
+        if (!inserted.rowCount)
+          return (
+            (
+              await db.query(
+                'SELECT id,kind,state FROM mail_actions WHERE id=$1 AND user_id=$2 AND message_id=$3 AND kind=$4',
+                [action, owner, request.params.id, kind],
+              )
+            ).rows[0] ?? 'conflict'
+          );
+        await db.query(
+          `UPDATE mail_memberships SET flags=${withSeen('flags', '$3::text')} WHERE user_id=$1 AND message_id=$2`,
+          [owner, request.params.id, kind],
+        );
+        return inserted.rows[0];
+      });
+      if (!result)
+        return reply.code(404).send({ message: 'Message not found.' });
+      if (result === 'conflict')
+        return reply
+          .code(409)
+          .send({ message: 'This action ID was already used.' });
+      return reply.code(202).send({ action: result });
     },
   );
 

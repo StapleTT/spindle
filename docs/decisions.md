@@ -118,6 +118,12 @@ Use ImapFlow with certificate-validated implicit TLS or required STARTTLS. Valid
 
 Let the user choose a fixed last-90-day boundary or all available history at connection time; reconnect preserves it. Keep bodies, attachments, IMAP mutations and OAuth separate. Up to five accounts per user and two concurrent connections per worker are initial implementation limits. ImapKit is a development-only protocol fixture. A separate versioned AES-GCM operator key ring protects IMAP credentials; hosted KMS and deployment egress remain future release gates. See [IMAP behavior and operational limits](imap.md).
 
+## D010 — durable mail actions
+
+Status: agent implementation choices for the user's requested triage sequence (read/unread first; archive, trash, restore, move, undo and feedback follow).
+
+Record each action as a Postgres row with a client operation ID, applying its local effect in the same transaction. Only the worker changes provider mail, holding the fenced account lease and the existing two-connection worker budget. IMAP read state changes only `\Seen` with `STORE +/-FLAGS`. Pending intent survives metadata passes; after the provider confirms, provider state is authoritative. Five failed attempts or changed message identity fail the action and revert the local effect. Opening a message still does not mark it read. Real-account acceptance (E08/H07) remains user-owned. See [mail actions](actions.md).
+
 ## D009 — cached, isolated IMAP reader
 
 Status: agent implementation choices for the user's requested navigation, caching, sanitization and image controls.

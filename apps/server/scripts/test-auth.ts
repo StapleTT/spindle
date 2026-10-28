@@ -32,6 +32,7 @@ try {
             'apps/server/test/auth.integration.ts',
             'apps/server/test/mail.integration.ts',
             'apps/server/test/reader.integration.ts',
+            'apps/server/test/mail-actions.integration.ts',
           ]),
     ],
     {
