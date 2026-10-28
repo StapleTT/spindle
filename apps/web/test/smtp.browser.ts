@@ -3,6 +3,7 @@ import { createServer as createNetServer } from 'node:net';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
+import { simpleParser } from 'mailparser';
 import { Pool } from 'pg';
 import { chromium, type Route } from 'playwright';
 import { createServer } from 'vite';
@@ -115,6 +116,16 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
       .getByRole('button', { name: 'Outgoing SMTP for Browser send account' })
       .click();
     await page.getByLabel('SMTP server', { exact: true }).fill('localhost');
+    assert.equal(
+      await page
+        .getByLabel('Sender display name', { exact: true })
+        .inputValue(),
+      'Reader Test',
+    );
+    const senderName = 'Zoë "Support", Inbox';
+    await page
+      .getByLabel('Sender display name', { exact: true })
+      .fill(senderName);
     await page.getByLabel('SMTP port', { exact: true }).fill(String(smtp.port));
     await page.getByLabel('SMTP encryption').selectOption('tls');
     await page
@@ -136,6 +147,18 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
       '',
     );
     await page.getByRole('button', { name: 'Close outgoing settings' }).click();
+    await page.reload();
+    await page
+      .getByRole('button', { name: 'Outgoing SMTP for Browser send account' })
+      .click();
+    await page.getByLabel('Sender display name', { exact: true }).waitFor();
+    assert.equal(
+      await page
+        .getByLabel('Sender display name', { exact: true })
+        .inputValue(),
+      senderName,
+    );
+    await page.getByRole('button', { name: 'Close outgoing settings' }).click();
     const compose = async (subject: string) => {
       await page.getByRole('button', { name: 'Compose', exact: true }).click();
       await page.getByLabel('Subject', { exact: true }).fill(subject);
@@ -155,6 +178,9 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
         .getByRole('listitem')
         .filter({ hasText: subject });
     await compose('Browser queued mail');
+    await page
+      .getByText(`From: ${senderName} <writer@example.test>`, { exact: true })
+      .waitFor();
     let lose = true;
     const lostResponse = async (route: Route) => {
       if (lose) {
@@ -205,6 +231,11 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
       })
       .waitFor();
     assert.equal(smtp.received.length, 1);
+    assert.equal(
+      (await simpleParser(smtp.received[0]?.raw ?? Buffer.alloc(0))).from
+        ?.value[0]?.name,
+      senderName,
+    );
     assert.equal(imap.server.control.listMessages('Sent').length, 1);
 
     await compose('Browser failure');

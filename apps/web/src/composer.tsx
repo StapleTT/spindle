@@ -3,6 +3,7 @@ import { EditorContent, useEditor, useEditorState } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect, useRef, useState } from 'react';
 import { plainHtml, removeRecovery, startDraft } from './draft-api.js';
+import { DraftAttachments } from './draft-attachments.js';
 import { ForwardPreview } from './forward-preview.js';
 import { MailApiError, mailApi } from './mail-api.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
@@ -14,6 +15,7 @@ type Account = {
   username: string;
   smtpState?: string | null;
   sender?: string | null;
+  senderName?: string | null;
 };
 const safeLink = (value: string) => {
   try {
@@ -198,8 +200,7 @@ function RichEditor({
       </div>
       {error && <p role="alert">{error}</p>}
       <p className="account-status">
-        Pasted content is plain text. Images and file attachments are not added
-        to drafts yet.
+        Pasted content is plain text. Use Add files below to attach files.
       </p>
     </div>
   );
@@ -219,6 +220,7 @@ export function Composer({
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState('');
   const [copyError, setCopyError] = useState('');
+  const [attachmentsReady, setAttachmentsReady] = useState(true);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
   const value = draft.value;
@@ -515,8 +517,19 @@ export function Composer({
             </section>
           ))}
       </fieldset>
+      <DraftAttachments
+        ids={value.attachmentIds ?? []}
+        onChange={(attachmentIds) => draft.update({ attachmentIds })}
+        onReady={setAttachmentsReady}
+        disabled={busy || Boolean(draft.outbox)}
+      />
       {selectedAccount?.smtpState === 'ready' ? (
-        <p>From: {selectedAccount.sender}</p>
+        <p>
+          From:{' '}
+          {selectedAccount.senderName
+            ? `${selectedAccount.senderName} <${selectedAccount.sender}>`
+            : selectedAccount.sender}
+        </p>
       ) : (
         <p>Configure outgoing SMTP for this account before sending.</p>
       )}
@@ -526,6 +539,7 @@ export function Composer({
           disabled={
             busy ||
             Boolean(draft.outbox) ||
+            !attachmentsReady ||
             draft.status === 'conflict' ||
             selectedAccount?.smtpState !== 'ready'
           }

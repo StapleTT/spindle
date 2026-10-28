@@ -30,6 +30,7 @@ try {
             'apps/web/test/composer.browser.ts',
             'apps/web/test/smtp.browser.ts',
             'apps/web/test/replies.browser.ts',
+            'apps/web/test/attachments.browser.ts',
           ]
         : [
             'apps/server/test/auth.integration.ts',
@@ -39,6 +40,7 @@ try {
             'apps/server/test/drafts.integration.ts',
             'apps/server/test/smtp.integration.ts',
             'apps/server/test/replies.integration.ts',
+            'apps/server/test/outgoing-attachments.integration.ts',
           ]),
     ],
     {

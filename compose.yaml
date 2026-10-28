@@ -23,5 +23,31 @@ services:
       - "127.0.0.1:1025:1025"
       - "127.0.0.1:8025:8025"
 
+  clamav:
+    image: clamav/clamav:stable
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      [
+        "freshclam --stdout && freshclam --daemon && exec clamd --config-file=/etc/clamav/spindle.conf",
+      ]
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - clamav_data:/var/lib/clamav
+      - ./ops/clamav/clamd.conf:/etc/clamav/spindle.conf:ro
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "clamdscan",
+          "--config-file=/etc/clamav/spindle.conf",
+          "--ping=1",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+
 volumes:
   postgres_data:
+  clamav_data:

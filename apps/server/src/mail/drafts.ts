@@ -4,6 +4,8 @@ import type { Pool } from 'pg';
 import sanitizeHtml from 'sanitize-html';
 import type { ContentConfig } from './content-config.js';
 import { forwardBodyUrl } from './content-server.js';
+import { AttachmentError, setDraftAttachments } from './file-storage.js';
+import { addForwardFiles } from './file-uploads.js';
 import { forwardContent } from './forward.js';
 import {
   type ReplyContext,
@@ -29,9 +31,11 @@ type Save = {
   revision: number;
   saveId: string;
   copyOf?: string;
+  attachmentIds?: string[];
 };
 const fields = `id,account_id AS "accountId",content,revision,last_save_id AS "saveId",updated_at AS "updatedAt",reply_context AS "replyContext",
-  CASE WHEN forward_content IS NULL THEN NULL ELSE jsonb_build_object('text',forward_content->>'text','imageCount',jsonb_array_length(forward_content->'resources')) END AS forwarded`;
+  CASE WHEN forward_content IS NULL THEN NULL ELSE jsonb_build_object('text',forward_content->>'text','imageCount',jsonb_array_length(forward_content->'resources')) END AS forwarded,
+  COALESCE((SELECT jsonb_agg(da.file_id ORDER BY da.position) FROM mail_draft_attachments da WHERE da.user_id=mail_drafts.user_id AND da.draft_id=mail_drafts.id),'[]') AS "attachmentIds"`;
 const uuid = { type: 'string', format: 'uuid' };
 const params = {
   type: 'object',
@@ -157,7 +161,7 @@ export function registerDraftRoutes(
           return null;
         const body = (
           await db.query(
-            `SELECT plain_text,html,reply_metadata,attachments,resources FROM mail_content WHERE user_id=$1 AND message_id=$2
+            `SELECT plain_text,html,reply_metadata,attachments,resources,version FROM mail_content WHERE user_id=$1 AND message_id=$2
         AND state='ready' AND expires_at>clock_timestamp() AND sanitizer_version=$3 FOR UPDATE`,
             [owner, source.id, SANITIZER_VERSION],
           )
@@ -242,6 +246,11 @@ export function registerDraftRoutes(
           };
         }
         const content = JSON.stringify(cleanDraft(generated.content));
+        if (kind === 'forward')
+          generated.replyContext.warnings =
+            generated.replyContext.warnings.filter(
+              (warning) => warning !== 'Original attachments are not included.',
+            );
         if (Buffer.byteLength(content) > 120000)
           return {
             error:
@@ -261,6 +270,26 @@ export function registerDraftRoutes(
             ],
           )
         ).rows[0];
+        if (inserted && kind === 'forward') {
+          const warning = await addForwardFiles(
+            db,
+            owner,
+            inserted.id,
+            {
+              accountId: source.account_id,
+              messageId: source.id,
+              version: body.version,
+            },
+            body.attachments,
+          );
+          if (warning) {
+            generated.replyContext.warnings.push(warning);
+            await db.query(
+              'UPDATE mail_drafts SET reply_context=$3 WHERE user_id=$1 AND id=$2',
+              [owner, inserted.id, JSON.stringify(generated.replyContext)],
+            );
+          }
+        }
         return inserted
           ? { id: inserted.id }
           : { error: 'This draft ID was already used.' };
@@ -359,6 +388,12 @@ export function registerDraftRoutes(
             accountId: { anyOf: [uuid, { type: 'null' }] },
             saveId: uuid,
             copyOf: uuid,
+            attachmentIds: {
+              type: 'array',
+              maxItems: 10,
+              uniqueItems: true,
+              items: uuid,
+            },
             revision: { type: 'integer', minimum: 0, maximum: 2147483646 },
             content: {
               type: 'object',
@@ -441,6 +476,20 @@ export function registerDraftRoutes(
             [owner, request.params.id, saveId, accountId, content],
           )
         ).rows[0];
+        const attachmentIds =
+          request.body.attachmentIds ??
+          existing?.attachmentIds ??
+          (request.body.copyOf
+            ? (
+                await db.query(
+                  'SELECT file_id FROM mail_draft_attachments WHERE user_id=$1 AND draft_id=$2 ORDER BY position',
+                  [owner, request.body.copyOf],
+                )
+              ).rows.map((row) => row.file_id)
+            : []);
+        const attachmentsMatch =
+          JSON.stringify(attachmentIds) ===
+          JSON.stringify(existing?.attachmentIds ?? []);
         if (
           (
             await db.query(
@@ -450,7 +499,11 @@ export function registerDraftRoutes(
           ).rowCount
         )
           return { error: 'outbox' };
-        if (existing?.replay && existing.revision === revision + 1)
+        if (
+          existing?.replay &&
+          attachmentsMatch &&
+          existing.revision === revision + 1
+        )
           return { draft: existing };
         if (
           (existing?.revision ?? 0) !== revision ||
@@ -504,8 +557,16 @@ export function registerDraftRoutes(
               ],
             )
           ).rows[0];
-          return inserted ? { draft: inserted } : { error: 'conflict' };
+          if (!inserted) return { error: 'conflict' };
+          await setDraftAttachments(
+            db,
+            owner,
+            request.params.id,
+            attachmentIds,
+          );
+          return { draft: { ...inserted, attachmentIds } };
         }
+        await setDraftAttachments(db, owner, request.params.id, attachmentIds);
         return {
           draft: (
             await db.query(
@@ -514,17 +575,25 @@ export function registerDraftRoutes(
             )
           ).rows[0],
         };
+      }).catch((error) => {
+        if (error instanceof AttachmentError)
+          return { error: 'attachment', message: error.message };
+        throw error;
       });
-      if (result.error)
+      if (result.error || !('draft' in result))
         return reply.code(409).send({
           message:
-            result.error === 'outbox'
-              ? 'This draft is frozen in Outbox. Review its send status before editing; keep a separate copy of any unsaved changes.'
-              : result.error === 'account'
-                ? 'That mail account is unavailable. Choose another account or keep this draft without one.'
-                : result.error === 'limit'
-                  ? 'You can keep up to 100 local drafts. Discard a draft before saving another.'
-                  : 'This draft changed or was removed elsewhere. Your edits have not overwritten the saved version.',
+            result.error === 'attachment'
+              ? 'message' in result
+                ? result.message
+                : 'Attachment unavailable.'
+              : result.error === 'outbox'
+                ? 'This draft is frozen in Outbox. Review its send status before editing; keep a separate copy of any unsaved changes.'
+                : result.error === 'account'
+                  ? 'That mail account is unavailable. Choose another account or keep this draft without one.'
+                  : result.error === 'limit'
+                    ? 'You can keep up to 100 local drafts. Discard a draft before saving another.'
+                    : 'This draft changed or was removed elsewhere. Your edits have not overwritten the saved version.',
           code: result.error,
         });
       const { replay: _replay, ...draft } = result.draft;

@@ -22,6 +22,7 @@ export type DraftValue = {
   accountId: string | null;
   content: DraftContent;
   copyOf?: string;
+  attachmentIds?: string[];
 };
 export type Draft = DraftValue & {
   id: string;
@@ -51,12 +52,19 @@ export const emptyContent = (): DraftContent => ({
   html: '<p></p>',
   text: '',
 });
-export const draftValue = ({ accountId, content }: DraftValue): DraftValue => ({
+export const draftValue = ({
   accountId,
   content,
+  attachmentIds,
+}: DraftValue): DraftValue => ({
+  accountId,
+  content,
+  attachmentIds: attachmentIds ?? [],
 });
 export const sameValue = (a: DraftValue, b: DraftValue) =>
   a.accountId === b.accountId &&
+  JSON.stringify(a.attachmentIds ?? []) ===
+    JSON.stringify(b.attachmentIds ?? []) &&
   (Object.keys(a.content) as (keyof DraftContent)[]).every(
     (key) => a.content[key] === b.content[key],
   );
@@ -87,6 +95,13 @@ export function readRecovery(user: string, id: string): Recovery | null {
     )
       return null;
     const content = item.value.content;
+    if (
+      item.value.attachmentIds !== undefined &&
+      (!Array.isArray(item.value.attachmentIds) ||
+        item.value.attachmentIds.length > 10 ||
+        item.value.attachmentIds.some((id) => typeof id !== 'string'))
+    )
+      return null;
     if (
       !content ||
       !['rich', 'plain'].includes(content.format) ||

@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. See [authentication](authentication.md), [IMAP](imap.md), [mail actions](actions.md) and [composer/drafts](compose.md). SMTP outbox/sending and [reply/reply-all/forward](replies.md) are also implemented. Remaining live mailbox acceptance, other providers, outgoing attachments and provider Drafts synchronization remain pending.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. SMTP outbox/sending, [reply/reply-all/forward](replies.md) and [outgoing file attachments](attachments.md) are also implemented. The live ClamAV service is verified. Remaining live mailbox/file acceptance, other providers and provider Drafts synchronization remain pending.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -157,3 +157,21 @@ Create response drafts from owned cached content on the receiving account, using
 Fetch missing headers from older ready caches only after a response is requested, through the existing fenced worker and connection budget; preserve cached bodies, images, content versions/grants and read state even when the provider is offline. Stable operation IDs recover unacknowledged draft creation; conflict copies retain only owned context and explicitly warn when the original is gone. Unknown aliases require recipient review. Provider Drafts synchronization, outgoing attachments and real-client threading acceptance remain open. See [reply behavior and upgrade](replies.md).
 
 Forwarding correction requested by the user on 2026-10-28: preserve the original HTML and styling instead of flattening HTML forwards into text. Store a bounded immutable sanitized original and supported inline image bytes separately from the editable note; preview it on the isolated content host with image opt-in, and append it to outgoing HTML. Preserve it through autosave/recovery and source deletion. Plain-text selection converts the outgoing forward explicitly; oversized originals fail visibly without silent shortening. Existing drafts are preserved. General file attachments and executable/unsafe email content remain excluded. This supersedes D013's initial plain-quote choice for HTML forwarding.
+
+The user subsequently confirmed that the new forward flow works.
+
+## D014 — outgoing file attachments and quarantine
+
+Status: agent implementation choices for the user's requested outgoing attachments.
+
+Store private file bytes and attachment-bearing immutable MIME snapshots in bounded Postgres chunks. Include attachment IDs in draft autosave, revision checks and tab recovery; share owned immutable file references across explicit copies. New forwards queue original file retrieval through the existing fenced IMAP worker and allow removal. Require a clean private ClamAV result for ordinary file attachments, with visible failure/retry and blocked states; scanner outages never permit sending. Add the loopback scanner service to local Compose without changing existing secrets.
+
+Initial limits are ten files, 10 MiB/file, 20 MiB/draft, 30 MiB encoded attached MIME and 256 MiB outgoing storage/user. Preserve earlier raw Outbox rows and all ambiguous-send guards. Uploads, persistence, scanner and SMTP reads are streamed; optional ImapFlow Sent APPEND remains a single bounded 30 MiB buffer because the installed library requires bytes. Cleanup reclaims partial streams and unreferenced files while preserving linked drafts and uncertain deliveries. These limits/policies and upgrade requirements are detailed in [attachments](attachments.md). General provider Drafts sync, full M3 and release security/operational acceptance remain open.
+
+Scanner startup acceptance: the user started the Docker service, and live checks verified harmless data as clean and EICAR as infected. The complete upload/storage/background-job path also passed in a disposable database against the real scanner, including removal of detected bytes. No existing uploads needed retry. Recipient-side file delivery remains user-owned acceptance; no real email was sent during this check.
+
+## D015 — per-account sender display names
+
+Status: agent implementation choices for the user's reported missing sender name, before provider Drafts work.
+
+Store a bounded display name with each owned SMTP configuration and use Nodemailer's structured From field for both regular and attachment-bearing MIME. Default existing and new settings to the owner's normalized Spindle profile name; allow an explicit blank for email-only sending. The checked SMTP login remains the actual sender address. Expose the name in Outgoing SMTP and the composer preview; do not infer it from received mail or silently select an alternate sender address. Unicode names and punctuation are supported, controls are rejected, older clients preserve omitted names and blank-password edits preserve credentials under the existing connection rules. Existing immutable Outbox snapshots remain unchanged. See [sending](sending.md). Signatures and verified alternate email identities remain open I02 work.

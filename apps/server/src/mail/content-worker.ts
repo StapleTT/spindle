@@ -33,7 +33,7 @@ const leased = (
 ) => `EXISTS(SELECT 1 FROM mail_accounts a JOIN users u ON u.id=a.user_id
   WHERE a.id=$2 AND a.user_id=$1 AND a.lease_token=${token} AND a.lease_until>clock_timestamp() AND u.email_verified)`;
 
-async function withMailbox<T>(
+export async function withMailbox<T>(
   account: MailAccount,
   keys: MailKeys,
   message: Located,

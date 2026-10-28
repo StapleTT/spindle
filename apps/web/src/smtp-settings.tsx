@@ -6,6 +6,7 @@ type Settings = {
   port: number;
   transport: 'tls' | 'starttls';
   username: string;
+  displayName: string;
   saveSentCopy: boolean;
   state: string;
   error: string | null;
@@ -21,6 +22,7 @@ export function SmtpSettings({
 }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [defaultDisplayName, setDefaultDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -30,12 +32,13 @@ export function SmtpSettings({
     let timer: ReturnType<typeof setTimeout>;
     async function load() {
       try {
-        const result = await mailApi<{ smtp: Settings | null }>(
-          `accounts/${account.id}/smtp`,
-          { signal: controller.signal },
-        );
+        const result = await mailApi<{
+          smtp: Settings | null;
+          defaultDisplayName: string;
+        }>(`accounts/${account.id}/smtp`, { signal: controller.signal });
         if (controller.signal.aborted) return;
         setSettings(result.smtp);
+        setDefaultDisplayName(result.defaultDisplayName);
         setLoaded(true);
         setError('');
         if (result.smtp?.state === 'pending')
@@ -71,6 +74,7 @@ export function SmtpSettings({
           port: Number(values.get('port')),
           transport: values.get('transport'),
           username: values.get('username'),
+          displayName: values.get('displayName'),
           saveSentCopy: values.get('sentCopy') === 'spindle',
           ...(password ? { password } : {}),
         }),
@@ -162,6 +166,20 @@ export function SmtpSettings({
                 }
               />
             </label>
+            <label>
+              Sender display name
+              <input
+                name="displayName"
+                type="text"
+                maxLength={200}
+                autoComplete="name"
+                defaultValue={settings?.displayName ?? defaultDisplayName}
+              />
+            </label>
+            <p>
+              The name recipients see beside your email address. Leave blank to
+              show only the email address.
+            </p>
             <label>
               SMTP password or app password
               <input

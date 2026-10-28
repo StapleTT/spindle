@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { decryptCredential, type MailKeys } from './credentials.js';
+import { outboxStream } from './file-storage.js';
 import { connectImap } from './imap.js';
 import { connectSmtp } from './smtp.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
@@ -126,7 +127,20 @@ export async function processOutgoing(
               throw new Error('Outgoing configuration changed');
           });
           sendStarted = true;
-          const info = await smtp.send(row.sender, row.recipients, row.raw);
+          const raw =
+            row.raw ??
+            outboxStream(pool, owner, row.id, row.mime_size, account);
+          let info: Awaited<ReturnType<typeof smtp.send>>;
+          try {
+            info = await smtp.send(
+              row.sender,
+              row.recipients,
+              raw,
+              row.mime_size ?? undefined,
+            );
+          } finally {
+            if (!Buffer.isBuffer(raw)) raw.destroy();
+          }
           const accepted = info.accepted.filter((address) =>
             row.recipients.includes(address),
           );
@@ -229,7 +243,22 @@ export async function processOutgoing(
               ),
             );
             try {
-              const appended = await client.append(folder.path, copy.raw, [
+              // ImapFlow APPEND requires bytes. Only this optional copy buffers
+              // one bounded (30 MiB) snapshot; SMTP and persistence stay streamed.
+              let raw = copy.raw as Buffer | null;
+              if (!raw) {
+                const chunks: Buffer[] = [];
+                for await (const chunk of outboxStream(
+                  pool,
+                  owner,
+                  copy.id,
+                  copy.mime_size,
+                  account,
+                ))
+                  chunks.push(chunk as Buffer);
+                raw = Buffer.concat(chunks);
+              }
+              const appended = await client.append(folder.path, raw, [
                 '\\Seen',
               ]);
               if (!appended) throw new Error('Append not acknowledged');
@@ -276,10 +305,16 @@ export async function processOutgoing(
   } catch (error) {
     if (sending) {
       const status = (error as { responseCode?: number }).responseCode;
+      // Nodemailer's advertised-SIZE rejection occurs before MAIL FROM/DATA.
+      const preflight =
+        (error as { code?: string }).code === 'EMESSAGE' &&
+        (error as { command?: string }).command === 'MAIL FROM' &&
+        status === undefined;
       const known =
         !sendStarted ||
+        preflight ||
         (typeof status === 'number' && status >= 400 && status < 600);
-      const temporary = known && (!status || status < 500);
+      const temporary = known && !preflight && (!status || status < 500);
       await withLease(pool, account, async (db) => {
         await db.query(
           `UPDATE mail_outbox SET state=CASE WHEN $3 AND attempts<3 THEN 'queued' WHEN $4 THEN 'failed' ELSE 'unknown' END,

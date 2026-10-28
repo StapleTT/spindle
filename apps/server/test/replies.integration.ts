@@ -326,11 +326,7 @@ test('owned replies, safe forward drafts and durable SMTP threading', {
         /<script|<img|<style|never-copy/,
       );
       const attachment = await prepare('Attachment mail', 'forward');
-      assert.ok(
-        attachment.replyContext.warnings.some((value: string) =>
-          value.includes('attachments'),
-        ),
-      );
+      assert.equal(attachment.attachmentIds.length, 2);
       assert.match(attachment.forwarded.text, /See attached/);
       const large = await prepare('Large quoted body', 'forward');
       assert.ok(

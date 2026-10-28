@@ -24,7 +24,7 @@ The original HTML and embedded image bytes survive autosave, reload, owned recov
 
 The snapshot has a 512 KiB JSON limit and the existing 512 KiB encoded outgoing-message limit still applies, including the note and MIME encoding overhead. Oversized HTML forwards are refused rather than silently flattened or truncated. Scripts, forms, external fonts, imports and unsupported resources remain filtered by the reader's safety policy; this preserves supported email formatting, not executable content.
 
-Ordinary file attachments are not included, and the draft warns when they exist. General outgoing file attachments remain separate Phase I work. This feature does not synchronize provider Drafts or introduce Gmail/Graph provider thread IDs.
+New forwards now include ordinary file attachments through the [outgoing attachment pipeline](attachments.md), subject to visible limits and security checks; each can be removed. Replies still omit original files and warn when they exist. This feature does not synchronize provider Drafts or introduce Gmail/Graph provider thread IDs.
 
 ## Cache, retries and ownership
 

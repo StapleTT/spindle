@@ -7,6 +7,7 @@ import { authHeaders } from '../auth/routes.js';
 import type { ContentConfig } from './content-config.js';
 import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
+import { registerUploadRoutes } from './file-uploads.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerReaderRoutes } from './reader-routes.js';
 import { consumeLimit, transaction } from './store.js';
@@ -88,22 +89,26 @@ export async function registerMailRoutes(
         current.user.id,
         request.method === 'GET'
           ? 'read'
-          : request.routeOptions.url === '/api/mail/drafts/:id/send'
-            ? 'send'
-            : request.routeOptions.url?.startsWith('/api/mail/drafts')
-              ? 'draft'
-              : request.routeOptions.url?.startsWith('/api/mail/messages/')
-                ? 'reader'
-                : 'write',
+          : request.routeOptions.url?.startsWith('/api/mail/uploads')
+            ? 'upload'
+            : request.routeOptions.url === '/api/mail/drafts/:id/send'
+              ? 'send'
+              : request.routeOptions.url?.startsWith('/api/mail/drafts')
+                ? 'draft'
+                : request.routeOptions.url?.startsWith('/api/mail/messages/')
+                  ? 'reader'
+                  : 'write',
         request.method === 'GET'
           ? 240
-          : request.routeOptions.url === '/api/mail/drafts/:id/send'
-            ? 10
-            : request.routeOptions.url?.startsWith('/api/mail/drafts')
-              ? 120
-              : request.routeOptions.url?.startsWith('/api/mail/messages/')
-                ? 60
-                : 10,
+          : request.routeOptions.url?.startsWith('/api/mail/uploads')
+            ? 60
+            : request.routeOptions.url === '/api/mail/drafts/:id/send'
+              ? 10
+              : request.routeOptions.url?.startsWith('/api/mail/drafts')
+                ? 120
+                : request.routeOptions.url?.startsWith('/api/mail/messages/')
+                  ? 60
+                  : 10,
       ))
     )
       return reply
@@ -117,7 +122,9 @@ export async function registerMailRoutes(
     accounts: (
       await pool.query(
         `SELECT ${accountFields},(SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "smtpState",
-        (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS sender,(SELECT count(*)::int FROM mailboxes b WHERE b.user_id=$1 AND b.account_id=a.id AND NOT b.initial_complete) AS "foldersRemaining"
+        (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS sender,
+        (SELECT display_name FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "senderName",
+        (SELECT count(*)::int FROM mailboxes b WHERE b.user_id=$1 AND b.account_id=a.id AND NOT b.initial_complete) AS "foldersRemaining"
        FROM mail_accounts a WHERE user_id=$1 ORDER BY created_at,id`,
         [request.mailUser],
       )
@@ -416,5 +423,6 @@ export async function registerMailRoutes(
   );
   registerReaderRoutes(app, pool, content);
   registerDraftRoutes(app, pool, content);
+  registerUploadRoutes(app, pool);
   registerOutgoingRoutes(app, pool, keys);
 }

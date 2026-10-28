@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import SMTPConnection from 'nodemailer/lib/smtp-connection';
 import { resolveMailHost } from './network.js';
 
@@ -7,6 +8,20 @@ export type SmtpSettings = {
   transport: 'tls' | 'starttls';
   username: string;
 };
+
+export function senderDisplayName(value: string) {
+  if (/\p{Cc}/u.test(value) || Array.from(value).length > 200)
+    throw new Error(
+      'Sender display name must be at most 200 characters and contain no control characters.',
+    );
+  return value.trim();
+}
+
+export function defaultSenderName(profileName: string) {
+  return Array.from(profileName.replace(/\p{Cc}/gu, ' ').trim())
+    .slice(0, 200)
+    .join('');
+}
 export const smtpErrors: Record<string, string> = {
   smtp_unavailable:
     'The SMTP server could not be reached securely. Check the server, encryption and credentials.',
@@ -103,10 +118,19 @@ export async function connectSmtp(settings: SmtpSettings, password: string) {
     );
     return {
       close,
-      send: (sender: string, recipients: string[], raw: Buffer) =>
+      send: (
+        sender: string,
+        recipients: string[],
+        raw: Buffer | Readable,
+        size?: number,
+      ) =>
         operation<SMTPConnection.SentMessageInfo>(client, (done) =>
           client.send(
-            { from: sender, to: recipients, size: raw.length },
+            {
+              from: sender,
+              to: recipients,
+              size: Buffer.isBuffer(raw) ? raw.length : size,
+            },
             raw,
             done,
           ),

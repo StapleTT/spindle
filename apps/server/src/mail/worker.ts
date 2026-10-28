@@ -4,6 +4,7 @@ import { logger } from '../logger.js';
 import { applyMailActions } from './actions.js';
 import { type ContentJob, fetchMessageContent } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
+import { cleanupUploads, fetchForwardFile, scanUpload } from './file-worker.js';
 import { MAX_ATTACHMENTS } from './media.js';
 import { processOutgoing } from './outgoing-worker.js';
 import { syncAccount } from './sync.js';
@@ -15,9 +16,10 @@ const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_
   UNION ALL SELECT 1 FROM mail_outbox WHERE user_id=$1 AND account_id=$2 AND state IN ('queued','sending') LIMIT 1`;
 
 type ActionJob = {
-  kind: 'actions' | 'outgoing';
+  kind: 'actions' | 'outgoing' | 'draft-attachment';
   userId: string;
   accountId: string;
+  fileId?: string;
 };
 
 export async function startMailWorker(
@@ -45,9 +47,27 @@ export async function startMailWorker(
     retryBackoff: true,
     expireInSeconds: 120,
   });
+  await boss.createQueue('mail-file', {
+    policy: 'exclusive',
+    retryLimit: 2,
+    retryDelay: 15,
+    expireInSeconds: 120,
+  });
   // next_sync_at is a transactional outbox: committed connect/sync requests survive
   // API/queue outages. The dispatcher can safely replay them after a restart.
   async function dispatch() {
+    await cleanupUploads(pool);
+    await pool.query(`UPDATE mail_uploads f SET state='failed',error_code='source_unavailable',reserved_bytes=0
+      WHERE f.state='pending_fetch' AND NOT EXISTS(SELECT 1 FROM mail_accounts a WHERE a.user_id=f.user_id AND a.id::text=f.source->>'accountId')`);
+    for (const row of (
+      await pool.query(`SELECT f.user_id,f.id FROM mail_uploads f JOIN users u ON u.id=f.user_id
+      WHERE u.email_verified AND (f.state='pending_scan' OR (f.state='scanning' AND f.lease_until<clock_timestamp())) LIMIT 100`)
+    ).rows)
+      await boss.send(
+        'mail-file',
+        { userId: row.user_id, fileId: row.id },
+        { singletonKey: row.id },
+      );
     if (!keys.keys.size) return;
     await pool.query(
       'DELETE FROM mail_content WHERE expires_at<clock_timestamp()',
@@ -78,6 +98,20 @@ export async function startMailWorker(
         'mail-content',
         { kind: 'actions', userId: row.user_id, accountId: row.account_id },
         { singletonKey: `actions:${row.account_id}` },
+      );
+    for (const row of (
+      await pool.query(`SELECT f.user_id,f.id,f.source->>'accountId' AS account_id FROM mail_uploads f JOIN users u ON u.id=f.user_id
+      WHERE f.state='pending_fetch' AND u.email_verified LIMIT 100`)
+    ).rows)
+      await boss.send(
+        'mail-content',
+        {
+          kind: 'draft-attachment',
+          userId: row.user_id,
+          accountId: row.account_id,
+          fileId: row.id,
+        },
+        { singletonKey: `file:${row.id}` },
       );
     const pending =
       await pool.query(`SELECT user_id,account_id,message_id,version FROM mail_content
@@ -163,14 +197,24 @@ export async function startMailWorker(
       if (data && 'kind' in data) {
         const { userId, accountId } = data;
         if (
-          !['actions', 'outgoing'].includes(data.kind) ||
+          !['actions', 'outgoing', 'draft-attachment'].includes(data.kind) ||
           typeof userId !== 'string' ||
           !userId ||
           userId.length > 128 ||
           typeof accountId !== 'string' ||
-          !uuid.test(accountId)
+          !uuid.test(accountId) ||
+          (data.kind === 'draft-attachment' &&
+            (typeof data.fileId !== 'string' || !uuid.test(data.fileId)))
         )
           throw new Error('Invalid action job');
+        if (data.kind === 'draft-attachment')
+          return fetchForwardFile(
+            pool,
+            keys,
+            userId,
+            accountId,
+            data.fileId ?? '',
+          );
         return data.kind === 'outgoing'
           ? processOutgoing(pool, keys, userId, accountId)
           : applyMailActions(pool, keys, userId, accountId);
@@ -192,6 +236,21 @@ export async function startMailWorker(
       )
         throw new Error('Invalid content job');
       await fetchMessageContent(pool, keys, data);
+    },
+  );
+  await boss.work<{ userId: string; fileId: string }>(
+    'mail-file',
+    { localConcurrency: 1, pollingIntervalSeconds: 1 },
+    async ([job]) => {
+      if (
+        !job?.data ||
+        typeof job.data.userId !== 'string' ||
+        !job.data.userId ||
+        job.data.userId.length > 128 ||
+        !/^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(job.data.fileId)
+      )
+        throw new Error('Invalid file job');
+      await scanUpload(pool, job.data.userId, job.data.fileId);
     },
   );
   await boss.schedule('mail-dispatch', '* * * * *');

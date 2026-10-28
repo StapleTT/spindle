@@ -25,7 +25,7 @@ export async function smtpFixture(
     logger: false,
     disableReverseLookup: true,
     closeTimeout: 1000,
-    size: 512 * 1024,
+    size: 30 * 1024 * 1024,
     onAuth(auth, _session, done) {
       authAttempts++;
       if (

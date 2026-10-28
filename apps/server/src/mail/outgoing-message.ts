@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import addressparser from 'nodemailer/lib/addressparser';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import { cleanDraft } from './drafts.js';
@@ -7,16 +8,18 @@ import {
   referenceIds,
   messageId as validMessageId,
 } from './reply.js';
-import { emailAddress } from './smtp.js';
+import { emailAddress, senderDisplayName } from './smtp.js';
 
 export type OutgoingContent = Parameters<typeof cleanDraft>[0];
 
-export async function outgoingMessage(
+export function composeOutgoing(
   id: string,
   sender: string,
   content: OutgoingContent,
   context?: ReplyContext | null,
   forward?: ForwardContent | null,
+  files: { filename: string; content: Readable; contentType: string }[] = [],
+  displayName = '',
 ) {
   if (!emailAddress(sender))
     throw new Error('Configure an SMTP login email before sending.');
@@ -62,8 +65,8 @@ export async function outgoingMessage(
     context && ['reply', 'replyAll'].includes(context.kind)
       ? validMessageId(context.inReplyTo)
       : null;
-  const raw = await new MailComposer({
-    from: { address: sender, name: '' },
+  const compiled = new MailComposer({
+    from: { address: sender, name: senderDisplayName(displayName) },
     to,
     cc,
     bcc,
@@ -72,7 +75,7 @@ export async function outgoingMessage(
     ...(safe.format === 'rich'
       ? { html: safe.html + (forwarded?.html ?? '') }
       : {}),
-    ...(forwarded ? { attachments: forwarded.attachments } : {}),
+    attachments: [...(forwarded?.attachments ?? []), ...files],
     messageId,
     ...(parent
       ? { inReplyTo: parent, references: referenceIds(context?.references) }
@@ -80,9 +83,28 @@ export async function outgoingMessage(
     date: new Date(),
     disableFileAccess: true,
     disableUrlAccess: true,
-  })
-    .compile()
-    .build();
+  }).compile();
+  return { compiled, messageId, recipients };
+}
+
+export async function outgoingMessage(
+  id: string,
+  sender: string,
+  content: OutgoingContent,
+  context?: ReplyContext | null,
+  forward?: ForwardContent | null,
+  displayName = '',
+) {
+  const { compiled, messageId, recipients } = composeOutgoing(
+    id,
+    sender,
+    content,
+    context,
+    forward,
+    [],
+    displayName,
+  );
+  const raw = await compiled.build();
   if (raw.length > 512 * 1024)
     throw new Error('The encoded message exceeds the 512 KiB send limit.');
   return { raw, messageId, recipients };

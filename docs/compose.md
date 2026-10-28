@@ -1,14 +1,18 @@
 # Composer and local drafts
 
-Choose **Compose** to start a private draft, or **Reply**, **Reply all** or **Forward** from a loaded message. **Local drafts** lists saved drafts and recovery edits from the current browser tab. This slice implements I01 and the local-storage portion of I03/I09. See [sending and Outbox](sending.md) and [response drafts and threading](replies.md). Outgoing attachments, provider Drafts sync, signatures and alternate send-as identities remain later work.
+Choose **Compose** to start a private draft, or **Reply**, **Reply all** or **Forward** from a loaded message. **Local drafts** lists saved drafts and recovery edits from the current browser tab. See [sending and Outbox](sending.md), [response drafts and threading](replies.md) and [outgoing attachments](attachments.md). Provider Drafts sync, signatures and alternate send-as identities remain later work.
 
 ## Editing and saving
 
 The composer offers a sending-account selector, To/Cc/Bcc, subject, rich text and plain text. Account selection is limited to the user's connected accounts; SMTP sending uses that account’s separately configured and checked SMTP login email as From. The IMAP username alone is not a sending identity. A draft can have no account. Partial recipient strings can be saved while editing; complete recipient and sender validation belongs to sending.
 
+The From preview also includes the account's **Sender display name**, configured under **Outgoing SMTP** and initially taken from the user's Spindle profile. The actual From email remains the checked SMTP login. The name is frozen into the MIME when Send queues the saved draft.
+
 Tiptap supplies schema-based rich editing: bold, italic, strikethrough, lists, quotes, links and typing undo/redo. Paste inserts plain text only, and drops are ignored. No pasted HTML, images, styles, embedded resources or scripts enter the app document. Link creation allows complete HTTP, HTTPS and mailto URLs. The server independently sanitizes rich HTML to the same small tag vocabulary and derives its plain alternative. Plain-text drafts retain literal text. Switching to plain text removes rich formatting.
 
 For HTML forwards, the editor holds your note while the original formatting is stored separately and displayed in an isolated **Forwarded original** preview. Autosave and recovery copies retain that original, including supported inline images. It is appended when sending; choosing plain text converts the complete outgoing forward to text. See [forwarding behavior, limits and upgrade](replies.md).
+
+**Add files** uploads private attachments separately from the note. Their IDs participate in the same autosave/revision/recovery rules, and files must pass a security check before sending. Completed uploads survive reload; unfinished streams require keeping the page open. See [attachment setup, limits and outcomes](attachments.md).
 
 After 750 ms without edits, autosave writes to Postgres. **Saved to Spindle** appears only after acknowledgement. **Unsaved**, **Saving**, **Failed** and **Conflict** describe other states. Saves are serialized per open editor; edits made during an in-flight save are saved afterwards. Failures retry every five seconds, on browser online events, or through **Retry save**. **Save and close** waits until the current text is saved. **Discard draft** requires explicit confirmation and a matching server revision. An unconfirmed save must first be acknowledged through retry; discard never guesses that a lost create response means no server draft exists.
 

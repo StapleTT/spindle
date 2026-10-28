@@ -232,6 +232,122 @@ test('owned SMTP settings, immutable outbox and safe provider delivery', {
   );
 
   await t.test(
+    'display names are owned, default to the profile, persist without credentials and reach recipient MIME',
+    async () => {
+      await setup();
+      const name = 'Zoë "Support", Inbox';
+      const previous = (
+        await pool.query(
+          'SELECT credential FROM mail_smtp WHERE account_id=$1',
+          [account],
+        )
+      ).rows[0].credential;
+      const { password: _password, ...keep } = settings;
+      assert.equal(
+        (await request(`accounts/${account}/smtp`)).json().defaultDisplayName,
+        'Reader Test',
+      );
+      assert.equal(
+        (await request(`accounts/${account}/smtp`)).json().smtp.displayName,
+        'Reader Test',
+      );
+      assert.equal(
+        (
+          await request(
+            `accounts/${account}/smtp`,
+            'PUT',
+            { ...keep, displayName: name },
+            other.cookie,
+          )
+        ).statusCode,
+        404,
+      );
+      assert.equal(
+        (
+          await request(`accounts/${account}/smtp`, 'PUT', {
+            ...keep,
+            displayName: name,
+          })
+        ).statusCode,
+        202,
+      );
+      assert.equal(
+        (
+          await pool.query(
+            'SELECT credential FROM mail_smtp WHERE account_id=$1',
+            [account],
+          )
+        ).rows[0].credential,
+        previous,
+      );
+      for (const displayName of [
+        'Injected\r\nBcc: attacker@example.test',
+        'name\u0085',
+        'x'.repeat(201),
+      ])
+        assert.equal(
+          (
+            await request(`accounts/${account}/smtp`, 'PUT', {
+              ...keep,
+              displayName,
+            })
+          ).statusCode,
+          400,
+        );
+      // Older clients omit the field: their saves must preserve the stored name.
+      assert.equal(
+        (await request(`accounts/${account}/smtp`, 'PUT', keep)).statusCode,
+        202,
+      );
+      assert.equal(
+        (await request(`accounts/${account}/smtp`)).json().smtp.displayName,
+        name,
+      );
+      assert.equal(
+        (await request('accounts'))
+          .json()
+          .accounts.find((value: { id: string }) => value.id === account)
+          .senderName,
+        name,
+      );
+      await processOutgoing(pool, keys, owner.id, account);
+      const id = await draft();
+      const queued = await queue(id);
+      assert.equal(queued.statusCode, 202, queued.body);
+      await apply();
+      const received = await simpleParser(
+        smtp.received[0]?.raw ?? Buffer.alloc(0),
+      );
+      assert.equal(received.from?.value[0]?.name, name);
+      assert.equal(received.from?.value[0]?.address, 'writer@example.test');
+      assert.equal(
+        (
+          await request(`accounts/${account}/smtp`, 'PUT', {
+            ...keep,
+            displayName: '',
+          })
+        ).statusCode,
+        202,
+      );
+      assert.equal(
+        (await request(`accounts/${account}/smtp`)).json().smtp.displayName,
+        '',
+      );
+      const frozen = await row(queued.json().outbox.id);
+      assert.equal((await simpleParser(frozen.raw)).from?.value[0]?.name, name);
+      await processOutgoing(pool, keys, owner.id, account);
+      const bare = await draft();
+      assert.equal((await queue(bare)).statusCode, 202);
+      await apply();
+      assert.equal(
+        (await simpleParser(smtp.received.at(-1)?.raw ?? Buffer.alloc(0))).from
+          ?.value[0]?.name,
+        '',
+      );
+    },
+  );
+
+  await t.test(
     'TLS and required STARTTLS reject bad certificates and downgrade before authentication',
     async () => {
       const upgraded = await smtpFixture(t, imap.server, false, true),

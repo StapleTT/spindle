@@ -34,6 +34,7 @@ type Account = {
   historySince: string | null;
   smtpState: string | null;
   sender: string | null;
+  senderName: string | null;
 };
 type Mailbox = {
   id: string;

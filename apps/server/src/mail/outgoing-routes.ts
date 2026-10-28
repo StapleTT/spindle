@@ -1,8 +1,22 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { encryptCredential, type MailKeys } from './credentials.js';
-import { outgoingMessage } from './outgoing-message.js';
-import { emailAddress, smtpErrors } from './smtp.js';
+import {
+  AttachmentError,
+  DRAFT_FILE_BYTES,
+  fileStream,
+  fixedChunks,
+  MIME_BYTES,
+  OUTGOING_STORAGE_BYTES,
+  outgoingStorage,
+} from './file-storage.js';
+import { composeOutgoing, outgoingMessage } from './outgoing-message.js';
+import {
+  defaultSenderName,
+  emailAddress,
+  senderDisplayName,
+  smtpErrors,
+} from './smtp.js';
 import { transaction } from './store.js';
 
 const uuid = { type: 'string', format: 'uuid' };
@@ -13,7 +27,7 @@ const params = {
   additionalProperties: false,
 };
 const smtpFields =
-  'host,port,transport,username,save_sent_copy AS "saveSentCopy",state,checked_at AS "checkedAt",error_code AS code';
+  'host,port,transport,username,display_name AS "displayName",save_sent_copy AS "saveSentCopy",state,checked_at AS "checkedAt",error_code AS code';
 const outboxFields = `id,state,subject,sender,recipients,accepted,rejected,error_code AS code,sent_copy AS "sentCopy",
   draft_id AS "draftId",source_draft_id AS "sourceDraftId",created_at AS "createdAt",seq::text AS cursor,
   GREATEST(0,floor(extract(epoch FROM next_attempt_at-clock_timestamp())*1000))::int AS "undoMs"`;
@@ -28,7 +42,7 @@ export function registerOutgoingRoutes(
     { schema: { params } },
     async (request, reply) => {
       const owned = await pool.query(
-        'SELECT id FROM mail_accounts WHERE user_id=$1 AND id=$2',
+        'SELECT u.name FROM mail_accounts a JOIN users u ON u.id=a.user_id WHERE a.user_id=$1 AND a.id=$2',
         [request.mailUser, request.params.id],
       );
       if (!owned.rowCount)
@@ -39,9 +53,13 @@ export function registerOutgoingRoutes(
           [request.mailUser, request.params.id],
         )
       ).rows[0];
-      if (!settings) return { smtp: null };
+      const defaultDisplayName = defaultSenderName(owned.rows[0].name);
+      if (!settings) return { smtp: null, defaultDisplayName };
       const { code, ...smtp } = settings;
-      return { smtp: { ...smtp, error: code ? smtpErrors[code] : null } };
+      return {
+        smtp: { ...smtp, error: code ? smtpErrors[code] : null },
+        defaultDisplayName,
+      };
     },
   );
 
@@ -52,6 +70,7 @@ export function registerOutgoingRoutes(
       port: number;
       transport: 'tls' | 'starttls';
       username: string;
+      displayName?: string;
       password?: string;
       saveSentCopy?: boolean;
     };
@@ -75,6 +94,11 @@ export function registerOutgoingRoutes(
             port: { type: 'integer', minimum: 1, maximum: 65535 },
             transport: { type: 'string', enum: ['tls', 'starttls'] },
             username: { type: 'string', maxLength: 254 },
+            displayName: {
+              type: 'string',
+              maxLength: 200,
+              pattern: '^[^\u0000-\u001f\u007f-\u009f]*$',
+            },
             saveSentCopy: { type: 'boolean' },
             password: {
               type: 'string',
@@ -100,7 +124,11 @@ export function registerOutgoingRoutes(
             'The SMTP login must be a complete email address. It is also the From address for this account.',
         });
       const result = await transaction(pool, async (db) => {
-        await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
+        const profile = (
+          await db.query('SELECT name FROM users WHERE id=$1 FOR UPDATE', [
+            owner,
+          ])
+        ).rows[0];
         if (
           !(
             await db.query(
@@ -128,10 +156,14 @@ export function registerOutgoingRoutes(
         const credential = body.password
           ? encryptCredential(body.password, owner, `${id}:smtp`, keys)
           : old.credential;
+        const displayName =
+          body.displayName === undefined
+            ? (old?.display_name ?? defaultSenderName(profile.name))
+            : senderDisplayName(body.displayName);
         await db.query(
-          `INSERT INTO mail_smtp(user_id,account_id,host,port,transport,username,credential,save_sent_copy) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+          `INSERT INTO mail_smtp(user_id,account_id,host,port,transport,username,credential,save_sent_copy,display_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
         ON CONFLICT(account_id) DO UPDATE SET version=gen_random_uuid(),host=EXCLUDED.host,port=EXCLUDED.port,transport=EXCLUDED.transport,
-        username=EXCLUDED.username,credential=EXCLUDED.credential,save_sent_copy=EXCLUDED.save_sent_copy,state='pending',checked_at=NULL,error_code=NULL`,
+        username=EXCLUDED.username,credential=EXCLUDED.credential,save_sent_copy=EXCLUDED.save_sent_copy,display_name=EXCLUDED.display_name,state='pending',checked_at=NULL,error_code=NULL`,
           [
             owner,
             id,
@@ -141,6 +173,7 @@ export function registerOutgoingRoutes(
             body.username,
             credential,
             body.saveSentCopy ?? false,
+            displayName,
           ],
         );
         return 'saved';
@@ -256,15 +289,59 @@ export function registerOutgoingRoutes(
             [owner],
           )
         ).rows[0];
-        let message: Awaited<ReturnType<typeof outgoingMessage>>;
+        const files = (
+          await db.query(
+            `SELECT f.id,f.filename,f.size_bytes,f.state FROM mail_draft_attachments d JOIN mail_uploads f ON f.user_id=d.user_id AND f.id=d.file_id WHERE d.user_id=$1 AND d.draft_id=$2 ORDER BY d.position`,
+            [owner, draft.id],
+          )
+        ).rows;
+        if (files.some((file) => file.state !== 'ready'))
+          return {
+            error:
+              'Attachments are still uploading, being checked, or blocked. Wait for Ready, retry a failed check, or remove the file before sending.',
+          };
+        if (
+          files.length > 10 ||
+          files.reduce((sum, file) => sum + file.size_bytes, 0) >
+            DRAFT_FILE_BYTES
+        )
+          return { error: 'Attachments exceed the 20 MiB draft limit.' };
+        let stream: ReturnType<typeof composeOutgoing>['compiled'] | undefined;
+        let message: {
+          messageId: string;
+          recipients: string[];
+          raw: Buffer | null;
+        };
         try {
-          message = await outgoingMessage(
-            operation,
-            smtp.username,
-            draft.content,
-            draft.reply_context,
-            draft.forward_content,
-          );
+          if (files.length) {
+            const composed = composeOutgoing(
+              operation,
+              smtp.username,
+              draft.content,
+              draft.reply_context,
+              draft.forward_content,
+              files.map((file) => ({
+                filename: file.filename,
+                contentType: 'application/octet-stream',
+                content: fileStream(db, owner, file.id),
+              })),
+              smtp.display_name,
+            );
+            stream = composed.compiled;
+            message = {
+              messageId: composed.messageId,
+              recipients: composed.recipients,
+              raw: null,
+            };
+          } else
+            message = await outgoingMessage(
+              operation,
+              smtp.username,
+              draft.content,
+              draft.reply_context,
+              draft.forward_content,
+              smtp.display_name,
+            );
         } catch (error) {
           return {
             error: error instanceof Error ? error.message : 'Invalid message.',
@@ -280,8 +357,8 @@ export function registerOutgoingRoutes(
           };
         const inserted = (
           await db.query(
-            `INSERT INTO mail_outbox(id,user_id,account_id,draft_id,source_draft_id,draft_revision,smtp_version,sender,recipients,subject,message_id,raw,save_sent_copy)
-        VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT DO NOTHING RETURNING id,state`,
+            `INSERT INTO mail_outbox(id,user_id,account_id,draft_id,source_draft_id,draft_revision,smtp_version,sender,recipients,subject,message_id,raw,save_sent_copy,mime_size)
+        VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING RETURNING id,state`,
             [
               operation,
               owner,
@@ -295,14 +372,44 @@ export function registerOutgoingRoutes(
               message.messageId,
               message.raw,
               smtp.save_sent_copy,
+              stream ? 1 : null,
             ],
           )
         ).rows[0];
+        if (inserted && stream) {
+          let bytes = 0,
+            position = 0;
+          for await (const data of fixedChunks(stream.createReadStream())) {
+            bytes += data.length;
+            if (bytes > MIME_BYTES)
+              throw new AttachmentError(
+                'The encoded message exceeds the 30 MiB send limit. Remove an attachment or shorten the message.',
+              );
+            await db.query(
+              'INSERT INTO mail_outbox_chunks(user_id,outbox_id,position,data) VALUES($1,$2,$3,$4)',
+              [owner, inserted.id, position++, data],
+            );
+          }
+          await db.query(
+            "UPDATE mail_outbox SET mime_size=$3,next_attempt_at=clock_timestamp()+interval '5 seconds' WHERE user_id=$1 AND id=$2",
+            [owner, inserted.id, bytes],
+          );
+        }
+        if (
+          inserted &&
+          (await outgoingStorage(db, owner)) > OUTGOING_STORAGE_BYTES
+        )
+          throw new AttachmentError(
+            'Outgoing storage is full (256 MiB). The draft and attachments are preserved.',
+          );
         return inserted
           ? { outbox: inserted }
           : {
               error: 'This message is already queued or its send ID was used.',
             };
+      }).catch((error) => {
+        if (error instanceof AttachmentError) return { error: error.message };
+        throw error;
       });
       if (!result) return reply.code(404).send({ message: 'Draft not found.' });
       if (result.error) return reply.code(409).send({ message: result.error });
