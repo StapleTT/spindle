@@ -125,11 +125,11 @@ type Settled = {
   state: string;
 };
 
-async function settle(
+export async function settle(
   db: PoolClient,
   owner: string,
   ids: string[],
-  state: 'applied' | 'failed',
+  state: 'applied' | 'failed' | 'cancelled',
   code: string | null,
 ) {
   const rows = (
@@ -140,7 +140,7 @@ async function settle(
     )
   ).rows;
   for (const row of rows) {
-    // Applied read state is now provider truth; a failed change is reverted locally.
+    // Applied read state is now provider truth; a failed or undone change is reverted locally.
     // Either way, a newer read action for the same message owns the local state.
     if (row.kind === 'read' || row.kind === 'unread')
       await db.query(
@@ -193,14 +193,16 @@ export async function applyMailActions(
       )
     ).rows;
     if (!actions.length) return;
-    for (const action of actions) remaining.add(action.id);
-    await withLease(pool, account, (db) =>
-      db.query(
+    // Claiming is the dispatch point: an undo that committed first leaves the row unclaimed.
+    const claimed = await withLease(pool, account, (db) =>
+      db.query<{ id: string }>(
         `UPDATE mail_actions SET next_attempt_at=clock_timestamp()+interval '90 seconds'
-        WHERE user_id=$1 AND id=ANY($2::uuid[])`,
-        [owner, [...remaining]],
+        WHERE user_id=$1 AND id=ANY($2::uuid[]) AND state='pending' AND next_attempt_at<=clock_timestamp()
+        RETURNING id`,
+        [owner, actions.map((action) => action.id)],
       ),
     );
+    for (const row of claimed.rows) remaining.add(row.id);
     const finish = async (
       id: string,
       state: 'applied' | 'failed',
@@ -214,6 +216,7 @@ export async function applyMailActions(
       remaining.delete(id);
     };
     for (const action of actions) {
+      if (!remaining.has(action.id)) continue;
       // Read the current location per action: an earlier move in this batch changes the UID.
       const at = (
         await pool.query<{

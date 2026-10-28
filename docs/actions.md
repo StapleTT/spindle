@@ -1,6 +1,6 @@
 # Mail actions
 
-Mail actions change provider mail on the user's behalf. Read/unread, archive, move to trash, restore and move to a chosen folder are implemented; five-second undo and the broader action-status view are the next triage steps.
+Mail actions change provider mail on the user's behalf. Read/unread, archive, move to trash, restore, move to a chosen folder and five-second undo are implemented; the broader action-status view and reconciliation feedback are the next triage step.
 
 ## Read and unread
 
@@ -28,7 +28,17 @@ Every move-type action (archive, trash, move, restore) records the message's eff
 
 Move and restore use the same worker path as archive and trash. A retried request with the same operation ID is answered from the recorded intent before any destination is resolved, so a replay still succeeds after the first request has moved the message.
 
+## Five-second undo
+
+Every action waits five seconds before dispatch. The request stores `undo_until` and the first dispatch time as the same database instant, so undo and dispatch can never both be valid. Undo locks the action, confirms it is still pending before its deadline, marks it `cancelled` and reverts its local effect in one transaction (the inverse read state, or the pending folder recomputed from any newer move). The worker's claim is a conditional update of pending, due rows, so an undo that commits first leaves nothing to dispatch, and a claim that commits first makes undo wait and then refuse. A cancelled action never reaches the provider. Repeating an undo returns the same result.
+
+After the deadline undo answers 409 and explains that the change is going to the provider; Restore, Move and the read controls make the opposite change as an ordinary new action. Spindle does not send automatic compensating moves, because by then another client may have acted on the message.
+
+The **Recent actions** bar in the mail view lists each undoable action with an **Undo** button until its server deadline. It belongs to the mail shell, so it stays while you move between messages and folders, and `GET /api/mail/actions` restores it with the remaining time after a reload or an API restart. The deadline is enforced by the server, not by the browser timer. Undo uses the general write rate limit (10 per minute).
+
 ## Upgrade and rollback
+
+`0008_mail_undo.sql` adds the `cancelled` state and an `undo_until` deadline (existing rows get a past deadline, so they are not undoable). Apply it and deploy the API and worker together; for rollback, stop the new worker first. Earlier code ignores the deadline and dispatches pending actions without the delay.
 
 `0007_mail_restore.sql` adds the move/restore kinds and a source-folder column; existing rows are unchanged. Apply it, then deploy the API and worker together; for rollback, stop the new worker first and keep the column. Earlier code ignores recorded sources, and pending move/restore actions wait for compatible code.
 
@@ -38,4 +48,4 @@ Move and restore use the same worker path as archive and trash. A retried reques
 
 ## Proof
 
-`apps/server/test/mail-actions.integration.ts` covers ownership (anonymous, foreign administrator, cross-origin and invalid input), immediate local state and counts, idempotent replay and conflicts, sync before dispatch, provider `\Seen` changes, ordered consecutive intents, external-client changes, retry exhaustion with revert, changed UIDVALIDITY and durable pg-boss dispatch. Archive/trash tests cover designated-folder resolution and its absence, pending destinations across sync, COPYUID identity preservation without duplicates, a read queued behind a move, the no-COPYUID rescan, refused servers without MOVE/UIDPLUS and failure revert. Move/restore tests cover input validation, foreign/current folders, replay after the message moved, origin-based and chained restore, the INBOX fallback, provider state and preserved identity. The reader Chromium journey marks messages read from the reader and a list row, archives from the reader (continuing to the next message), trashes and restores from list rows, moves to a chosen folder, and checks counts and provider state. All tests use synthetic ImapKit mail.
+`apps/server/test/mail-actions.integration.ts` covers ownership (anonymous, foreign administrator, cross-origin and invalid input), immediate local state and counts, idempotent replay and conflicts, sync before dispatch, provider `\Seen` changes, ordered consecutive intents, external-client changes, retry exhaustion with revert, changed UIDVALIDITY and durable pg-boss dispatch. Archive/trash tests cover designated-folder resolution and its absence, pending destinations across sync, COPYUID identity preservation without duplicates, a read queued behind a move, the no-COPYUID rescan, refused servers without MOVE/UIDPLUS and failure revert. Move/restore tests cover input validation, foreign/current folders, replay after the message moved, origin-based and chained restore, the INBOX fallback, provider state and preserved identity. Undo tests cover listing and its owner scope, foreign undo, repeated undo, cancelled moves and reads never reaching the provider, refusal after the deadline and after dispatch. The reader Chromium journey marks messages read from the reader and a list row, archives from the reader (continuing to the next message), trashes and restores from list rows, moves to a chosen folder, reloads the page during the undo window and undoes an archive from the restored bar, and checks counts and provider state. All tests use synthetic ImapKit mail.

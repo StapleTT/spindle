@@ -12,7 +12,7 @@ export async function mailApi<T>(path: string, options: RequestInit = {}) {
 export type MailAction = {
   id: string;
   kind: 'read' | 'unread' | 'archive' | 'trash' | 'move' | 'restore';
-  state: 'pending' | 'applied' | 'failed';
+  state: 'pending' | 'applied' | 'failed' | 'cancelled';
 };
 
 // Each user intent gets one operation ID, so a repeated request cannot duplicate it.
@@ -22,7 +22,7 @@ export async function requestAction(
   kind: MailAction['kind'],
   mailbox?: string,
 ) {
-  return mailApi<{ action: MailAction; target: string | null }>(
+  return mailApi<{ action: MailAction; target: string | null; undoMs: number }>(
     `messages/${id}/actions`,
     {
       method: 'POST',
@@ -31,12 +31,19 @@ export async function requestAction(
   );
 }
 
-export function movedNotice(
-  kind: MailAction['kind'],
-  subject: string,
-  target: string | null,
-) {
-  return `${actionText[kind].done} “${subject || '(No subject)'}”${target && (kind === 'move' || kind === 'restore') ? ` to ${target}` : ''}. Moving it at your provider.`;
+// An action the server will still cancel; listed again after reloads until its deadline.
+export type Undoable = {
+  id: string;
+  kind: MailAction['kind'];
+  subject: string;
+  target: string | null;
+  undoMs: number;
+};
+
+export function actionNotice({ kind, subject, target }: Undoable) {
+  const name = `“${subject || '(No subject)'}”`;
+  if (kind === 'read' || kind === 'unread') return `Marked ${name} as ${kind}.`;
+  return `${actionText[kind].done} ${name}${target && (kind === 'move' || kind === 'restore') ? ` to ${target}` : ''}.`;
 }
 
 export const actionText = {

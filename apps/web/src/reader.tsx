@@ -3,8 +3,8 @@ import {
   actionText,
   type MailAction,
   mailApi,
-  movedNotice,
   requestAction,
+  type Undoable,
 } from './mail-api.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
 
@@ -177,14 +177,14 @@ export function Reader({
   mailbox,
   folders,
   onChange,
-  onMoved,
+  onAction,
 }: {
   id: string;
   account: string;
   mailbox: string;
   folders: { id: string; accountId: string; path: string }[];
   onChange: () => void;
-  onMoved: (notice: string) => void;
+  onAction: (action: Undoable) => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -323,10 +323,16 @@ export function Reader({
   async function mark(kind: MailAction['kind'], folder?: string) {
     setActionError('');
     try {
-      const { action, target } = await requestAction(id, kind, folder);
+      const { action, target, undoMs } = await requestAction(id, kind, folder);
+      onAction({
+        id: action.id,
+        kind,
+        subject: detail?.message.subject ?? '',
+        target,
+        undoMs,
+      });
       if (kind !== 'read' && kind !== 'unread') {
         // The message has left this view; continue with its neighbor.
-        onMoved(movedNotice(kind, detail?.message.subject ?? '', target));
         navigateMail({ message: detail?.next ?? detail?.previous ?? '' });
         return;
       }
@@ -441,9 +447,13 @@ export function Reader({
           <span role="status">
             {lastAction?.state === 'pending'
               ? `${actionText[lastAction.kind].pending}… saving to your provider.`
-              : lastAction?.state === 'applied' && lastAction.id === ownAction
-                ? `${actionText[lastAction.kind].done}.`
-                : ''}
+              : lastAction?.id !== ownAction
+                ? ''
+                : lastAction.state === 'applied'
+                  ? `${actionText[lastAction.kind].done}.`
+                  : lastAction.state === 'cancelled'
+                    ? 'Undone.'
+                    : ''}
           </span>
           {lastAction?.state === 'failed' && (
             <span role="alert" className="error">

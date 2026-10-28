@@ -8,6 +8,7 @@ import {
   moveRoles,
   refreshPendingFolder,
   restoreDestination,
+  settle,
   withSeen,
 } from './actions.js';
 import { trimContentCache } from './content-cache.js';
@@ -17,6 +18,8 @@ import type { AttachmentInfo } from './media.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import { transaction } from './store.js';
 import { mailViewCondition } from './view.js';
+
+const undoMs = `GREATEST(0,floor(extract(epoch FROM a.undo_until-clock_timestamp())*1000))::int AS "undoMs"`;
 
 const params = {
   type: 'object',
@@ -201,7 +204,7 @@ export function registerReaderRoutes(
           )
         ).rows[0];
         if (!message) return null;
-        const recorded = `SELECT a.id,a.kind,a.state,t.path AS target,a.message_id,a.target_mailbox_id
+        const recorded = `SELECT a.id,a.kind,a.state,t.path AS target,a.message_id,a.target_mailbox_id,${undoMs}
           FROM mail_actions a LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.id=a.target_mailbox_id
           WHERE a.id=$1 AND a.user_id=$2`;
         // A retried request with the same operation ID returns the original intent.
@@ -228,8 +231,9 @@ export function registerReaderRoutes(
           target = destination.target.id;
         }
         const inserted = await db.query(
-          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,source_mailbox_id,target_mailbox_id)
-          VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,source_mailbox_id,target_mailbox_id,undo_until,next_attempt_at)
+          VALUES($1,$2,$3,$4,$5,$6,$7,clock_timestamp()+interval '5 seconds',clock_timestamp()+interval '5 seconds')
+          ON CONFLICT (id) DO NOTHING`,
           [
             action,
             owner,
@@ -257,9 +261,59 @@ export function registerReaderRoutes(
       if ('error' in result)
         return reply.code(409).send({ message: result.error });
       const { id, state, target } = result;
-      return reply
-        .code(202)
-        .send({ action: { id, kind: result.kind, state }, target });
+      return reply.code(202).send({
+        action: { id, kind: result.kind, state },
+        target,
+        undoMs: result.undoMs,
+      });
+    },
+  );
+
+  // Undoable actions survive navigation, reloads and server restarts until their deadline.
+  app.get('/api/mail/actions', async (request) => ({
+    undoable: (
+      await pool.query(
+        `SELECT a.id,a.kind,m.subject,t.path AS target,${undoMs} FROM mail_actions a
+        JOIN mail_messages m ON m.user_id=a.user_id AND m.id=a.message_id
+        LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.id=a.target_mailbox_id
+        WHERE a.user_id=$1 AND a.state='pending' AND a.undo_until>clock_timestamp()
+        ORDER BY a.seq DESC LIMIT 20`,
+        [request.mailUser],
+      )
+    ).rows,
+  }));
+
+  app.post<{ Params: { id: string } }>(
+    '/api/mail/actions/:id/undo',
+    { schema: { params } },
+    async (request, reply) => {
+      const owner = request.mailUser ?? '';
+      const result = await transaction(pool, async (db) => {
+        // Before its deadline an action cannot have been claimed for dispatch.
+        const undone = await db.query(
+          `SELECT id FROM mail_actions WHERE user_id=$1 AND id=$2
+          AND state='pending' AND undo_until>clock_timestamp() FOR UPDATE`,
+          [owner, request.params.id],
+        );
+        if (undone.rowCount) {
+          await settle(db, owner, [request.params.id], 'cancelled', null);
+          return 'cancelled';
+        }
+        return (
+          await db.query(
+            'SELECT state FROM mail_actions WHERE user_id=$1 AND id=$2',
+            [owner, request.params.id],
+          )
+        ).rows[0]?.state as string | undefined;
+      });
+      if (!result)
+        return reply.code(404).send({ message: 'Action not found.' });
+      if (result !== 'cancelled')
+        return reply.code(409).send({
+          message:
+            'The five-second undo window has passed, so this change is going to your provider. Use Restore, Move or the read controls to change it back.',
+        });
+      return { state: 'cancelled' };
     },
   );
 

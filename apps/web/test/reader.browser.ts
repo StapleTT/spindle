@@ -440,9 +440,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page
       .getByRole('heading', { name: 'Reader message 46', exact: true })
       .waitFor();
-    await page
-      .getByText('Archived “Reader message 47”. Moving it at your provider.')
-      .waitFor();
+    await page.getByText('Archived “Reader message 47”.').waitFor();
     await page
       .getByRole('button', { name: 'INBOX (48 unread / 50)' })
       .waitFor();
@@ -465,11 +463,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page
       .getByRole('button', { name: 'Restore “Reader message 45”' })
       .click();
-    await page
-      .getByText(
-        'Restored “Reader message 45” to INBOX. Moving it at your provider.',
-      )
-      .waitFor();
+    await page.getByText('Restored “Reader message 45” to INBOX.').waitFor();
     await page.getByRole('button', { name: 'Trash (0 unread / 0)' }).waitFor();
     await waitFor(() => server.control.getMailbox('Trash').messages === 0);
     await page.evaluate(
@@ -481,17 +475,49 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page
       .getByRole('heading', { name: 'Reader message 44', exact: true })
       .waitFor();
+    const receipts = server.control.getMailbox('Receipts').messages;
     await page.getByLabel('Move to folder').selectOption({ label: 'Receipts' });
     await page.getByRole('button', { name: 'Move', exact: true }).click();
+    await page.getByText('Moved “Reader message 44” to Receipts.').waitFor();
     await page
-      .getByText(
-        'Moved “Reader message 44” to Receipts. Moving it at your provider.',
-      )
+      .getByRole('button', {
+        name: new RegExp(`^Receipts \\(\\d+ unread / ${receipts + 1}\\)`),
+      })
       .waitFor();
+    await waitFor(
+      () => server.control.getMailbox('Receipts').messages === receipts + 1,
+    );
+    // Undo survives a reload until its server-side five-second deadline.
     await page
-      .getByRole('button', { name: 'Receipts (1 unread / 1)' })
+      .getByRole('heading', { name: 'Reader message 43', exact: true })
       .waitFor();
-    await waitFor(() => server.control.getMailbox('Receipts').messages === 1);
+    await page.getByRole('button', { name: 'Archive', exact: true }).click();
+    await page
+      .getByRole('heading', { name: 'Reader message 42', exact: true })
+      .waitFor();
+    await page.reload();
+    await page
+      .getByRole('button', { name: 'Undo: Archived “Reader message 43”.' })
+      .click();
+    await page
+      .getByText('Undone: Archived “Reader message 43”.', { exact: true })
+      .waitFor();
+    assert.equal(
+      (
+        await pool.query(
+          `SELECT a.state FROM mail_actions a JOIN mail_messages m ON m.id=a.message_id
+          WHERE m.subject='Reader message 43' ORDER BY a.seq DESC LIMIT 1`,
+        )
+      ).rows[0].state,
+      'cancelled',
+    );
+    await page
+      .getByRole('link', { name: 'Back to message list', exact: true })
+      .click();
+    await page
+      .getByRole('link', { name: 'Reader message 43', exact: true })
+      .waitFor();
+    assert.equal(server.control.getMailbox('Archive').messages, 2);
     await page.evaluate((id) => {
       window.location.hash = `message=${id}`;
     }, next);

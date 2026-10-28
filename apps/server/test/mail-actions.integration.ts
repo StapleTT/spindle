@@ -92,7 +92,13 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
       .mailboxes.find((box: { role: string }) => box.role === 'inbox').unread;
   const mark = (id: string, kind: string, action = randomUUID()) =>
     request(`messages/${id}/actions`, 'POST', { id: action, kind });
-  const apply = () => applyMailActions(pool, keys, owner.id, account);
+  // Tests skip the five-second undo window instead of sleeping through it.
+  const apply = async (connect?: typeof connectImap) => {
+    await pool.query(
+      "UPDATE mail_actions SET next_attempt_at=now(),undo_until=LEAST(undo_until,now()) WHERE state='pending'",
+    );
+    await applyMailActions(pool, keys, owner.id, account, connect);
+  };
   t.beforeEach(() =>
     pool.query('DELETE FROM mail_request_limits WHERE user_id=$1', [owner.id]),
   );
@@ -212,12 +218,9 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
       await mark(first.id, 'read');
       assert.equal(await inboxUnread(), 0);
       for (let attempt = 0; attempt < 5; attempt++) {
-        await applyMailActions(pool, keys, owner.id, account, async () => {
+        await apply(async () => {
           throw new Error('Provider offline');
         });
-        await pool.query(
-          "UPDATE mail_actions SET next_attempt_at=now() WHERE state='pending'",
-        );
       }
       const detail = (await request(`messages/${first.id}`)).json().message;
       assert.equal(detail.lastAction.state, 'failed');
@@ -347,7 +350,7 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
 
       // Servers without MOVE or UIDPLUS are refused rather than risking a broad EXPUNGE.
       await mark(fourth, 'archive');
-      await applyMailActions(pool, keys, owner.id, account, async (...args) => {
+      await apply(async (...args) => {
         const client = await connectImap(...args);
         client.capabilities.delete('MOVE');
         client.capabilities.delete('UIDPLUS');
@@ -371,7 +374,7 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
 
       // Without COPYUID the destination is rescanned instead of guessed.
       await mark(fourth, 'archive');
-      await applyMailActions(pool, keys, owner.id, account, async (...args) => {
+      await apply(async (...args) => {
         const client = await connectImap(...args);
         const move = client.messageMove.bind(client);
         client.messageMove = async (...moveArgs) => {
@@ -390,12 +393,9 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
       await mark(fifth, 'trash');
       assert.ok((await subjects(trash)).includes('Fifth action mail'));
       for (let attempt = 0; attempt < 5; attempt++) {
-        await applyMailActions(pool, keys, owner.id, account, async () => {
+        await apply(async () => {
           throw new Error('Provider offline');
         });
-        await pool.query(
-          "UPDATE mail_actions SET next_attempt_at=now() WHERE state='pending'",
-        );
       }
       assert.ok(!(await subjects(trash)).includes('Fifth action mail'));
       assert.ok((await subjects(inbox)).includes('Fifth action mail'));
@@ -534,6 +534,102 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
       await apply();
       assert.ok(providerHas('INBOX', 'Eighth action mail'));
       assert.equal(await folderOf(eighth), 'INBOX');
+    },
+  );
+
+  await t.test(
+    'five-second undo cancels before dispatch and is listed for reloads',
+    async () => {
+      server.control.addMessage('INBOX', {
+        raw: rawMail('Ninth action mail', '9@example.test'),
+        internaldate: new Date('2026-10-27T12:09:00Z'),
+        flags: [],
+      });
+      await pool.query(
+        'UPDATE mailboxes SET last_synced_at=NULL WHERE user_id=$1',
+        [owner.id],
+      );
+      await syncAccount(pool, keys, owner.id, account);
+      const ninth = (
+        await pool.query(
+          'SELECT id FROM mail_messages WHERE user_id=$1 AND subject=$2',
+          [owner.id, 'Ninth action mail'],
+        )
+      ).rows[0].id as string;
+      const providerHas = (path: string) =>
+        server.control
+          .listMessages(path, { raw: true })
+          .some((message) =>
+            String(message.raw).includes('Subject: Ninth action mail\r\n'),
+          );
+      const inInbox = async () =>
+        (await request('messages'))
+          .json()
+          .messages.some((message: { id: string }) => message.id === ninth);
+      const undo = (id: string, cookie = owner.cookie) =>
+        request(`actions/${id}/undo`, 'POST', {}, cookie);
+
+      const archived = (await mark(ninth, 'archive')).json();
+      assert.ok(archived.undoMs > 0 && archived.undoMs <= 5000);
+      const listed = (await request('actions')).json().undoable;
+      assert.deepEqual(
+        listed.map((item: { id: string; subject: string; target: string }) => [
+          item.id,
+          item.subject,
+          item.target,
+        ]),
+        [[archived.action.id, 'Ninth action mail', 'Archive']],
+      );
+      assert.deepEqual(
+        (await request('actions', 'GET', undefined, other.cookie)).json()
+          .undoable,
+        [],
+      );
+      assert.equal(
+        (await undo(archived.action.id, other.cookie)).statusCode,
+        404,
+      );
+      assert.equal(await inInbox(), false);
+      assert.equal((await undo(archived.action.id)).statusCode, 200);
+      assert.equal((await undo(archived.action.id)).statusCode, 200);
+      assert.equal(await inInbox(), true);
+      assert.deepEqual((await request('actions')).json().undoable, []);
+      await apply();
+      assert.ok(providerHas('INBOX'));
+      assert.ok(!providerHas('Archive'));
+
+      const unread = await inboxUnread();
+      const read = (await mark(ninth, 'read')).json();
+      assert.equal(await inboxUnread(), unread - 1);
+      assert.equal((await undo(read.action.id)).statusCode, 200);
+      assert.equal(await inboxUnread(), unread);
+      await apply();
+      assert.equal(
+        server.control
+          .listMessages('INBOX', { raw: true })
+          .find((message) => String(message.raw).includes('Ninth action mail'))
+          ?.flags.includes('\\Seen'),
+        false,
+      );
+
+      const trashed = (await mark(ninth, 'trash')).json();
+      await pool.query(
+        "UPDATE mail_actions SET undo_until=now()-interval '1 second' WHERE id=$1",
+        [trashed.action.id],
+      );
+      const expired = await undo(trashed.action.id);
+      assert.equal(expired.statusCode, 409);
+      assert.match(expired.json().message, /undo window has passed/);
+      assert.equal(await inInbox(), false);
+      await apply();
+      assert.ok(providerHas('Trash'));
+
+      // Once the worker has claimed an action at its deadline, undo cannot cancel it.
+      const restored = (await mark(ninth, 'restore')).json();
+      await apply();
+      assert.equal((await undo(restored.action.id)).statusCode, 409);
+      assert.ok(providerHas('INBOX'));
+      assert.equal(await inInbox(), true);
     },
   );
 
