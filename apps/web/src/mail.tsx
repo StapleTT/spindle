@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { mailApi as api, markMessage } from './mail-api.js';
+import { actionText, mailApi as api, requestAction } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { Reader } from './reader.js';
 
@@ -97,7 +97,7 @@ export function Mail() {
       ),
     }));
     try {
-      await markMessage(message.id, kind);
+      await requestAction(message.id, kind);
       setNotice(
         `Marked “${message.subject || '(No subject)'}” as ${kind}. Saving to your provider.`,
       );
@@ -107,6 +107,34 @@ export function Mail() {
       );
     }
     reload();
+  }
+
+  async function moveMessage(message: Message, kind: 'archive' | 'trash') {
+    setPage((current) => ({
+      ...current,
+      messages: current.messages.filter((item) => item.id !== message.id),
+    }));
+    try {
+      await requestAction(message.id, kind);
+      setNotice(
+        `${actionText[kind].done} “${message.subject || '(No subject)'}”. Moving it at your provider.`,
+      );
+    } catch (error) {
+      setNotice(
+        error instanceof Error ? error.message : 'Unable to update mail.',
+      );
+    }
+    reload();
+  }
+
+  // Only provider-designated folders are offered, and not from inside that folder.
+  function canMove(message: Message, role: string) {
+    return mailboxes.some(
+      (box) =>
+        box.accountId === message.accountId &&
+        box.role === role &&
+        box.id !== mailbox,
+    );
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Explicit refresh reruns the same inbox query.
@@ -529,6 +557,10 @@ export function Mail() {
               account={account}
               mailbox={mailbox}
               onChange={reload}
+              onMoved={(text) => {
+                setNotice(text);
+                reload();
+              }}
             />
           ) : (
             <>
@@ -582,7 +614,25 @@ export function Mail() {
                           onClick={() => void toggleRead(message)}
                         >
                           {message.unread ? 'Mark read' : 'Mark unread'}
-                        </button>
+                        </button>{' '}
+                        {canMove(message, '\\Archive') && (
+                          <button
+                            type="button"
+                            aria-label={`Archive “${message.subject || '(No subject)'}”`}
+                            onClick={() => void moveMessage(message, 'archive')}
+                          >
+                            Archive
+                          </button>
+                        )}{' '}
+                        {canMove(message, '\\Trash') && (
+                          <button
+                            type="button"
+                            aria-label={`Move “${message.subject || '(No subject)'}” to trash`}
+                            onClick={() => void moveMessage(message, 'trash')}
+                          >
+                            Trash
+                          </button>
+                        )}
                       </div>
                     </li>
                   ))}

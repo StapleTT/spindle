@@ -310,7 +310,8 @@ export async function registerMailRoutes(
       await pool.query(
         `SELECT b.id,b.account_id AS "accountId",b.name,b.path,b.role,b.initial_complete AS "initialComplete",
       count(mm.message_id)::int AS total,count(mm.message_id) FILTER(WHERE NOT('\\Seen'=ANY(mm.flags)))::int AS unread
-      FROM mailboxes b LEFT JOIN mail_memberships mm ON mm.user_id=b.user_id AND mm.account_id=b.account_id AND mm.mailbox_id=b.id
+      FROM mailboxes b LEFT JOIN mail_memberships mm ON mm.user_id=b.user_id AND mm.account_id=b.account_id
+        AND COALESCE(mm.pending_mailbox_id,mm.mailbox_id)=b.id
       WHERE b.user_id=$1 GROUP BY b.id ORDER BY b.account_id,CASE WHEN b.role='inbox' THEN 0 ELSE 1 END,b.path`,
         [request.mailUser],
       )
@@ -372,7 +373,7 @@ export async function registerMailRoutes(
        m.received_at AS "receivedAt",m.sent_at AS "sentAt",
        to_char(m.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime",
        NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id
-         AND ($3::uuid IS NULL OR seen.mailbox_id=$3) AND '\\Seen'=ANY(seen.flags)) AS unread
+         AND ($3::uuid IS NULL OR COALESCE(seen.pending_mailbox_id,seen.mailbox_id)=$3) AND '\\Seen'=ANY(seen.flags)) AS unread
        FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
        WHERE ${mailViewCondition}
        AND ($4::timestamptz IS NULL OR (m.received_at,m.id)<($4::timestamptz,$5::uuid))

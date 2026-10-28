@@ -11,12 +11,12 @@ export async function mailApi<T>(path: string, options: RequestInit = {}) {
 
 export type MailAction = {
   id: string;
-  kind: 'read' | 'unread';
+  kind: 'read' | 'unread' | 'archive' | 'trash';
   state: 'pending' | 'applied' | 'failed';
 };
 
 // Each user intent gets one operation ID, so a repeated request cannot duplicate it.
-export async function markMessage(id: string, kind: MailAction['kind']) {
+export async function requestAction(id: string, kind: MailAction['kind']) {
   return (
     await mailApi<{ action: MailAction }>(`messages/${id}/actions`, {
       method: 'POST',
@@ -24,3 +24,10 @@ export async function markMessage(id: string, kind: MailAction['kind']) {
     })
   ).action;
 }
+
+export const actionText = {
+  read: { pending: 'Marking as read', done: 'Marked as read' },
+  unread: { pending: 'Marking as unread', done: 'Marked as unread' },
+  archive: { pending: 'Archiving', done: 'Archived' },
+  trash: { pending: 'Moving to Trash', done: 'Moved to Trash' },
+};

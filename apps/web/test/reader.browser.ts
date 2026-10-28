@@ -71,7 +71,10 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     config,
     'reader-browser@example.test',
   );
-  const { server, port: imapPort } = await imapFixture(t);
+  const { server, port: imapPort } = await imapFixture(t, true, true, [
+    'MOVE',
+    'UIDPLUS',
+  ]);
   for (let i = 0; i < 51; i++)
     server.control.addMessage('INBOX', {
       raw: readerMail(
@@ -411,6 +414,53 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     )
       await new Promise((resolve) => setTimeout(resolve, 100));
     assert.ok(server.control.getMessage('INBOX', 49).flags.includes('\\Seen'));
+    const waitFor = async (check: () => boolean) => {
+      const until = Date.now() + 15000;
+      while (Date.now() < until && !check())
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      assert.ok(check());
+    };
+    const subjectId = async (subject: string) =>
+      (
+        await pool.query(
+          'SELECT id FROM mail_messages WHERE user_id=$1 AND subject=$2',
+          [owner.id, subject],
+        )
+      ).rows[0].id;
+    await page.evaluate(
+      (id) => {
+        window.location.hash = `message=${id}`;
+      },
+      await subjectId('Reader message 47'),
+    );
+    await page
+      .getByRole('heading', { name: 'Reader message 47', exact: true })
+      .waitFor();
+    await page.getByRole('button', { name: 'Archive', exact: true }).click();
+    await page
+      .getByRole('heading', { name: 'Reader message 46', exact: true })
+      .waitFor();
+    await page
+      .getByText('Archived “Reader message 47”. Moving it at your provider.')
+      .waitFor();
+    await page
+      .getByRole('button', { name: 'INBOX (48 unread / 50)' })
+      .waitFor();
+    await page
+      .getByRole('button', { name: 'Archive (2 unread / 2)' })
+      .waitFor();
+    await waitFor(() => server.control.getMailbox('Archive').messages === 2);
+    await page
+      .getByRole('link', { name: 'Back to message list', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Move “Reader message 45” to trash' })
+      .click();
+    await page
+      .getByRole('link', { name: 'Reader message 45', exact: true })
+      .waitFor({ state: 'detached' });
+    await page.getByRole('button', { name: 'Trash (1 unread / 1)' }).waitFor();
+    await waitFor(() => server.control.getMailbox('Trash').messages === 1);
     await page.evaluate((id) => {
       window.location.hash = `message=${id}`;
     }, next);

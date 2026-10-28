@@ -6,6 +6,7 @@ import { PgBoss } from 'pg-boss';
 import { migrateDatabase } from '../src/db/migrate.js';
 import { applyMailActions } from '../src/mail/actions.js';
 import { readMailKeys } from '../src/mail/credentials.js';
+import { connectImap } from '../src/mail/imap.js';
 import { syncAccount } from '../src/mail/sync.js';
 import { startMailWorker } from '../src/mail/worker.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
@@ -43,7 +44,10 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
     'actions-other@example.test',
   );
   await pool.query("UPDATE users SET role='admin' WHERE id=$1", [other.id]);
-  const { server, port } = await imapFixture(t);
+  const { server, port } = await imapFixture(t, true, true, [
+    'MOVE',
+    'UIDPLUS',
+  ]);
   for (const [subject, minute] of [
     ['First action mail', 1],
     ['Second action mail', 2],
@@ -242,6 +246,160 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
         "UPDATE mail_memberships SET uid_validity='1' WHERE user_id=$1 AND message_id=$2",
         [owner.id, first.id],
       );
+    },
+  );
+
+  await t.test(
+    'archive and trash move to designated folders and keep local identity',
+    async () => {
+      for (const [subject, minute] of [
+        ['Third action mail', 3],
+        ['Fourth action mail', 4],
+        ['Fifth action mail', 5],
+      ] as const)
+        server.control.addMessage('INBOX', {
+          raw: rawMail(subject, `${minute}@example.test`),
+          internaldate: new Date(`2026-10-27T12:0${minute}:00Z`),
+          flags: [],
+        });
+      const resync = async () => {
+        await pool.query(
+          'UPDATE mailboxes SET last_synced_at=NULL WHERE user_id=$1',
+          [owner.id],
+        );
+        await syncAccount(pool, keys, owner.id, account);
+      };
+      await resync();
+      const folders = (await request('mailboxes')).json().mailboxes as {
+        id: string;
+        role: string | null;
+      }[];
+      const folder = (role: string) => {
+        const found = folders.find((box) => box.role === role);
+        assert.ok(found);
+        return found.id;
+      };
+      const inbox = folder('inbox');
+      const archive = folder('\\Archive');
+      const trash = folder('\\Trash');
+      const subjects = async (box: string): Promise<string[]> =>
+        (await request(`messages?mailbox=${box}`))
+          .json()
+          .messages.map((message: { subject: string }) => message.subject);
+      const idOf = async (subject: string) => {
+        const id = (
+          await pool.query(
+            'SELECT id FROM mail_messages WHERE user_id=$1 AND subject=$2',
+            [owner.id, subject],
+          )
+        ).rows[0]?.id as string | undefined;
+        assert.ok(id);
+        return id;
+      };
+      const provider = (path: string) =>
+        server.control
+          .listMessages(path, { raw: true })
+          .map((message) => /Subject: (.*)\r\n/.exec(String(message.raw))?.[1]);
+
+      const third = await idOf('Third action mail');
+      assert.equal((await mark(third, 'archive')).statusCode, 202);
+      assert.ok(!(await subjects(inbox)).includes('Third action mail'));
+      assert.ok((await subjects(archive)).includes('Third action mail'));
+      assert.deepEqual(
+        (await request(`messages/${third}?mailbox=${archive}`)).json().message
+          .canMove,
+        { archive: false, trash: true },
+      );
+      assert.equal((await mark(third, 'archive')).statusCode, 409);
+      // A metadata pass before dispatch keeps the pending destination.
+      await resync();
+      assert.ok(provider('INBOX').includes('Third action mail'));
+      assert.ok((await subjects(archive)).includes('Third action mail'));
+      await apply();
+      assert.ok(!provider('INBOX').includes('Third action mail'));
+      assert.ok(provider('Archive').includes('Third action mail'));
+      assert.equal(await idOf('Third action mail'), third);
+      await resync();
+      assert.equal(await idOf('Third action mail'), third);
+      assert.deepEqual(
+        (await subjects(archive)).filter(
+          (subject) => subject === 'Third action mail',
+        ),
+        ['Third action mail'],
+      );
+      // A read queued after a move in the same batch reaches the moved copy.
+      await mark(third, 'trash');
+      await mark(third, 'read');
+      await apply();
+      assert.deepEqual(provider('Trash'), ['Third action mail']);
+      assert.ok(
+        server.control.listMessages('Trash')[0]?.flags.includes('\\Seen'),
+      );
+      assert.deepEqual(await subjects(trash), ['Third action mail']);
+      assert.equal(await idOf('Third action mail'), third);
+
+      const fourth = await idOf('Fourth action mail');
+      await pool.query('UPDATE mailboxes SET role=NULL WHERE id=$1', [trash]);
+      assert.equal((await mark(fourth, 'trash')).statusCode, 409);
+      await pool.query("UPDATE mailboxes SET role='\\Trash' WHERE id=$1", [
+        trash,
+      ]);
+
+      // Servers without MOVE or UIDPLUS are refused rather than risking a broad EXPUNGE.
+      await mark(fourth, 'archive');
+      await applyMailActions(pool, keys, owner.id, account, async (...args) => {
+        const client = await connectImap(...args);
+        client.capabilities.delete('MOVE');
+        client.capabilities.delete('UIDPLUS');
+        return client;
+      });
+      assert.equal(
+        (await request(`messages/${fourth}`)).json().message.lastAction.state,
+        'failed',
+      );
+      assert.equal(
+        (
+          await pool.query(
+            'SELECT error_code FROM mail_actions WHERE message_id=$1 ORDER BY seq DESC LIMIT 1',
+            [fourth],
+          )
+        ).rows[0].error_code,
+        'move_unsupported',
+      );
+      assert.ok((await subjects(inbox)).includes('Fourth action mail'));
+      assert.ok(provider('INBOX').includes('Fourth action mail'));
+
+      // Without COPYUID the destination is rescanned instead of guessed.
+      await mark(fourth, 'archive');
+      await applyMailActions(pool, keys, owner.id, account, async (...args) => {
+        const client = await connectImap(...args);
+        const move = client.messageMove.bind(client);
+        client.messageMove = async (...moveArgs) => {
+          const moved = await move(...moveArgs);
+          return moved && { ...moved, uidMap: undefined };
+        };
+        return client;
+      });
+      assert.ok(provider('Archive').includes('Fourth action mail'));
+      assert.ok(!(await subjects(inbox)).includes('Fourth action mail'));
+      await syncAccount(pool, keys, owner.id, account);
+      assert.ok((await subjects(archive)).includes('Fourth action mail'));
+      assert.ok(!(await subjects(inbox)).includes('Fourth action mail'));
+
+      const fifth = await idOf('Fifth action mail');
+      await mark(fifth, 'trash');
+      assert.ok((await subjects(trash)).includes('Fifth action mail'));
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await applyMailActions(pool, keys, owner.id, account, async () => {
+          throw new Error('Provider offline');
+        });
+        await pool.query(
+          "UPDATE mail_actions SET next_attempt_at=now() WHERE state='pending'",
+        );
+      }
+      assert.ok(!(await subjects(trash)).includes('Fifth action mail'));
+      assert.ok((await subjects(inbox)).includes('Fifth action mail'));
+      assert.ok(provider('INBOX').includes('Fifth action mail'));
     },
   );
 

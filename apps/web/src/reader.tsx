@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { type MailAction, mailApi, markMessage } from './mail-api.js';
-import { mailHref } from './mail-navigation.js';
+import {
+  actionText,
+  type MailAction,
+  mailApi,
+  requestAction,
+} from './mail-api.js';
+import { mailHref, navigateMail } from './mail-navigation.js';
 
 type Person = { name: string; address: string };
 type Attachment = {
@@ -21,6 +26,7 @@ type Detail = {
     messageId: string | null;
     unread: boolean;
     lastAction: MailAction | null;
+    canMove: { archive: boolean | null; trash: boolean | null } | null;
   };
   previous: string | null;
   next: string | null;
@@ -161,21 +167,18 @@ function AttachmentItem({
   );
 }
 
-const actionText = {
-  read: { pending: 'Marking as read', done: 'Marked as read' },
-  unread: { pending: 'Marking as unread', done: 'Marked as unread' },
-};
-
 export function Reader({
   id,
   account,
   mailbox,
   onChange,
+  onMoved,
 }: {
   id: string;
   account: string;
   mailbox: string;
   onChange: () => void;
+  onMoved: (notice: string) => void;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -313,7 +316,15 @@ export function Reader({
   async function mark(kind: MailAction['kind']) {
     setActionError('');
     try {
-      const action = await markMessage(id, kind);
+      const action = await requestAction(id, kind);
+      if (kind === 'archive' || kind === 'trash') {
+        // The message has left this view; continue with its neighbor.
+        onMoved(
+          `${actionText[kind].done} “${detail?.message.subject || '(No subject)'}”. Moving it at your provider.`,
+        );
+        navigateMail({ message: detail?.next ?? detail?.previous ?? '' });
+        return;
+      }
       setOwnAction(action.id);
       setDetail((value) =>
         value
@@ -371,6 +382,20 @@ export function Reader({
             onClick={() => void mark(detail.message.unread ? 'read' : 'unread')}
           >
             {detail.message.unread ? 'Mark as read' : 'Mark as unread'}
+          </button>
+          <button
+            type="button"
+            disabled={pendingAction || !detail.message.canMove?.archive}
+            onClick={() => void mark('archive')}
+          >
+            Archive
+          </button>
+          <button
+            type="button"
+            disabled={pendingAction || !detail.message.canMove?.trash}
+            onClick={() => void mark('trash')}
+          >
+            Move to trash
           </button>
           <span role="status">
             {lastAction?.state === 'pending'

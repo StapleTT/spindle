@@ -1,6 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
-import { type ActionKind, withSeen } from './actions.js';
+import {
+  type ActionKind,
+  moveRoles,
+  refreshPendingFolder,
+  withSeen,
+} from './actions.js';
 import { trimContentCache } from './content-cache.js';
 import type { ContentConfig } from './content-config.js';
 import { attachmentUrl, bodyUrl } from './content-server.js';
@@ -53,7 +58,11 @@ export function registerReaderRoutes(
       NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id
         AND '\\Seen'=ANY(seen.flags)) AS unread,
       (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state) FROM mail_actions x
-        WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction"
+        WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction",
+      (SELECT json_build_object('archive',bool_or(t.role='${moveRoles.archive}'),'trash',bool_or(t.role='${moveRoles.trash}'))
+        FROM mailboxes t WHERE t.user_id=$1 AND t.account_id=m.account_id AND t.role IN ('${moveRoles.archive}','${moveRoles.trash}')
+        AND NOT EXISTS(SELECT 1 FROM mail_memberships here WHERE here.user_id=$1 AND here.message_id=m.id
+          AND COALESCE(here.pending_mailbox_id,here.mailbox_id)=t.id)) AS "canMove"
       FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
       WHERE ${mailViewCondition} AND m.id=$4`,
           values,
@@ -155,7 +164,10 @@ export function registerReaderRoutes(
           required: ['id', 'kind'],
           properties: {
             id: { type: 'string', format: 'uuid' },
-            kind: { type: 'string', enum: ['read', 'unread'] },
+            kind: {
+              type: 'string',
+              enum: ['read', 'unread', 'archive', 'trash'],
+            },
           },
           additionalProperties: false,
         },
@@ -174,10 +186,23 @@ export function registerReaderRoutes(
           )
         ).rows[0];
         if (!message) return null;
+        let target: string | null = null;
+        if (kind === 'archive' || kind === 'trash') {
+          const folder = (
+            await db.query(
+              `SELECT t.id,EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=$4
+              AND COALESCE(mm.pending_mailbox_id,mm.mailbox_id)=t.id) AS here
+              FROM mailboxes t WHERE t.user_id=$1 AND t.account_id=$2 AND t.role=$3 ORDER BY t.path LIMIT 1`,
+              [owner, message.account_id, moveRoles[kind], request.params.id],
+            )
+          ).rows[0];
+          if (!folder || folder.here) return { unavailable: kind };
+          target = folder.id;
+        }
         const inserted = await db.query(
-          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind) VALUES($1,$2,$3,$4,$5)
+          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,target_mailbox_id) VALUES($1,$2,$3,$4,$5,$6)
         ON CONFLICT (id) DO NOTHING RETURNING id,kind,state`,
-          [action, owner, message.account_id, request.params.id, kind],
+          [action, owner, message.account_id, request.params.id, kind, target],
         );
         // A retried request with the same operation ID returns the original intent.
         if (!inserted.rowCount)
@@ -193,6 +218,7 @@ export function registerReaderRoutes(
           `UPDATE mail_memberships SET flags=${withSeen('flags', '$3::text')} WHERE user_id=$1 AND message_id=$2`,
           [owner, request.params.id, kind],
         );
+        await refreshPendingFolder(db, owner, request.params.id);
         return inserted.rows[0];
       });
       if (!result)
@@ -201,6 +227,13 @@ export function registerReaderRoutes(
         return reply
           .code(409)
           .send({ message: 'This action ID was already used.' });
+      if ('unavailable' in result)
+        return reply.code(409).send({
+          message:
+            result.unavailable === 'archive'
+              ? 'This message is already archived, or its provider has no designated Archive folder.'
+              : 'This message is already in Trash, or its provider has no designated Trash folder.',
+        });
       return reply.code(202).send({ action: result });
     },
   );

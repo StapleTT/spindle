@@ -132,7 +132,7 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
       .getByRole('button', { name: 'Newest messages', exact: true })
       .click();
     await page.getByText('Browser mail 50', { exact: true }).waitFor();
-    await page.getByRole('button', { name: /^Archive / }).click();
+    await page.getByRole('button', { name: /^Archive \(/ }).click();
     await page.getByText('Browser archived mail', { exact: true }).waitFor();
     await page
       .getByRole('button', { name: 'Unified inbox', exact: true })

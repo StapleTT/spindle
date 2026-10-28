@@ -3,7 +3,10 @@ import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
 
-export type ActionKind = 'read' | 'unread';
+export type ActionKind = 'read' | 'unread' | 'archive' | 'trash';
+
+// Provider-designated (SPECIAL-USE) destinations; folders are never guessed by name.
+export const moveRoles = { archive: '\\Archive', trash: '\\Trash' } as const;
 
 // SQL for a flags array with an action's \Seen change applied; other flags are untouched.
 export function withSeen(flags: string, kind: string) {
@@ -11,10 +14,24 @@ export function withSeen(flags: string, kind: string) {
     WHEN 'unread' THEN array_remove(${flags},'\\Seen') ELSE ${flags} END`;
 }
 
-// Latest pending intent for a message; sync keeps it over provider flags until applied.
+// Latest pending read intent for a message; sync keeps it over provider flags until applied.
 export const pendingKind = (user: string, message: string) =>
   `(SELECT a.kind FROM mail_actions a WHERE a.user_id=${user} AND a.message_id=${message}
-    AND a.state='pending' ORDER BY a.seq DESC LIMIT 1)`;
+    AND a.state='pending' AND a.kind IN ('read','unread') ORDER BY a.seq DESC LIMIT 1)`;
+
+// The latest pending move decides which folder shows the message before the provider confirms.
+export async function refreshPendingFolder(
+  db: PoolClient,
+  owner: string,
+  message: string,
+) {
+  await db.query(
+    `UPDATE mail_memberships SET pending_mailbox_id=(SELECT a.target_mailbox_id FROM mail_actions a
+      WHERE a.user_id=$1 AND a.message_id=$2 AND a.state='pending' AND a.target_mailbox_id IS NOT NULL
+      ORDER BY a.seq DESC LIMIT 1) WHERE user_id=$1 AND message_id=$2`,
+    [owner, message],
+  );
+}
 
 type Settled = {
   message_id: string;
@@ -37,24 +54,36 @@ async function settle(
       [owner, ids, state, code],
     )
   ).rows;
-  // Applied intent is now provider truth; a failed change is reverted locally.
-  // Either way, a newer action for the same message owns the local state.
-  for (const row of rows)
-    await db.query(
-      `UPDATE mail_memberships SET flags=${withSeen('flags', '$3::text')} WHERE user_id=$1 AND message_id=$2
-      AND NOT EXISTS(SELECT 1 FROM mail_actions n WHERE n.user_id=$1 AND n.message_id=$2 AND n.seq>$4)`,
-      [
-        owner,
-        row.message_id,
-        row.state === 'applied'
-          ? row.kind
-          : row.kind === 'read'
-            ? 'unread'
-            : 'read',
-        row.seq,
-      ],
-    );
+  for (const row of rows) {
+    // Applied read state is now provider truth; a failed change is reverted locally.
+    // Either way, a newer read action for the same message owns the local state.
+    if (row.kind === 'read' || row.kind === 'unread')
+      await db.query(
+        `UPDATE mail_memberships SET flags=${withSeen('flags', '$3::text')} WHERE user_id=$1 AND message_id=$2
+        AND NOT EXISTS(SELECT 1 FROM mail_actions n WHERE n.user_id=$1 AND n.message_id=$2 AND n.seq>$4
+          AND n.kind IN ('read','unread'))`,
+        [
+          owner,
+          row.message_id,
+          row.state === 'applied'
+            ? row.kind
+            : row.kind === 'read'
+              ? 'unread'
+              : 'read',
+          row.seq,
+        ],
+      );
+    await refreshPendingFolder(db, owner, row.message_id);
+  }
 }
+
+type PendingAction = {
+  id: string;
+  kind: ActionKind;
+  message_id: string;
+  target_mailbox_id: string | null;
+  target_path: string | null;
+};
 
 export async function applyMailActions(
   pool: Pool,
@@ -70,16 +99,9 @@ export async function applyMailActions(
   const remaining = new Set<string>();
   try {
     const actions = (
-      await pool.query<{
-        id: string;
-        kind: ActionKind;
-        uid: string | null;
-        uid_validity: string | null;
-        path: string | null;
-      }>(
-        `SELECT a.id,a.kind,mm.uid,mm.uid_validity,b.path FROM mail_actions a
-        LEFT JOIN mail_memberships mm ON mm.user_id=a.user_id AND mm.account_id=a.account_id AND mm.message_id=a.message_id
-        LEFT JOIN mailboxes b ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=mm.mailbox_id
+      await pool.query<PendingAction>(
+        `SELECT a.id,a.kind,a.message_id,a.target_mailbox_id,t.path AS target_path FROM mail_actions a
+        LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.account_id=a.account_id AND t.id=a.target_mailbox_id
         WHERE a.user_id=$1 AND a.account_id=$2 AND a.state='pending' AND a.next_attempt_at<=clock_timestamp()
         ORDER BY a.seq LIMIT 50`,
         [owner, accountId],
@@ -95,55 +117,119 @@ export async function applyMailActions(
       ),
     );
     const finish = async (
-      ids: string[],
+      id: string,
       state: 'applied' | 'failed',
       code: string | null = null,
+      record?: (db: PoolClient) => Promise<unknown>,
     ) => {
-      await withLease(pool, account, (db) =>
-        settle(db, owner, ids, state, code),
-      );
-      for (const id of ids) remaining.delete(id);
+      await withLease(pool, account, async (db) => {
+        await record?.(db);
+        await settle(db, owner, [id], state, code);
+      });
+      remaining.delete(id);
     };
-    const orphaned = actions.filter((action) => !action.path);
-    if (orphaned.length)
-      await finish(
-        orphaned.map((action) => action.id),
-        'failed',
-        'message_changed',
-      );
-    const paths = [...new Set(actions.flatMap((action) => action.path ?? []))];
-    if (!paths.length) return;
-    client = await connect(
-      account,
-      decryptCredential(account.credential, owner, accountId, keys),
-    );
-    const active = client;
-    timer = setTimeout(() => active.close(), 45000);
-    for (const path of paths) {
-      const lock = await active.getMailboxLock(path);
-      try {
-        const validity = String(
-          active.mailbox ? active.mailbox.uidValidity : '',
+    for (const action of actions) {
+      // Read the current location per action: an earlier move in this batch changes the UID.
+      const at = (
+        await pool.query<{
+          mailbox_id: string;
+          uid: string;
+          uid_validity: string;
+          path: string;
+        }>(
+          `SELECT mm.mailbox_id,mm.uid,mm.uid_validity,b.path FROM mail_memberships mm
+          JOIN mailboxes b ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=mm.mailbox_id
+          WHERE mm.user_id=$1 AND mm.account_id=$2 AND mm.message_id=$3 LIMIT 1`,
+          [owner, accountId, action.message_id],
+        )
+      ).rows[0];
+      if (!at) {
+        await finish(action.id, 'failed', 'message_changed');
+        continue;
+      }
+      if (at.mailbox_id === action.target_mailbox_id) {
+        await finish(action.id, 'applied');
+        continue;
+      }
+      if (!client) {
+        client = await connect(
+          account,
+          decryptCredential(account.credential, owner, accountId, keys),
         );
-        for (const action of actions.filter((item) => item.path === path)) {
-          if (action.uid_validity !== validity) {
-            await finish([action.id], 'failed', 'message_changed');
-            continue;
-          }
-          // STORE +/-FLAGS is idempotent, so redelivery after a crash is safe.
-          const stored =
-            action.kind === 'read'
-              ? await active.messageFlagsAdd(String(action.uid), ['\\Seen'], {
-                  uid: true,
-                })
-              : await active.messageFlagsRemove(
-                  String(action.uid),
-                  ['\\Seen'],
-                  { uid: true },
-                );
-          if (!stored) throw new Error('Provider rejected flag change');
-          await finish([action.id], 'applied');
+        const opened = client;
+        timer = setTimeout(() => opened.close(), 45000);
+      }
+      const active = client;
+      // Without MOVE or UIDPLUS the fallback EXPUNGE would also remove other clients' \Deleted mail.
+      if (
+        action.target_path &&
+        !active.capabilities.has('MOVE') &&
+        !active.capabilities.has('UIDPLUS')
+      ) {
+        await finish(action.id, 'failed', 'move_unsupported');
+        continue;
+      }
+      const lock = await active.getMailboxLock(at.path);
+      try {
+        if (
+          String(active.mailbox ? active.mailbox.uidValidity : '') !==
+          at.uid_validity
+        ) {
+          await finish(action.id, 'failed', 'message_changed');
+          continue;
         }
+        if (action.target_path && action.target_mailbox_id) {
+          const target = action.target_mailbox_id;
+          const moved = await active.messageMove(at.uid, action.target_path, {
+            uid: true,
+          });
+          if (!moved) throw new Error('Provider rejected move');
+          const uid = moved.uidMap?.get(Number(at.uid));
+          const validity = moved.uidValidity ? String(moved.uidValidity) : '';
+          await finish(action.id, 'applied', null, async (db) => {
+            if (uid && validity) {
+              // COPYUID keeps the same local message, cache and history at its new address.
+              await db.query(
+                `UPDATE mail_memberships SET mailbox_id=$4,uid_validity=$5,uid=$6
+                WHERE user_id=$1 AND account_id=$2 AND message_id=$3`,
+                [owner, accountId, action.message_id, target, validity, uid],
+              );
+              await db.query(
+                'UPDATE mail_messages SET remote_key=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
+                [
+                  owner,
+                  accountId,
+                  action.message_id,
+                  `${target}:${validity}:${uid}`,
+                ],
+              );
+              return;
+            }
+            // Without COPYUID the destination UID is unknown: rescan that folder instead.
+            await db.query(
+              'DELETE FROM mail_memberships WHERE user_id=$1 AND account_id=$2 AND message_id=$3',
+              [owner, accountId, action.message_id],
+            );
+            await db.query(
+              'UPDATE mailboxes SET last_synced_at=NULL WHERE user_id=$1 AND account_id=$2 AND id=$3',
+              [owner, accountId, target],
+            );
+            await db.query(
+              'UPDATE mail_accounts SET next_sync_at=clock_timestamp() WHERE user_id=$1 AND id=$2',
+              [owner, accountId],
+            );
+          });
+          continue;
+        }
+        // STORE +/-FLAGS is idempotent, so redelivery after a crash is safe.
+        const stored =
+          action.kind === 'read'
+            ? await active.messageFlagsAdd(at.uid, ['\\Seen'], { uid: true })
+            : await active.messageFlagsRemove(at.uid, ['\\Seen'], {
+                uid: true,
+              });
+        if (!stored) throw new Error('Provider rejected flag change');
+        await finish(action.id, 'applied');
       } finally {
         lock.release();
       }

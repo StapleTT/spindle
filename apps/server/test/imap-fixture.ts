@@ -10,16 +10,21 @@ export async function imapFixture(
   t: TestContext,
   secure = true,
   starttls = true,
+  plugins: string[] = [],
 ) {
   const server = imapkit({
     secureConnection: secure,
-    plugins: ['SPECIAL-USE', ...(starttls ? ['STARTTLS'] : [])],
+    plugins: ['SPECIAL-USE', ...(starttls ? ['STARTTLS'] : []), ...plugins],
     users: { testuser: { password: imapPassword } },
     storage: {
       INBOX: { uidvalidity: 1, messages: [] },
       '': {
         separator: '/',
-        folders: { Archive: { specialUse: '\\Archive' }, Receipts: {} },
+        folders: {
+          Archive: { specialUse: '\\Archive' },
+          Receipts: {},
+          Trash: { specialUse: '\\Trash' },
+        },
       },
     },
   });
