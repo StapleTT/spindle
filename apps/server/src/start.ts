@@ -28,6 +28,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
 
 try {
   await database.query('SELECT id FROM users LIMIT 0');
+  await database.query('SELECT id FROM mail_accounts LIMIT 0');
   await app.listen({ host: config.host, port: config.port });
 } catch {
   logger.error(

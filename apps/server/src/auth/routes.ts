@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Auth } from './auth.js';
 import type { AuthConfig } from './config.js';
 
-function authHeaders(request: FastifyRequest) {
+export function authHeaders(request: FastifyRequest) {
   const headers = new Headers();
   for (const [name, value] of Object.entries(request.headers)) {
     if (value !== undefined)

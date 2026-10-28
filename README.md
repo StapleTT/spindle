@@ -2,7 +2,7 @@
 
 Spindle syncs all your mailboxes into one unified inbox you can drive from the keyboard. Use the hosted service or run it on your own server.
 
-The 2.0 rewrite supports invite-only signup, verified-email/password login, logout, verification resend, and password recovery. Mail synchronization comes next. The visual design system will be imported from Claude Design later.
+The 2.0 rewrite supports invite-only signup, verified-email/password login, recovery, private IMAP account connections, background metadata sync and a paginated unified inbox backed by Postgres. The visual design system will be imported from Claude Design later.
 
 See the [confirmed decisions](docs/decisions.md), [rebuild brief](REBUILD_BRIEF.md), and [task checklist](REBUILD_TASKS.md).
 
@@ -14,6 +14,7 @@ Install Node 24 LTS (see `.nvmrc`), npm, and Docker with Compose. Your user need
 npm ci
 cp .env.example .env
 # Set AUTH_SECRET in .env to a random value: openssl rand -base64 48
+# Set MAIL_ENCRYPTION_KEYS using the key-generation command in docs/imap.md.
 npm run db:up
 npm run db:migrate
 npm run auth:invite -- you@example.com --admin
@@ -28,7 +29,7 @@ With the example Mailpit settings, open **http://127.0.0.1:8025** to read captur
 
 `npm run dev` starts Vite, the Fastify API, and a separate pg-boss worker. Vite forwards `/api` to the API, so the browser uses one origin. Forms use temporary accessible styling pending Claude Design.
 
-Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, Vite on `127.0.0.1:5173`, and Mailpit SMTP on `127.0.0.1:1025`. The worker owns pg-boss's queue schema; `npm run db:migrate` applies versioned application migrations. No mail sync handlers run yet.
+Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, Vite on `127.0.0.1:5173`, and Mailpit SMTP on `127.0.0.1:1025`. The worker owns pg-boss's queue schema and IMAP synchronization; `npm run db:migrate` applies versioned application migrations. After signing in, choose **Connect IMAP account**. See [IMAP setup, coverage and recovery](docs/imap.md).
 
 If Docker reports permission denied, start the development database with `sudo docker compose up -d --wait` in your terminal, then run `npm run dev` normally. Do not run npm or the application as root.
 
@@ -39,7 +40,7 @@ Stop the app with Ctrl-C. `npm run db:down` stops Postgres and preserves its nam
 ```bash
 npm run check    # lint/format check, typecheck, tests, builds
 npm run format   # apply formatting
-npm run test:integration # isolated Postgres auth tests; development role needs CREATEDB
+npm run test:integration # isolated Postgres auth and IMAP tests; role needs CREATEDB
 npm exec -- playwright install chromium # once, for browser tests
 npm run test:browser
 ```
@@ -50,4 +51,4 @@ npm run test:browser
 - `npm run build`: emits `apps/web/dist` and `apps/server/dist`.
 - `npm start` and `npm run worker`: run the compiled API and worker. The API currently serves API routes only; production web hosting/TLS will be added before deployment.
 
-CI uses Node 24, Postgres, and Chromium to run the same checks. See [authentication setup and behavior](docs/authentication.md) for configuration, API boundaries, invitations, sessions and deployment requirements. No OAuth credentials or connected mailboxes are needed yet.
+CI uses Node 24, Postgres, synthetic IMAP mail and Chromium to run the same checks. See [authentication setup and behavior](docs/authentication.md) and [IMAP setup](docs/imap.md) for configuration and boundaries. Automated checks need no real provider accounts or OAuth credentials.

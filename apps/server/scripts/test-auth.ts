@@ -21,9 +21,13 @@ try {
       '--import',
       'tsx',
       '--test',
-      process.argv.includes('--browser')
-        ? 'apps/web/test/auth.browser.ts'
-        : 'apps/server/test/auth.integration.ts',
+      '--test-concurrency=1',
+      ...(process.argv.includes('--browser')
+        ? ['apps/web/test/auth.browser.ts', 'apps/web/test/mail.browser.ts']
+        : [
+            'apps/server/test/auth.integration.ts',
+            'apps/server/test/mail.integration.ts',
+          ]),
     ],
     {
       stdio: 'inherit',

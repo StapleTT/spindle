@@ -5,15 +5,26 @@ import type { Auth } from './auth/auth.js';
 import type { AuthConfig } from './auth/config.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { loggerOptions } from './logger.js';
+import { type MailKeys, readMailKeys } from './mail/credentials.js';
+import { registerMailRoutes } from './mail/routes.js';
 
-export function buildApp(database: Pool, auth: Auth, config: AuthConfig) {
+export function buildApp(
+  database: Pool,
+  auth: Auth,
+  config: AuthConfig,
+  mailKeys: MailKeys = readMailKeys(),
+) {
   const app = Fastify({
     logger: loggerOptions,
     bodyLimit: 64 * 1024,
+    ajv: { customOptions: { coerceTypes: false } },
     trustProxy: config.trustProxy,
   });
   app.register(helmet);
   registerAuthRoutes(app, auth, config);
+  app.register(async (mail) =>
+    registerMailRoutes(mail, database, auth, config, mailKeys),
+  );
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     const status =
       error.statusCode && error.statusCode >= 400 && error.statusCode < 500

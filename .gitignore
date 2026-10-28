@@ -7,3 +7,4 @@ coverage/
 *.log
 
 compose.override.yaml
+graphify-out/

@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation and first authentication slice are implemented. See [authentication setup and behavior](authentication.md) for the new flows; connected mailboxes are the next functional area.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication and first read-only IMAP slice are implemented. See [authentication setup and behavior](authentication.md) and [IMAP setup](imap.md); live mailbox review remains pending.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -109,3 +109,11 @@ Status: provider selected by the user on 2026-10-27; SMTP authentication, domain
 Send invitations, verification and recovery email directly through Resend SMTP from `noreply@spindle.staplett.xyz`, using the existing transport. Mailpit remains available for local capture; no relay hop or SDK is added. The existing ignored `.env` already contains Resend settings and a sending-only key. Preserve that restricted scope; domain-management access is unnecessary for routine sending.
 
 SMTP authentication and published DKIM/SPF records are confirmed. The user confirmed domain verification, explicitly designated a test recipient, and confirmed receipt of the one authorized test in Proton Mail after Resend accepted it. DMARC was not found for the sender subdomain during the DNS check; its policy remains unconfirmed. Keep the working app origin until a public HTTPS deployment exists. See [the Resend checklist](resend.md) for proof, setup and rollback.
+
+## D008 — first read-only IMAP slice
+
+Status: agent implementation choices on 2026-10-27 within the user's requested IMAP, unified-inbox, storage and background-sync work.
+
+Use ImapFlow with certificate-validated implicit TLS or required STARTTLS. Validate all DNS addresses with ipaddr.js and pin a public address while preserving TLS hostname checks. Store owned accounts, encrypted credentials, mailbox identity, normalized messages/memberships and durable checkpoints in an additive Postgres migration. Use the existing pg-boss worker with persisted sync requests, bounded polling/backfill and fenced account leases. Lists/counts use local data exclusively.
+
+Let the user choose a fixed last-90-day boundary or all available history at connection time; reconnect preserves it. Keep bodies, attachments, IMAP mutations and OAuth separate. Up to five accounts per user and two concurrent connections per worker are initial implementation limits. ImapKit is a development-only protocol fixture. A separate versioned AES-GCM operator key ring protects IMAP credentials; hosted KMS and deployment egress remain future release gates. See [IMAP behavior and operational limits](imap.md).

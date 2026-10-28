@@ -1,6 +1,7 @@
 import { type FormEvent, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { authClient } from './auth-client.js';
+import { Mail } from './mail.js';
 import './style.css';
 
 type View = 'login' | 'signup' | 'forgot' | 'reset';
@@ -198,7 +199,7 @@ function App() {
     reset: 'Choose a new password',
   }[view];
   return (
-    <main>
+    <main className={session ? 'signed-in' : undefined}>
       <header>
         <h1>Spindle</h1>
         <p>Your private mailboxes, together.</p>
@@ -219,10 +220,10 @@ function App() {
         <section aria-labelledby="signed-in-title">
           <h2 id="signed-in-title">You’re signed in</h2>
           <p>{session.user.email}</p>
-          <p>Your account is ready. Mailbox connections will be added next.</p>
           <button type="button" disabled={busy} onClick={() => void signOut()}>
             Sign out
           </button>
+          <Mail />
         </section>
       ) : (
         <section aria-labelledby="auth-title">

@@ -8,6 +8,13 @@
       "when": 1793100000000,
       "tag": "0000_auth",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793110000000,
+      "tag": "0001_mail",
+      "breakpoints": true
     }
   ]
 }
