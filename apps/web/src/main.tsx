@@ -223,7 +223,7 @@ function App() {
           <button type="button" disabled={busy} onClick={() => void signOut()}>
             Sign out
           </button>
-          <Mail />
+          <Mail key={session.user.id} userId={session.user.id} />
         </section>
       ) : (
         <section aria-labelledby="auth-title">

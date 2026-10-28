@@ -1,11 +1,20 @@
 import {
   type FormEvent,
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
   useState,
 } from 'react';
 import { ActionStatus } from './action-status.js';
+import { startDraft } from './draft-api.js';
+
+const Composer = lazy(() =>
+  import('./composer.js').then((module) => ({ default: module.Composer })),
+);
+
+import { DraftList } from './drafts.js';
 import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { Reader } from './reader.js';
@@ -43,11 +52,18 @@ type Message = {
 };
 type Page = { messages: Message[]; nextCursor: string | null };
 
-export function Mail() {
+export function Mail({ userId }: { userId: string }) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [configured, setConfigured] = useState(true);
-  const { account, mailbox, cursor, message: messageId } = useMailLocation();
+  const {
+    account,
+    mailbox,
+    cursor,
+    message: messageId,
+    draft: draftId,
+    view,
+  } = useMailLocation();
   const [page, setPage] = useState<Page>({ messages: [], nextCursor: null });
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState('');
@@ -283,7 +299,32 @@ export function Mail() {
           <h2>Mailboxes</h2>
           <button
             type="button"
-            aria-pressed={!account && !mailbox}
+            onClick={() => {
+              if (
+                !startDraft(
+                  userId,
+                  account || selected?.accountId || accounts[0]?.id || null,
+                )
+              )
+                setNotice(
+                  'Unable to keep draft recovery text in this browser. Enable browser storage or free some space before composing.',
+                );
+            }}
+          >
+            Compose
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === 'drafts'}
+            onClick={() =>
+              navigateMail({ draft: '', view: 'drafts', message: '' })
+            }
+          >
+            Local drafts
+          </button>
+          <button
+            type="button"
+            aria-pressed={!account && !mailbox && view !== 'drafts'}
             onClick={() => {
               navigateMail({
                 account: '',
@@ -533,7 +574,8 @@ export function Mail() {
               <h2 id="disconnect-title">Disconnect {disconnect.name}</h2>
               <p>
                 This removes the account, saved credentials and synchronized
-                mail from Spindle. Mail at your provider stays intact.
+                mail from Spindle. Mail at your provider stays intact. Local
+                drafts are kept without a selected account.
               </p>
               <form onSubmit={(event) => void remove(event)}>
                 <label>
@@ -559,7 +601,18 @@ export function Mail() {
               </form>
             </section>
           )}
-          {messageId ? (
+          {draftId ? (
+            <Suspense fallback={<p role="status">Loading composer…</p>}>
+              <Composer
+                key={draftId}
+                id={draftId}
+                user={userId}
+                accounts={accounts}
+              />
+            </Suspense>
+          ) : view === 'drafts' ? (
+            <DraftList user={userId} />
+          ) : messageId ? (
             <Reader
               key={`${messageId}:${account}:${mailbox}`}
               id={messageId}

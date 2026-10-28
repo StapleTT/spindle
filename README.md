@@ -33,6 +33,8 @@ Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, Vite on `127
 
 Click a message to read it. The API also starts isolated content at `http://localhost:3001` for the default app origin. Images start blocked; **Display images** enables them for the selected message. See [reader setup, cache limits and hosted content configuration](docs/reader.md).
 
+Choose **Compose** to write rich or plain text with To/Cc/Bcc and autosaved private drafts. **Local drafts** reopens them. Conflicts preserve edits from both tabs; sending and provider Drafts synchronization remain future work. See [composer and draft recovery](docs/compose.md).
+
 If Docker reports permission denied, start the development database with `sudo docker compose up -d --wait` in your terminal, then run `npm run dev` normally. Do not run npm or the application as root.
 
 Stop the app with Ctrl-C. `npm run db:down` stops Postgres and preserves its named volume. Do not remove that volume when it contains data you need.

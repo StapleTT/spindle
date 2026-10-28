@@ -40,6 +40,7 @@ export async function createTestUser(
   pool: Pool,
   config: AuthConfig,
   email: string,
+  remoteAddress = '203.0.113.212',
 ) {
   const password = 'synthetic reader password 123!';
   await pool.query(
@@ -47,7 +48,7 @@ export async function createTestUser(
     [email],
   );
   const signed = await app.inject({
-    remoteAddress: '203.0.113.212',
+    remoteAddress,
     method: 'POST',
     url: '/api/auth/sign-up/email',
     headers: { origin: config.appUrl },
@@ -61,7 +62,7 @@ export async function createTestUser(
     )
   ).rows[0].id;
   const login = await app.inject({
-    remoteAddress: '203.0.113.212',
+    remoteAddress,
     method: 'POST',
     url: '/api/auth/sign-in/email',
     headers: { origin: config.appUrl },

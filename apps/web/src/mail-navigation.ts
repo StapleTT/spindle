@@ -5,6 +5,8 @@ export type MailLocation = {
   mailbox: string;
   cursor: string;
   message: string;
+  draft: string;
+  view: string;
 };
 
 function readLocation(): MailLocation {
@@ -14,11 +16,18 @@ function readLocation(): MailLocation {
     mailbox: params.get('mailbox') ?? '',
     cursor: params.get('cursor') ?? '',
     message: params.get('message') ?? '',
+    draft: params.get('draft') ?? '',
+    view: params.get('view') ?? '',
   };
 }
 
 export function mailHref(patch: Partial<MailLocation>) {
   const next = { ...readLocation(), ...patch };
+  // Existing folder/reader links leave the drafts workspace explicitly.
+  if (patch.draft === undefined && patch.view === undefined) {
+    next.draft = '';
+    next.view = '';
+  }
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(next))
     if (value) params.set(key, value);

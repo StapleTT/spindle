@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication and first read-only IMAP slice are implemented. See [authentication setup and behavior](authentication.md) and [IMAP setup](imap.md); live mailbox review remains pending.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. See [authentication](authentication.md), [IMAP](imap.md), [mail actions](actions.md) and [composer/drafts](compose.md). Live mailbox review, other providers, provider Drafts synchronization and sending remain pending.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -133,3 +133,9 @@ Keep bounded parsed bodies and supported image blobs in Postgres with seven-day 
 Use Mailparser and sanitize-html, with explicit input/output/structure limits. Serve formatted HTML from a separate hostname through a script-free opaque sandbox and strict CSP. Session/message/version-scoped short-lived grants authorize body/image access without app cookies. Images start blocked and are enabled per message; supported raster images use a bounded SSRF-protected proxy/cache. Attachments are fetched per MIME part on demand and downloaded only from the content origin with an attachment-scoped grant. Keep hosted content-host/TLS setup, object-storage/KMS, attachment scanning, mutations and threads at their owning release gates. See [reader behavior and setup](reader.md). The user confirmed IMAP connection works; that does not by itself establish full live sync or reader acceptance.
 
 Newsletter rendering correction: preserve parsed/filtered inline CSS, style blocks, responsive rules and table/image layout attributes. CSS image URLs share the per-message opt-in proxy; imports and external fonts remain blocked. A cache sanitizer revision causes previously stripped HTML to be refetched on opening. This corrects rendering without changing private ownership, image consent or iframe isolation.
+
+## D011 — composer and local draft persistence
+
+Status: agent implementation choices on 2026-10-28 for the requested composer + autosaved-drafts slice.
+
+Use Tiptap for a small rich-text schema with a plain-text alternative, safe text-only paste and HTTP/HTTPS/mailto links. Persist owned local drafts in Postgres with revision checks and idempotent save tokens. Serialize autosaves, preserve text through account removal, and use user/draft-scoped tab recovery for interrupted writes. A stale tab cannot overwrite newer text; conflicts preserve local edits and offer an explicit copy or reload. Drafts have no provider effects or Send control. Provider Drafts synchronization, SMTP sending, recipient/identity verification, reply rules and attachments remain their owning Phase I work. See [composer behavior](compose.md).

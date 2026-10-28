@@ -6,6 +6,7 @@ import type { AuthConfig } from '../auth/config.js';
 import { authHeaders } from '../auth/routes.js';
 import type { ContentConfig } from './content-config.js';
 import { encryptCredential, type MailKeys } from './credentials.js';
+import { registerDraftRoutes } from './drafts.js';
 import { registerReaderRoutes } from './reader-routes.js';
 import { consumeLimit, transaction } from './store.js';
 import { mailViewCondition } from './view.js';
@@ -86,14 +87,18 @@ export async function registerMailRoutes(
         current.user.id,
         request.method === 'GET'
           ? 'read'
-          : request.routeOptions.url?.startsWith('/api/mail/messages/')
-            ? 'reader'
-            : 'write',
+          : request.routeOptions.url?.startsWith('/api/mail/drafts')
+            ? 'draft'
+            : request.routeOptions.url?.startsWith('/api/mail/messages/')
+              ? 'reader'
+              : 'write',
         request.method === 'GET'
           ? 240
-          : request.routeOptions.url?.startsWith('/api/mail/messages/')
-            ? 60
-            : 10,
+          : request.routeOptions.url?.startsWith('/api/mail/drafts')
+            ? 120
+            : request.routeOptions.url?.startsWith('/api/mail/messages/')
+              ? 60
+              : 10,
       ))
     )
       return reply
@@ -404,4 +409,5 @@ export async function registerMailRoutes(
     },
   );
   registerReaderRoutes(app, pool, content);
+  registerDraftRoutes(app, pool);
 }

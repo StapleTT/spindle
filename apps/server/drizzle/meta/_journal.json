@@ -71,6 +71,13 @@
       "when": 1793190000000,
       "tag": "0009_mail_action_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793200000000,
+      "tag": "0010_local_drafts",
+      "breakpoints": true
     }
   ]
 }

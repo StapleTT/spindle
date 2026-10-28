@@ -1,3 +1,13 @@
+export class MailApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: string,
+  ) {
+    super(message);
+  }
+}
+
 export async function mailApi<T>(path: string, options: RequestInit = {}) {
   const response = await fetch(`/api/mail/${path}`, {
     ...options,
@@ -5,7 +15,11 @@ export async function mailApi<T>(path: string, options: RequestInit = {}) {
   });
   const data = await response.json();
   if (!response.ok)
-    throw new Error(data.message ?? 'Unable to load your mail.');
+    throw new MailApiError(
+      data.message ?? 'Unable to load your mail.',
+      response.status,
+      data.code,
+    );
   return data as T;
 }
 

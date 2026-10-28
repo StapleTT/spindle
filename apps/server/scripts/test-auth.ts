@@ -27,12 +27,14 @@ try {
             'apps/web/test/auth.browser.ts',
             'apps/web/test/mail.browser.ts',
             'apps/web/test/reader.browser.ts',
+            'apps/web/test/composer.browser.ts',
           ]
         : [
             'apps/server/test/auth.integration.ts',
             'apps/server/test/mail.integration.ts',
             'apps/server/test/reader.integration.ts',
             'apps/server/test/mail-actions.integration.ts',
+            'apps/server/test/drafts.integration.ts',
           ]),
     ],
     {
