@@ -2,7 +2,8 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { trimContentCache } from './content-cache.js';
 import type { ContentConfig } from './content-config.js';
-import { bodyUrl } from './content-server.js';
+import { attachmentUrl, bodyUrl } from './content-server.js';
+import type { AttachmentInfo } from './media.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import { transaction } from './store.js';
 import { mailViewCondition } from './view.js';
@@ -82,6 +83,15 @@ export function registerReaderRoutes(
         )
       ).rows[0];
       const state = !cached?.fresh ? 'missing' : cached.state;
+      const fetched = new Map<number, string>();
+      if (state === 'ready')
+        for (const row of (
+          await pool.query(
+            'SELECT position,state FROM mail_content_attachments WHERE user_id=$1 AND message_id=$2',
+            [owner, id],
+          )
+        ).rows)
+          fetched.set(row.position, row.state);
       return {
         message,
         previous: neighbors[0],
@@ -105,6 +115,15 @@ export function registerReaderRoutes(
                       )
                     : null,
                 expiresAt: cached.expires_at,
+                attachments: (cached.attachments as AttachmentInfo[]).map(
+                  ({ filename, contentType, size }, index) => ({
+                    index,
+                    filename,
+                    contentType,
+                    size,
+                    state: fetched.get(index) ?? 'missing',
+                  }),
+                ),
               }
             : {}),
           ...(state === 'failed'
@@ -167,6 +186,89 @@ export function registerReaderRoutes(
       return reply
         .code(result === 'pending' ? 202 : 200)
         .send({ state: result });
+    },
+  );
+
+  app.post<{
+    Params: { id: string; index: string };
+    Body: { retry?: boolean };
+  }>(
+    '/api/mail/messages/:id/attachments/:index',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['id', 'index'],
+          properties: {
+            id: { type: 'string', format: 'uuid' },
+            index: { type: 'string', pattern: '^(?:0|[1-9][0-9]?)$' },
+          },
+          additionalProperties: false,
+        },
+        body: {
+          type: 'object',
+          properties: { retry: { type: 'boolean' } },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!config)
+        return reply.code(503).send({
+          message: 'Attachment downloads need the isolated content server.',
+        });
+      const owner = request.mailUser ?? '';
+      const id = request.params.id;
+      const index = Number(request.params.index);
+      const result = await transaction(pool, async (db) => {
+        const content = (
+          await db.query(
+            `SELECT c.version,c.account_id FROM mail_content c WHERE c.user_id=$1 AND c.message_id=$2 AND c.state='ready'
+        AND c.sanitizer_version=${SANITIZER_VERSION} AND c.expires_at>clock_timestamp() AND jsonb_array_length(c.attachments)>$3
+        AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=c.message_id) FOR UPDATE`,
+            [owner, id, index],
+          )
+        ).rows[0];
+        if (!content) return null;
+        const existing = (
+          await db.query(
+            'SELECT state FROM mail_content_attachments WHERE user_id=$1 AND message_id=$2 AND position=$3',
+            [owner, id, index],
+          )
+        ).rows[0];
+        if (existing && (existing.state !== 'failed' || !request.body.retry))
+          return { state: existing.state as string, version: content.version };
+        await db.query(
+          'DELETE FROM mail_content_attachments WHERE user_id=$1 AND message_id=$2 AND position=$3',
+          [owner, id, index],
+        );
+        await db.query(
+          'INSERT INTO mail_content_attachments(user_id,account_id,message_id,position) VALUES($1,$2,$3,$4)',
+          [owner, content.account_id, id, index],
+        );
+        return { state: 'pending', version: content.version };
+      });
+      if (!result)
+        return reply.code(404).send({ message: 'Attachment not found.' });
+      if (result.state === 'ready')
+        return {
+          state: 'ready',
+          url: attachmentUrl(
+            config,
+            owner,
+            request.mailSession ?? '',
+            id,
+            result.version,
+            index,
+          ),
+        };
+      if (result.state === 'failed')
+        return {
+          state: 'failed',
+          message:
+            'This attachment could not be fetched. It may have moved, exceeded the 10 MiB attachment or cache limit, or the provider may be unavailable.',
+        };
+      return reply.code(202).send({ state: result.state });
     },
   );
 

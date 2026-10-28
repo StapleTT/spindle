@@ -5,7 +5,13 @@ import { test } from 'node:test';
 import { readContentConfig } from '../src/mail/content-config.js';
 import { signContentGrant, verifyContentGrant } from '../src/mail/grants.js';
 import { fetchRemoteImage } from '../src/mail/image-proxy.js';
-import { rasterType, remoteImageUrl } from '../src/mail/media.js';
+import {
+  attachmentDisposition,
+  listAttachments,
+  rasterType,
+  remoteImageUrl,
+  safeFilename,
+} from '../src/mail/media.js';
 import { MAX_RAW_BYTES, parseMessage } from '../src/mail/parse.js';
 import { renderMessage, sanitizeMessage } from '../src/mail/sanitize.js';
 import { testConfig } from './auth-fixture.js';
@@ -185,4 +191,84 @@ test('image proxy pins public addresses, drops ambient headers and revalidates r
   await assert.rejects(
     fetchRemoteImage('https://images.example.test/redirect'),
   );
+});
+
+test('attachment metadata and download names are bounded and inert', () => {
+  assert.equal(
+    safeFilename('../../etc/passwd', 'attachment'),
+    '_.._etc_passwd',
+  );
+  assert.equal(
+    safeFilename('invoice\u202Efdp.exe', 'attachment'),
+    'invoice_fdp.exe',
+  );
+  assert.equal(safeFilename(' .. ', 'attachment'), 'attachment');
+  assert.equal(Array.from(safeFilename('😀'.repeat(300), 'x')).length, 200);
+  assert.equal(
+    attachmentDisposition('a"b\\\r\né (1).txt'),
+    `attachment; filename="a_b____ (1).txt"; filename*=UTF-8''a%22b%5C%0D%0A%C3%A9%20%281%29.txt`,
+  );
+  const listed = listAttachments({
+    type: 'multipart/mixed',
+    childNodes: [
+      { part: '1', type: 'text/plain' },
+      {
+        part: '2',
+        type: 'image/png',
+        id: '<cid>',
+        parameters: { name: 'logo.png' },
+      },
+      {
+        part: '3',
+        type: 'application/pdf',
+        disposition: 'inline',
+        dispositionParameters: { filename: 'apple.pdf' },
+      },
+      {
+        part: '4',
+        type: 'Bad Type',
+        disposition: 'attachment',
+        encoding: 'base64',
+        size: 78,
+      },
+    ],
+  });
+  assert.deepEqual(listed, [
+    {
+      part: '3',
+      filename: 'apple.pdf',
+      contentType: 'application/pdf',
+      size: 0,
+    },
+    {
+      part: '4',
+      filename: 'attachment',
+      contentType: 'application/octet-stream',
+      size: 57,
+    },
+  ]);
+  assert.equal(
+    listAttachments({
+      type: 'application/pdf',
+      parameters: { name: 'only.pdf' },
+    })[0]?.part,
+    '1',
+  );
+  const grant = {
+    owner: 'u',
+    session: 's',
+    message: 'm',
+    version: 'v',
+    images: false,
+  };
+  for (const [value, valid] of [
+    [{ ...grant, kind: 'attachment', attachment: 0 }, true],
+    [{ ...grant, kind: 'attachment' }, false],
+    [{ ...grant, kind: 'attachment', attachment: 100 }, false],
+    [{ ...grant, kind: 'body', attachment: 0 }, false],
+  ] as const)
+    assert.equal(
+      Boolean(verifyContentGrant(signContentGrant(value, 'secret'), 'secret')),
+      valid,
+    );
 });

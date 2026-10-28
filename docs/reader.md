@@ -2,7 +2,7 @@
 
 Open any synchronized message to read its cached plain-text or formatted body. Previous/next follows the current account/folder view across list pages. **Back to message list** preserves that list's filters and page. Browser Back/Forward and message links use the URL fragment. Slow requests for a previously selected message cannot replace the current one.
 
-The reader remains read-only: fetching uses IMAP's non-mutating download and a read-only mailbox lock. Opening mail does not change its provider read flag. Attachments, threads and mail actions have separate implementation gates. Styles remain temporary pending Claude Design.
+The reader remains read-only: fetching uses IMAP's non-mutating download and a read-only mailbox lock. Opening mail does not change its provider read flag. Attachments are listed and downloaded on demand (see below); threads and mail actions have separate implementation gates. Styles remain temporary pending Claude Design.
 
 ## Local setup and hosted content origin
 
@@ -18,7 +18,7 @@ CONTENT_HOST=127.0.0.1
 CONTENT_PORT=3001
 ```
 
-Terminate TLS at the proxy and forward that hostname to the content listener. Expose only `/body` and `/image` there. The app origin must permit that exact content origin in its `frame-src` CSP; production frontend hosting must preserve the same policy as the API's configured Helmet policy. Keep app cookies host-only, without a parent Domain. Do not put the content listener behind a gateway that adds application cookies or shared authenticated caching. With no hosted content URL, plain text works and formatted reading reports its configuration prerequisite; it never falls back to rendering email HTML inside the app.
+Terminate TLS at the proxy and forward that hostname to the content listener. Expose only `/body`, `/image` and `/attachment` there. The app origin must permit that exact content origin in its `frame-src` CSP; production frontend hosting must preserve the same policy as the API's configured Helmet policy. Keep app cookies host-only, without a parent Domain. Do not put the content listener behind a gateway that adds application cookies or shared authenticated caching. With no hosted content URL, plain text works and formatted reading reports its configuration prerequisite; it never falls back to rendering email HTML inside the app.
 
 ## Retrieval and cache behavior
 
@@ -26,7 +26,7 @@ An authenticated POST records a deduplicated body request in Postgres. The exist
 
 Only the worker contacts IMAP for bodies. The API exposes missing/pending/ready/failed states; the reader polls while waiting and provides explicit retry after failure. Cached reading works while the provider or worker is unavailable. Failed retrieval never clears synchronized headers. Disconnect, deleted membership, lease takeover, changed cache version and account removal prevent stale fetches from recreating content.
 
-The first cache uses existing Postgres storage for bounded parsed text/HTML and supported inline/image blobs. It stores no raw MIME or arbitrary attachment files. Entries expire seven days after retrieval and are removed by the worker's dispatcher. Each user has a 128 MiB / 1,000-message cache budget; least-recently-accessed entries are evicted first. Eviction removes downloaded copies, preserving synchronized metadata and provider mail. Versions invalidate old content grants when an entry is replaced. Access does not extend its seven-day expiry.
+The first cache uses existing Postgres storage for bounded parsed text/HTML and supported inline/image blobs. It stores no raw MIME; attachment files are cached only after their owner requests a download. Entries expire seven days after retrieval and are removed by the worker's dispatcher. Each user has a 128 MiB / 1,000-message cache budget; least-recently-accessed entries are evicted first. Eviction removes downloaded copies, preserving synchronized metadata and provider mail. Versions invalidate old content grants when an entry is replaced. Access does not extend its seven-day expiry.
 
 Limits are enforced before publishing a ready entry:
 
@@ -37,6 +37,14 @@ Limits are enforced before publishing a ready entry:
 - Connection setup and connected IMAP work retain their existing timeouts; connected body work is closed after 45 seconds. Parser input, node count and output are bounded; HTML sanitization limits nesting to 40.
 
 Mail content is private application data in Postgres, without separate application-layer encryption for the body cache. Protect database access, volumes and backups accordingly. Hosted KMS/object-storage/operational acceptance remain release gates; this implementation adds no object-store service.
+
+## Attachments
+
+The body fetch records attachment metadata from the IMAP BODYSTRUCTURE: parts with `Content-Disposition: attachment`, named parts without a Content-ID (including Apple-style inline PDFs) and forwarded `message/rfc822` parts. Content-ID parts stay embedded body resources. At most 100 are listed. Names are decoded (RFC 2047/2231) and made safe: Unicode NFC, control/format characters (including bidi overrides used for extension spoofing) and path or shell-hostile characters become `_`, leading/trailing dots and spaces are removed and names are capped at 200 characters. Sizes are estimates from the encoded part size.
+
+**Download** posts a deduplicated request; the worker fetches only that MIME part with the same account lease, read-only lock and UIDVALIDITY check as bodies, decoding transfer encoding into at most 10 MiB. Ready files are cached in Postgres beside the body and count toward the 128 MiB / 1,000-message budget; expiry, eviction, body refetch and account removal delete them. The UI shows fetching, failed-with-retry and unavailable (no isolated content server) states and starts the download when the file is ready. Opening attachments does not change provider read flags.
+
+Downloads are served only by the content origin with a five-minute grant bound to the user, live session, message, cache version and attachment index. Responses are `application/octet-stream` with `Content-Disposition: attachment` (ASCII fallback plus UTF-8 `filename*`), `nosniff`, the sandboxing CSP and `no-store`; declared MIME types are displayed but never served. Downloads are rate limited to 60 per minute per user. Malware scanning/quarantine is not implemented: files are provider mail delivered as downloads, never rendered by Spindle. Hosted object storage remains a release gate.
 
 ## HTML and image isolation
 
@@ -59,6 +67,8 @@ Only PNG, JPEG, GIF and WebP signatures are served with their matching image typ
 Unit tests exercise hostile HTML, image URL/type restrictions, content-origin configuration, expiring grants, MIME charset/alternative/CID handling, MIME bounds, pinned image transport and redirect rejection. Postgres tests exercise lazy-fetch deduplication, cache reuse/expiry/retry, ownership, navigation, account lease loss, durable queue dispatch, image caching, session revocation during fetch, owner-scoped LRU eviction and disconnect during fetch. Chromium exercises the complete reader, history/page navigation, format/image controls, opaque sandbox origin, cookie separation, automatic tracking-load blocking, cached reading without a worker and stale-response protection.
 
 `0002_reader.sql` adds two cache tables and indexes; it never edits prior migrations or existing users/mail metadata. Apply it before starting updated processes. For application rollback, stop the updated API/content listener and worker, deploy the prior version and retain the cache tables; earlier code ignores them. Cached entries may safely expire or be evicted, and provider mail is unchanged. No destructive rollback or data reset is required.
+
+`0004_attachments.sql` adds an attachment-metadata column and an attachment cache table cascading from the body cache; it changes no existing rows. The content revision increases, so each previously cached body is fetched once more on open to collect attachment metadata. Apply the migration and deploy the API/content listener and worker together. For application rollback, keep the column and table; earlier code ignores them, although content cached by the newer revision is refetched by the older code.
 
 `0003_reader_styles.sql` adds a sanitizer-policy revision to existing cache rows. Previously cached HTML already lost its original styling, so reopening such a message requests one fresh provider fetch. Headers, accounts, sessions and provider messages are preserved. Pending requests remain deduplicated; grants for obsolete cached HTML/images are rejected. The worker marks newly parsed content with the current revision, so older workers cannot falsely label stripped HTML as current. Apply the migration and deploy the updated API/content listener and worker together. Keep the additive column for application rollback; earlier code ignores it.
 

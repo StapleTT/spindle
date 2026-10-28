@@ -187,3 +187,15 @@ button[aria-pressed="true"] {
 .signed-in > section > button {
   width: auto;
 }
+
+.attachments ul {
+  padding-left: 1.25rem;
+}
+
+.attachments li {
+  margin: 0.25rem 0;
+}
+
+.attachment-meta {
+  color: #5f6368;
+}

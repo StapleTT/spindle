@@ -7,7 +7,8 @@ export type ImageResource =
   | { kind: 'remote'; url: string }
   | { kind: 'inline'; cid: string };
 
-export const SANITIZER_VERSION = 2;
+// Cached content revision: bump when stored body/attachment metadata changes shape.
+export const SANITIZER_VERSION = 3;
 
 function stylesFrom(html: string) {
   const styles: string[] = [];

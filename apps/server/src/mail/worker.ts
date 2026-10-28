@@ -3,7 +3,12 @@ import type { PgBoss } from 'pg-boss';
 import { logger } from '../logger.js';
 import { type ContentJob, fetchMessageContent } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
+import { MAX_ATTACHMENTS } from './media.js';
 import { syncAccount } from './sync.js';
+
+// Body and attachment fetches take priority over another metadata pass.
+const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending'
+  UNION ALL SELECT 1 FROM mail_content_attachments WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1`;
 
 export async function startMailWorker(
   boss: PgBoss,
@@ -51,18 +56,30 @@ export async function startMailWorker(
         },
         { singletonKey: row.message_id },
       );
+    const attachments =
+      await pool.query(`SELECT t.user_id,t.account_id,t.message_id,t.position,c.version
+      FROM mail_content_attachments t JOIN mail_content c ON c.user_id=t.user_id AND c.message_id=t.message_id
+      WHERE t.state='pending' AND t.next_attempt_at<=clock_timestamp() ORDER BY t.next_attempt_at LIMIT 100`);
+    for (const row of attachments.rows)
+      await boss.send(
+        'mail-content',
+        {
+          userId: row.user_id,
+          accountId: row.account_id,
+          messageId: row.message_id,
+          version: row.version,
+          attachment: row.position,
+        },
+        { singletonKey: `${row.message_id}:${row.position}` },
+      );
     const due =
       await pool.query(`SELECT a.id,a.user_id FROM mail_accounts a JOIN users u ON u.id=a.user_id
       WHERE a.next_sync_at<=clock_timestamp() AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())
       AND u.email_verified ORDER BY a.next_sync_at LIMIT 100`);
     for (const account of due.rows) {
       if (
-        (
-          await pool.query(
-            "SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1",
-            [account.user_id, account.id],
-          )
-        ).rowCount
+        (await pool.query(contentPending, [account.user_id, account.id]))
+          .rowCount
       )
         continue;
       await boss.send(
@@ -92,10 +109,10 @@ export async function startMailWorker(
         throw new Error('Invalid mail job');
       if (
         (
-          await pool.query(
-            "SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND state='pending' LIMIT 1",
-            [job.data.userId, job.data.accountId],
-          )
+          await pool.query(contentPending, [
+            job.data.userId,
+            job.data.accountId,
+          ])
         ).rowCount
       )
         return;
@@ -115,7 +132,13 @@ export async function startMailWorker(
         job.data.userId.length > 128 ||
         ![job.data.accountId, job.data.messageId, job.data.version].every(
           (id) => typeof id === 'string' && uuid.test(id),
-        )
+        ) ||
+        (job.data.attachment !== undefined &&
+          !(
+            Number.isInteger(job.data.attachment) &&
+            job.data.attachment >= 0 &&
+            job.data.attachment < MAX_ATTACHMENTS
+          ))
       )
         throw new Error('Invalid content job');
       await fetchMessageContent(pool, keys, job.data);

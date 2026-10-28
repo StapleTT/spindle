@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +21,8 @@ import {
 } from '../../server/test/auth-fixture.js';
 import { imapFixture, imapPassword } from '../../server/test/imap-fixture.js';
 import {
+  attachmentBytes,
+  attachmentMail,
   newsletterHtml,
   readerMail,
   tinyPng,
@@ -79,6 +82,11 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       internaldate: new Date(Date.now() + i * 1000),
       flags: [],
     });
+  server.control.addMessage('Receipts', {
+    raw: attachmentMail(),
+    internaldate: new Date(),
+    flags: [],
+  });
   server.control.addMessage('Archive', {
     raw: readerMail('Archived reader'),
     internaldate: new Date(),
@@ -326,6 +334,55 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     );
+    const attached = (
+      await pool.query(
+        `SELECT m.id,b.id AS mailbox FROM mail_messages m JOIN mail_memberships mm ON mm.message_id=m.id
+        JOIN mailboxes b ON b.id=mm.mailbox_id WHERE m.user_id=$1 AND m.subject='Attachment mail'`,
+        [owner.id],
+      )
+    ).rows[0];
+    await page.evaluate(({ id, mailbox }) => {
+      window.location.hash = `mailbox=${mailbox}&message=${id}`;
+    }, attached);
+    await page
+      .getByRole('heading', { name: 'Attachment mail', exact: true })
+      .waitFor();
+    const attachments = page.getByRole('region', { name: 'Attachments' });
+    await attachments.getByText('résumé__evil.pdf', { exact: true }).waitFor();
+    await attachments.getByText(/^application\/pdf, /).waitFor();
+    await page.route(
+      '**/attachments/0',
+      (route) =>
+        route.fulfill({
+          status: 500,
+          contentType: 'application/json',
+          body: '{"message":"Simulated outage."}',
+        }),
+      { times: 1 },
+    );
+    await attachments
+      .getByRole('button', { name: 'Download résumé__evil.pdf' })
+      .click();
+    await attachments.getByText('Simulated outage.').waitFor();
+    const downloaded = page.waitForEvent('download');
+    await attachments.getByRole('button', { name: 'Retry download' }).click();
+    await attachments.getByText('Fetching attachment…').waitFor();
+    const download = await downloaded;
+    assert.equal(download.suggestedFilename(), 'résumé__evil.pdf');
+    assert.deepEqual(await readFile(await download.path()), attachmentBytes);
+    await attachments
+      .getByRole('button', { name: 'Download résumé__evil.pdf' })
+      .waitFor();
+    assert.equal(
+      await page.evaluate(() => window.location.origin),
+      new URL(config.appUrl).origin,
+    );
+    await page.evaluate((id) => {
+      window.location.hash = `message=${id}`;
+    }, next);
+    await page
+      .getByRole('heading', { name: 'Reader message 49', exact: true })
+      .waitFor();
     stop?.();
     stop = undefined;
     await boss.stop({ graceful: true, timeout: 10000 });

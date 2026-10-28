@@ -35,3 +35,12 @@ export function readerMail(
 ) {
   return `From: Reader Sender <sender@example.test>\r\nTo: Reader Recipient <recipient@example.test>\r\nSubject: ${subject}\r\nMessage-ID: <same-reader-id@example.test>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=related\r\n\r\n--related\r\nContent-Type: multipart/alternative; boundary=alternative\r\n\r\n--alternative\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${plain}\r\n--alternative\r\nContent-Type: text/html; charset=utf-8\r\n\r\n${html}\r\n--alternative--\r\n--related\r\nContent-Type: image/png\r\nContent-ID: <inline@example.test>\r\nContent-Transfer-Encoding: base64\r\n\r\n${tinyPng.toString('base64')}\r\n--related--\r\n`;
 }
+
+export const attachmentBytes = Buffer.concat([
+  Buffer.from(`%PDF-1.4\n${'synthetic attachment\n'.repeat(200)}`),
+  Buffer.from([0, 255, 1, 254]),
+]);
+
+export function attachmentMail() {
+  return `From: Reader Sender <sender@example.test>\r\nTo: Reader Recipient <recipient@example.test>\r\nSubject: Attachment mail\r\nMessage-ID: <attachment-mail@example.test>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=mixed\r\n\r\n--mixed\r\nContent-Type: multipart/related; boundary=related\r\n\r\n--related\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>See attached</p><img src="cid:inline@example.test">\r\n--related\r\nContent-Type: image/png; name=logo.png\r\nContent-ID: <inline@example.test>\r\nContent-Transfer-Encoding: base64\r\n\r\n${tinyPng.toString('base64')}\r\n--related--\r\n--mixed\r\nContent-Type: application/pdf; name="report.pdf"\r\nContent-Disposition: attachment; filename*=UTF-8''r%C3%A9sum%C3%A9%E2%80%AE%2Fevil.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\n${attachmentBytes.toString('base64').replace(/.{76}/g, '$&\r\n')}\r\n--mixed\r\nContent-Type: message/rfc822\r\n\r\nFrom: Inner <inner@example.test>\r\nSubject: Forwarded\r\n\r\nForwarded body\r\n--mixed--\r\n`;
+}

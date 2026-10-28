@@ -1,3 +1,5 @@
+import type { MessageStructureObject } from 'imapflow';
+
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export function rasterType(data: Buffer) {
@@ -33,4 +35,77 @@ export function remoteImageUrl(value: string) {
   } catch {
     return null;
   }
+}
+
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MAX_ATTACHMENTS = 100;
+
+export type AttachmentInfo = {
+  part: string;
+  filename: string;
+  contentType: string;
+  size: number;
+};
+
+export function safeFilename(value: string | undefined, fallback: string) {
+  const name = Array.from(
+    (value ?? '')
+      .normalize('NFC')
+      // Controls, bidi overrides (extension spoofing) and path/shell-hostile characters.
+      .replace(/[\p{Cc}\p{Cf}/\\:*?"<>|]/gu, '_')
+      .replace(/^[\s.]+|[\s.]+$/g, ''),
+  )
+    .slice(0, 200)
+    .join('');
+  return name || fallback;
+}
+
+export function listAttachments(root: MessageStructureObject | undefined) {
+  const found: AttachmentInfo[] = [];
+  const visit = (node: MessageStructureObject, depth: number) => {
+    if (found.length >= MAX_ATTACHMENTS || depth > 20) return;
+    const type = node.type.toLowerCase();
+    if (node.childNodes?.length && type !== 'message/rfc822') {
+      for (const child of node.childNodes) visit(child, depth + 1);
+      return;
+    }
+    const name = node.dispositionParameters?.filename ?? node.parameters?.name;
+    // Content-ID parts are embedded body resources unless explicitly attached.
+    if (
+      node.disposition?.toLowerCase() !== 'attachment' &&
+      type !== 'message/rfc822' &&
+      (!name || node.id)
+    )
+      return;
+    const size = Math.max(0, Math.floor(node.size ?? 0));
+    found.push({
+      // A single-part message has no part number; IMAP addresses its body as part 1.
+      part: node.part ?? '1',
+      filename: safeFilename(
+        name,
+        type === 'message/rfc822' ? 'message.eml' : 'attachment',
+      ),
+      contentType: /^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,64}$/.test(
+        type,
+      )
+        ? type
+        : 'application/octet-stream',
+      // Base64 is normally wrapped as 76 characters plus CRLF per 57 decoded bytes.
+      size:
+        node.encoding?.toLowerCase() === 'base64'
+          ? Math.floor((size * 57) / 78)
+          : size,
+    });
+  };
+  if (root) visit(root, 0);
+  return found;
+}
+
+export function attachmentDisposition(filename: string) {
+  const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+  const encoded = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }

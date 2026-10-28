@@ -3,6 +3,13 @@ import { mailApi } from './mail-api.js';
 import { mailHref } from './mail-navigation.js';
 
 type Person = { name: string; address: string };
+type Attachment = {
+  index: number;
+  filename: string;
+  contentType: string;
+  size: number;
+  state: 'missing' | 'pending' | 'ready' | 'failed';
+};
 type Detail = {
   message: {
     id: string;
@@ -23,6 +30,7 @@ type Detail = {
     imageCount?: number;
     htmlUrl?: string | null;
     message?: string;
+    attachments?: Attachment[];
   };
 };
 
@@ -32,6 +40,123 @@ function people(values: Person[]) {
       person.name ? `${person.name} <${person.address}>` : person.address,
     )
     .join(', ');
+}
+
+function formatSize(bytes: number) {
+  const [value, unit] =
+    bytes < 1024
+      ? [bytes, 'byte']
+      : bytes < 1024 * 1024
+        ? [bytes / 1024, 'kilobyte']
+        : [bytes / 1024 / 1024, 'megabyte'];
+  return new Intl.NumberFormat(undefined, {
+    style: 'unit',
+    unit,
+    unitDisplay: 'short',
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function AttachmentItem({
+  message,
+  attachment,
+  configured,
+}: {
+  message: string;
+  attachment: Attachment;
+  configured: boolean;
+}) {
+  const [state, setState] = useState<Attachment['state'] | 'error'>(
+    attachment.state,
+  );
+  const [error, setError] = useState('');
+  const request = useRef<AbortController | null>(null);
+
+  // Polls until the worker finishes; opens the short-lived download link when asked.
+  async function fetchFile(retry: boolean, open: boolean) {
+    request.current?.abort();
+    const controller = new AbortController();
+    request.current = controller;
+    setState('pending');
+    setError('');
+    let body = JSON.stringify({ retry });
+    try {
+      for (;;) {
+        const result = await mailApi<{
+          state: Attachment['state'];
+          url?: string;
+          message?: string;
+        }>(`messages/${message}/attachments/${attachment.index}`, {
+          method: 'POST',
+          body,
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        body = '{}';
+        if (result.state === 'ready') {
+          setState('ready');
+          if (open && result.url) window.location.assign(result.url);
+          return;
+        }
+        if (result.state === 'failed') {
+          setState('failed');
+          setError(result.message ?? 'This attachment could not be fetched.');
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (controller.signal.aborted) return;
+      }
+    } catch (failure) {
+      if (controller.signal.aborted) return;
+      setState('error');
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : 'Unable to fetch this attachment.',
+      );
+    }
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: resume once per mounted attachment
+  useEffect(() => {
+    if (configured && attachment.state === 'pending')
+      void fetchFile(false, false);
+    return () => request.current?.abort();
+  }, []);
+
+  return (
+    <li>
+      <span className="attachment-name">{attachment.filename}</span>{' '}
+      <span className="attachment-meta">
+        {attachment.contentType}, {formatSize(attachment.size)}
+      </span>{' '}
+      {!configured ? (
+        <span>Unavailable: downloads need the isolated content server.</span>
+      ) : state === 'pending' ? (
+        <span role="status">Fetching attachment…</span>
+      ) : state === 'failed' || state === 'error' ? (
+        <>
+          <span role="alert" className="error">
+            {error}
+          </span>{' '}
+          <button
+            type="button"
+            onClick={() => void fetchFile(state === 'failed', true)}
+          >
+            Retry download
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          aria-label={`Download ${attachment.filename}`}
+          onClick={() => void fetchFile(false, true)}
+        >
+          Download
+        </button>
+      )}
+    </li>
+  );
 }
 
 export function Reader({
@@ -221,6 +346,21 @@ export function Reader({
         </p>
       ) : (
         <>
+          {Boolean(detail.content.attachments?.length) && (
+            <section className="attachments" aria-label="Attachments">
+              <h3>Attachments</h3>
+              <ul>
+                {detail.content.attachments?.map((attachment) => (
+                  <AttachmentItem
+                    key={`${id}:${attachment.index}`}
+                    message={id}
+                    attachment={attachment}
+                    configured={detail.content.configured}
+                  />
+                ))}
+              </ul>
+            </section>
+          )}
           {detail.content.hasHtml && (
             <fieldset className="account-actions">
               <legend>Body format</legend>

@@ -9,7 +9,12 @@ import {
   verifyContentGrant,
 } from './grants.js';
 import { fetchRemoteImage } from './image-proxy.js';
-import { MAX_IMAGE_BYTES, rasterType } from './media.js';
+import {
+  type AttachmentInfo,
+  attachmentDisposition,
+  MAX_IMAGE_BYTES,
+  rasterType,
+} from './media.js';
 import {
   type ImageResource,
   renderMessage,
@@ -24,6 +29,7 @@ export type CachedContent = {
   version: string;
   html: string;
   resources: ImageResource[];
+  attachments: AttachmentInfo[];
 };
 
 async function grantedContent(pool: Pool, grant: ContentGrant) {
@@ -52,6 +58,29 @@ export function bodyUrl(
     config.secret,
   );
   return `${config.origin}/body?token=${token}`;
+}
+
+export function attachmentUrl(
+  config: ContentConfig,
+  owner: string,
+  session: string,
+  message: string,
+  version: string,
+  attachment: number,
+) {
+  const token = signContentGrant(
+    {
+      owner,
+      session,
+      message,
+      version,
+      images: false,
+      kind: 'attachment',
+      attachment,
+    },
+    config.secret,
+  );
+  return `${config.origin}/attachment?token=${token}`;
 }
 
 export function buildContentApp(
@@ -148,6 +177,43 @@ export function buildContentApp(
         .send(
           `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.55 system-ui,sans-serif;margin:0;color:#202124;background:#fff;overflow-wrap:anywhere}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`,
         );
+    },
+  );
+  app.get<{ Querystring: { token: string } }>(
+    '/attachment',
+    { schema: { querystring: query } },
+    async (request, reply) => {
+      const grant = verifyContentGrant(request.query.token, config.secret);
+      if (grant?.kind !== 'attachment' || grant.attachment === undefined)
+        return reply
+          .code(403)
+          .type('text/plain')
+          .send('Download permission expired. Reopen the message.');
+      const content = await grantedContent(pool, grant);
+      const info = content?.attachments[grant.attachment];
+      if (!info)
+        return reply
+          .code(404)
+          .type('text/plain')
+          .send('Attachment is no longer available.');
+      if (!(await consumeLimit(pool, grant.owner, 'content-attachment', 60)))
+        return reply.code(429).type('text/plain').send('Too many downloads.');
+      const file = (
+        await pool.query<{ data: Buffer }>(
+          `SELECT data FROM mail_content_attachments WHERE user_id=$1 AND message_id=$2 AND position=$3 AND state='ready'`,
+          [grant.owner, grant.message, grant.attachment],
+        )
+      ).rows[0];
+      if (!file)
+        return reply
+          .code(404)
+          .type('text/plain')
+          .send('Attachment is no longer available.');
+      // Never let the browser render or sniff hostile files: always a download.
+      return reply
+        .type('application/octet-stream')
+        .header('content-disposition', attachmentDisposition(info.filename))
+        .send(file.data);
     },
   );
   app.get<{ Querystring: { token: string; index?: string } }>(

@@ -16,12 +16,18 @@ import { readMailKeys } from '../src/mail/credentials.js';
 import { signContentGrant } from '../src/mail/grants.js';
 import { connectImap } from '../src/mail/imap.js';
 import { MAX_RAW_BYTES } from '../src/mail/parse.js';
+import { SANITIZER_VERSION } from '../src/mail/sanitize.js';
 import { transaction } from '../src/mail/store.js';
 import { syncAccount } from '../src/mail/sync.js';
 import { startMailWorker } from '../src/mail/worker.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
 import { imapFixture, imapPassword } from './imap-fixture.js';
-import { readerMail, tinyPng } from './reader-fixture.js';
+import {
+  attachmentBytes,
+  attachmentMail,
+  readerMail,
+  tinyPng,
+} from './reader-fixture.js';
 
 test('private cached message reader, isolated HTML and image permission', {
   skip: !process.env.TEST_DATABASE_URL,
@@ -80,6 +86,11 @@ test('private cached message reader, isolated HTML and image permission', {
   server.control.addMessage('INBOX', {
     raw: readerMail('Reader newest'),
     internaldate: new Date('2026-10-27T12:00:02Z'),
+    flags: [],
+  });
+  server.control.addMessage('Receipts', {
+    raw: attachmentMail(),
+    internaldate: new Date('2026-10-27T12:00:04Z'),
     flags: [],
   });
   server.control.addMessage('Archive', {
@@ -418,7 +429,7 @@ test('private cached message reader, isolated HTML and image permission', {
             [oldest],
           )
         ).rows[0].sanitizer_version,
-        2,
+        SANITIZER_VERSION,
       );
       blockedUrl = ready.content.htmlUrl;
     },
@@ -692,6 +703,191 @@ test('private cached message reader, isolated HTML and image permission', {
         ).rowCount,
         1,
       );
+    },
+  );
+
+  await t.test(
+    'attachments are listed, fetched on demand and downloaded only by their owner',
+    async () => {
+      const receipts = (await request('mailboxes'))
+        .json()
+        .mailboxes.find((box: { path: string }) => box.path === 'Receipts');
+      const id = (await request(`messages?mailbox=${receipts.id}`)).json()
+        .messages[0].id;
+      const detail = `messages/${id}?mailbox=${receipts.id}`;
+      await request(`messages/${id}/content`, 'POST', {});
+      await fetchMessageContent(pool, keys, await job(id));
+      const listed = (await request(detail)).json().content;
+      assert.equal(listed.state, 'ready');
+      assert.deepEqual(
+        listed.attachments.map(
+          (item: { filename: string; contentType: string; state: string }) => [
+            item.filename,
+            item.contentType,
+            item.state,
+          ],
+        ),
+        [
+          ['résumé__evil.pdf', 'application/pdf', 'missing'],
+          ['message.eml', 'message/rfc822', 'missing'],
+        ],
+      );
+      assert.ok(
+        Math.abs(listed.attachments[0].size - attachmentBytes.length) <
+          attachmentBytes.length / 100,
+      );
+      const path = `messages/${id}/attachments/0`;
+      assert.equal((await request(path, 'POST', {}, '')).statusCode, 401);
+      assert.equal(
+        (await request(path, 'POST', {}, other.cookie)).statusCode,
+        404,
+      );
+      assert.equal(
+        (await request(path, 'POST', {}, owner.cookie, 'https://attacker.test'))
+          .statusCode,
+        403,
+      );
+      assert.equal(
+        (await request(`messages/${id}/attachments/2`, 'POST', {})).statusCode,
+        404,
+      );
+      assert.equal(
+        (await request(`messages/${id}/attachments/-1`, 'POST', {})).statusCode,
+        400,
+      );
+      const replies = await Promise.all([
+        request(path, 'POST', {}),
+        request(path, 'POST', {}),
+      ]);
+      assert.deepEqual(
+        replies.map((reply) => reply.statusCode),
+        [202, 202],
+      );
+      const pending = { ...(await job(id)), attachment: 0 };
+      await fetchMessageContent(pool, keys, pending, async () => {
+        throw new Error('Provider offline');
+      });
+      const failed = (await request(path, 'POST', {})).json();
+      assert.equal(failed.state, 'failed');
+      assert.match(failed.message, /could not be fetched/);
+      assert.equal(
+        (await request(detail)).json().content.attachments[0].state,
+        'failed',
+      );
+      assert.equal(
+        (await request(path, 'POST', { retry: true })).statusCode,
+        202,
+      );
+      const before = (
+        await pool.query(
+          'SELECT byte_size FROM mail_content WHERE message_id=$1',
+          [id],
+        )
+      ).rows[0].byte_size;
+      await fetchMessageContent(pool, keys, pending);
+      assert.ok(
+        !server.control.getMessage('Receipts', 1).flags.includes('\\Seen'),
+      );
+      assert.equal(
+        (
+          await pool.query(
+            'SELECT byte_size FROM mail_content WHERE message_id=$1',
+            [id],
+          )
+        ).rows[0].byte_size,
+        before + attachmentBytes.length,
+      );
+      const ready = (await request(path, 'POST', {})).json();
+      assert.equal(ready.state, 'ready');
+      const download = await contentRequest(ready.url);
+      assert.equal(download.statusCode, 200);
+      assert.deepEqual(download.rawPayload, attachmentBytes);
+      assert.equal(
+        download.headers['content-type'],
+        'application/octet-stream',
+      );
+      assert.equal(
+        download.headers['content-disposition'],
+        `attachment; filename="r_sum___evil.pdf"; filename*=UTF-8''r%C3%A9sum%C3%A9__evil.pdf`,
+      );
+      assert.equal(download.headers['x-content-type-options'], 'nosniff');
+      assert.match(
+        String(download.headers['content-security-policy']),
+        /sandbox/,
+      );
+      assert.equal(download.headers['set-cookie'], undefined);
+      const version = (await job(id)).version;
+      for (const [grant, status] of [
+        [{ owner: other.id, session: 'stolen' }, 404],
+        [{ owner: owner.id, session: 'stolen' }, 404],
+      ] as const)
+        assert.equal(
+          (
+            await contentRequest(
+              `${config.origin}/attachment?token=${signContentGrant(
+                {
+                  ...grant,
+                  message: id,
+                  version,
+                  kind: 'attachment',
+                  images: false,
+                  attachment: 0,
+                },
+                config.secret,
+              )}`,
+            )
+          ).statusCode,
+          status,
+        );
+      const bodyToken = new URL((await request(detail)).json().content.htmlUrl)
+        .search;
+      assert.equal(
+        (await contentRequest(`${config.origin}/attachment${bodyToken}`))
+          .statusCode,
+        403,
+      );
+      await request(`messages/${id}/attachments/1`, 'POST', {});
+      const boss = new PgBoss({ connectionString });
+      let stop: (() => void) | undefined;
+      try {
+        await boss.start();
+        stop = await startMailWorker(boss, pool, keys);
+        const deadline = Date.now() + 15000;
+        while (
+          Date.now() < deadline &&
+          (await request(detail)).json().content.attachments[1].state !==
+            'ready'
+        )
+          await new Promise((resolve) => setTimeout(resolve, 100));
+      } finally {
+        stop?.();
+        await boss.stop({ graceful: true, timeout: 10000 });
+      }
+      const forwarded = await contentRequest(
+        (await request(`messages/${id}/attachments/1`, 'POST', {})).json().url,
+      );
+      assert.match(forwarded.body, /Subject: Forwarded/);
+      assert.match(
+        String(forwarded.headers['content-disposition']),
+        /filename="message\.eml"/,
+      );
+      await pool.query(
+        "UPDATE mail_content SET state='failed' WHERE message_id=$1",
+        [id],
+      );
+      await request(`messages/${id}/content`, 'POST', { retry: true });
+      assert.equal(
+        Number(
+          (
+            await pool.query(
+              'SELECT count(*) FROM mail_content_attachments WHERE message_id=$1',
+              [id],
+            )
+          ).rows[0].count,
+        ),
+        0,
+      );
+      assert.equal((await contentRequest(ready.url)).statusCode, 404);
     },
   );
 

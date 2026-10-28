@@ -29,6 +29,13 @@
       "when": 1793130000000,
       "tag": "0003_reader_styles",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793140000000,
+      "tag": "0004_attachments",
+      "breakpoints": true
     }
   ]
 }
