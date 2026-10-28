@@ -9,6 +9,7 @@ import { PgBoss } from 'pg-boss';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { migrateDatabase } from '../../server/src/db/migrate.js';
+import { applyMailActions } from '../../server/src/mail/actions.js';
 import { readContentConfig } from '../../server/src/mail/content-config.js';
 import { buildContentApp } from '../../server/src/mail/content-server.js';
 import { readMailKeys } from '../../server/src/mail/credentials.js';
@@ -528,6 +529,94 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     stop = undefined;
     await boss.stop({ graceful: true, timeout: 10000 });
     workerStopped = true;
+    // A provider failure arrives after leaving the reader, survives a reload,
+    // and can be retried from the persistent shell without reopening the mail.
+    await pool.query('DELETE FROM mail_request_limits WHERE user_id=$1', [
+      owner.id,
+    ]);
+    const feedbackMessage = await subjectId('Reader message 42');
+    await page.evaluate((id) => {
+      window.location.hash = `message=${id}`;
+    }, feedbackMessage);
+    await page
+      .getByRole('heading', { name: 'Reader message 42', exact: true })
+      .waitFor();
+    await page
+      .getByRole('button', { name: 'Mark as read', exact: true })
+      .click();
+    await page
+      .getByRole('link', { name: 'Back to message list', exact: true })
+      .click();
+    const feedbackRow = page
+      .getByRole('list', { name: 'Recent actions' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Reader message 42' });
+    await feedbackRow.getByText('Pending:', { exact: true }).waitFor();
+    const applyFeedback = async (offline = false) => {
+      await pool.query(
+        "UPDATE mail_actions SET next_attempt_at=now(),undo_until=now() WHERE user_id=$1 AND state='pending'",
+        [owner.id],
+      );
+      await applyMailActions(
+        pool,
+        keys,
+        owner.id,
+        accountId,
+        offline
+          ? async () => {
+              throw new Error('Synthetic outage');
+            }
+          : undefined,
+      );
+    };
+    for (let attempt = 0; attempt < 5; attempt++) await applyFeedback(true);
+    await feedbackRow.getByText('Failed:', { exact: true }).waitFor();
+    await page.reload();
+    await feedbackRow.getByText('Failed:', { exact: true }).waitFor();
+    await feedbackRow.getByRole('button', { name: /^Retry:/ }).click();
+    await feedbackRow.getByText('Pending:', { exact: true }).waitFor();
+    await applyFeedback();
+    await feedbackRow.getByText('Completed:', { exact: true }).waitFor();
+    const local = (
+      await pool.query('SELECT uid FROM mail_memberships WHERE message_id=$1', [
+        feedbackMessage,
+      ])
+    ).rows[0];
+    assert.ok(
+      server.control
+        .getMessage('INBOX', Number(local.uid))
+        .flags.includes('\\Seen'),
+    );
+    await feedbackRow.getByRole('button', { name: /^Dismiss:/ }).click();
+    await feedbackRow.waitFor({ state: 'detached' });
+    await page.reload();
+    assert.equal(await feedbackRow.count(), 0);
+
+    // A change made in another mail client is retained as a conflict in the bar.
+    await page
+      .getByRole('button', { name: 'Archive “Reader message 41”', exact: true })
+      .click();
+    server.control.moveMessages('INBOX', [42], 'Receipts');
+    await applyFeedback();
+    const conflictRow = page
+      .getByRole('list', { name: 'Recent actions' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Reader message 41' });
+    await conflictRow.getByText('Conflict:', { exact: true }).waitFor();
+    assert.equal(
+      await conflictRow.getByRole('button', { name: /^Retry:/ }).count(),
+      0,
+    );
+    await page.reload();
+    await conflictRow.getByText('Conflict:', { exact: true }).waitFor();
+    await conflictRow.getByRole('button', { name: /^Dismiss:/ }).click();
+    await conflictRow.waitFor({ state: 'detached' });
+    await page.evaluate((id) => {
+      window.location.hash = `message=${id}`;
+    }, next);
+    await page
+      .getByRole('heading', { name: 'Reader message 49', exact: true })
+      .waitFor();
     server.control.updateUser('testuser', {
       password: 'provider-now-unavailable',
     });

@@ -40,6 +40,25 @@ export async function refreshPendingFolder(
   );
 }
 
+// User-facing outcomes for stored error codes; provider diagnostics are never stored.
+export const actionErrors: Record<string, string> = {
+  provider_unavailable:
+    'The provider did not confirm this change after several attempts. It may already have happened; sync will check your mail.',
+  move_unsupported:
+    'This mail server supports neither MOVE nor UIDPLUS, so Spindle will not move messages on it.',
+  message_missing:
+    'The original message is no longer in its folder. It may have been moved or deleted in another mail client, or by an earlier attempt. Sync will check your mail.',
+  message_changed:
+    'Its folder was reset at the provider, so Spindle could not identify it safely.',
+  folder_missing: 'The destination folder no longer exists.',
+  source_missing:
+    'The original folder no longer exists. Sync will check your mail.',
+  flags_changed:
+    'Another mail client changed the read state before confirmation. Sync will check your mail.',
+  move_unconfirmed:
+    'The provider did not confirm the move. It may already have happened; sync will check your mail. Review its current folder before moving it again.',
+};
+
 type Db = Pick<PoolClient, 'query'>;
 type Folder = { id: string; path: string };
 
@@ -68,7 +87,7 @@ export async function restoreDestination(
     await db.query<Folder>(
       `SELECT b.id,b.path FROM mail_actions a JOIN mailboxes b
       ON b.user_id=a.user_id AND b.account_id=a.account_id AND b.id=a.source_mailbox_id
-      WHERE a.user_id=$1 AND a.message_id=$2 AND a.target_mailbox_id=$3 AND a.state<>'failed'
+      WHERE a.user_id=$1 AND a.message_id=$2 AND a.target_mailbox_id=$3 AND a.state IN ('pending','applied')
       ORDER BY a.seq DESC LIMIT 1`,
       [owner, message, current.id],
     )
@@ -119,7 +138,7 @@ export async function moveDestination(
 }
 
 type Settled = {
-  message_id: string;
+  message_id: string | null;
   kind: ActionKind;
   seq: string;
   state: string;
@@ -129,7 +148,7 @@ export async function settle(
   db: PoolClient,
   owner: string,
   ids: string[],
-  state: 'applied' | 'failed' | 'cancelled',
+  state: 'applied' | 'failed' | 'cancelled' | 'conflict',
   code: string | null,
 ) {
   const rows = (
@@ -140,6 +159,8 @@ export async function settle(
     )
   ).rows;
   for (const row of rows) {
+    // A deleted message has no local state left to reconcile.
+    if (!row.message_id) continue;
     // Applied read state is now provider truth; a failed or undone change is reverted locally.
     // Either way, a newer read action for the same message owns the local state.
     if (row.kind === 'read' || row.kind === 'unread')
@@ -165,9 +186,11 @@ export async function settle(
 type PendingAction = {
   id: string;
   kind: ActionKind;
-  message_id: string;
+  message_id: string | null;
   target_mailbox_id: string | null;
   target_path: string | null;
+  due: boolean;
+  error_code: string | null;
 };
 
 export async function applyMailActions(
@@ -185,13 +208,18 @@ export async function applyMailActions(
   try {
     const actions = (
       await pool.query<PendingAction>(
-        `SELECT a.id,a.kind,a.message_id,a.target_mailbox_id,t.path AS target_path FROM mail_actions a
+        `SELECT a.id,a.kind,a.message_id,a.target_mailbox_id,a.error_code,t.path AS target_path,
+        a.next_attempt_at<=clock_timestamp() AS due FROM mail_actions a
         LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.account_id=a.account_id AND t.id=a.target_mailbox_id
-        WHERE a.user_id=$1 AND a.account_id=$2 AND a.state='pending' AND a.next_attempt_at<=clock_timestamp()
+        WHERE a.user_id=$1 AND a.account_id=$2 AND a.state='pending'
         ORDER BY a.seq LIMIT 50`,
         [owner, accountId],
       )
     ).rows;
+    // A newer intent must wait for an older intent's backoff/undo deadline;
+    // otherwise a redelivery could overwrite the user's later choice.
+    const waiting = actions.findIndex((action) => !action.due);
+    if (waiting !== -1) actions.splice(waiting);
     if (!actions.length) return;
     // Claiming is the dispatch point: an undo that committed first leaves the row unclaimed.
     const claimed = await withLease(pool, account, (db) =>
@@ -205,13 +233,23 @@ export async function applyMailActions(
     for (const row of claimed.rows) remaining.add(row.id);
     const finish = async (
       id: string,
-      state: 'applied' | 'failed',
+      state: 'applied' | 'failed' | 'conflict',
       code: string | null = null,
       record?: (db: PoolClient) => Promise<unknown>,
     ) => {
       await withLease(pool, account, async (db) => {
         await record?.(db);
         await settle(db, owner, [id], state, code);
+        if (state !== 'applied') {
+          await db.query(
+            'UPDATE mailboxes SET last_synced_at=NULL WHERE user_id=$1 AND account_id=$2',
+            [owner, accountId],
+          );
+          await db.query(
+            'UPDATE mail_accounts SET next_sync_at=clock_timestamp() WHERE user_id=$1 AND id=$2',
+            [owner, accountId],
+          );
+        }
       });
       remaining.delete(id);
     };
@@ -231,12 +269,19 @@ export async function applyMailActions(
           [owner, accountId, action.message_id],
         )
       ).rows[0];
+      // Another client moved or deleted the message, or removed the destination, first.
       if (!at) {
-        await finish(action.id, 'failed', 'message_changed');
+        await finish(action.id, 'conflict', 'message_missing');
         continue;
       }
-      if (at.mailbox_id === action.target_mailbox_id) {
-        await finish(action.id, 'applied');
+      if (moveKinds.includes(action.kind) && !action.target_path) {
+        await finish(action.id, 'conflict', 'folder_missing');
+        continue;
+      }
+      // A crash after sending a move may leave an unacknowledged COPY/DELETE.
+      // Repeating it could create a second copy, so reconcile instead.
+      if (action.error_code === 'move_unconfirmed') {
+        await finish(action.id, 'conflict', 'move_unconfirmed');
         continue;
       }
       if (!client) {
@@ -248,6 +293,22 @@ export async function applyMailActions(
         timer = setTimeout(() => opened.close(), 45000);
       }
       const active = client;
+      // Local metadata can lag other clients. Check provider folders and the exact
+      // UID before STORE/MOVE: IMAP may acknowledge a nonexistent UID as a no-op.
+      const folders = (await active.list()).filter(
+        (box) => !box.flags.has('\\Noselect'),
+      );
+      if (!folders.some((box) => box.path === at.path)) {
+        await finish(action.id, 'conflict', 'source_missing');
+        continue;
+      }
+      if (
+        action.target_path &&
+        !folders.some((box) => box.path === action.target_path)
+      ) {
+        await finish(action.id, 'conflict', 'folder_missing');
+        continue;
+      }
       // Without MOVE or UIDPLUS the fallback EXPUNGE would also remove other clients' \Deleted mail.
       if (
         action.target_path &&
@@ -263,16 +324,39 @@ export async function applyMailActions(
           String(active.mailbox ? active.mailbox.uidValidity : '') !==
           at.uid_validity
         ) {
-          await finish(action.id, 'failed', 'message_changed');
+          await finish(action.id, 'conflict', 'message_changed');
+          continue;
+        }
+        const present = await active.fetchOne(
+          at.uid,
+          { uid: true },
+          { uid: true },
+        );
+        if (!present) {
+          await finish(action.id, 'conflict', 'message_missing');
+          continue;
+        }
+        if (at.mailbox_id === action.target_mailbox_id) {
+          await finish(action.id, 'applied');
           continue;
         }
         if (action.target_path && action.target_mailbox_id) {
           const target = action.target_mailbox_id;
+          await withLease(pool, account, (db) =>
+            db.query(
+              `UPDATE mail_actions SET error_code='move_unconfirmed' WHERE user_id=$1 AND id=$2 AND state='pending'`,
+              [owner, action.id],
+            ),
+          );
           const moved = await active.messageMove(at.uid, action.target_path, {
             uid: true,
           });
           if (!moved) throw new Error('Provider rejected move');
           const uid = moved.uidMap?.get(Number(at.uid));
+          if (moved.uidMap && !uid) {
+            await finish(action.id, 'conflict', 'message_missing');
+            continue;
+          }
           const validity = moved.uidValidity ? String(moved.uidValidity) : '';
           await finish(action.id, 'applied', null, async (db) => {
             if (uid && validity) {
@@ -317,6 +401,22 @@ export async function applyMailActions(
                 uid: true,
               });
         if (!stored) throw new Error('Provider rejected flag change');
+        const confirmed = await active.fetchOne(
+          at.uid,
+          { flags: true },
+          { uid: true },
+        );
+        if (!confirmed) {
+          await finish(action.id, 'conflict', 'message_missing');
+          continue;
+        }
+        if (
+          Boolean(confirmed.flags?.has('\\Seen')) !==
+          (action.kind === 'read')
+        ) {
+          await finish(action.id, 'conflict', 'flags_changed');
+          continue;
+        }
         await finish(action.id, 'applied');
       } finally {
         lock.release();
@@ -329,10 +429,24 @@ export async function applyMailActions(
         await db.query<{ id: string; attempts: number }>(
           `UPDATE mail_actions SET attempts=attempts+1,
           next_attempt_at=clock_timestamp()+make_interval(secs=>15*power(2,attempts))
-          WHERE user_id=$1 AND id=ANY($2::uuid[]) AND state='pending' RETURNING id,attempts`,
+          WHERE user_id=$1 AND id=ANY($2::uuid[]) AND state='pending' AND error_code IS DISTINCT FROM 'move_unconfirmed' RETURNING id,attempts`,
           [owner, [...remaining]],
         )
       ).rows.filter((row) => row.attempts >= 5);
+      const uncertain = (
+        await db.query<{ id: string }>(
+          `SELECT id FROM mail_actions WHERE user_id=$1 AND id=ANY($2::uuid[]) AND state='pending' AND error_code='move_unconfirmed'`,
+          [owner, [...remaining]],
+        )
+      ).rows;
+      if (uncertain.length)
+        await settle(
+          db,
+          owner,
+          uncertain.map((row) => row.id),
+          'conflict',
+          'move_unconfirmed',
+        );
       if (failed.length)
         await settle(
           db,
@@ -341,6 +455,16 @@ export async function applyMailActions(
           'failed',
           'provider_unavailable',
         );
+      if (failed.length || uncertain.length) {
+        await db.query(
+          'UPDATE mailboxes SET last_synced_at=NULL WHERE user_id=$1 AND account_id=$2',
+          [owner, accountId],
+        );
+        await db.query(
+          'UPDATE mail_accounts SET next_sync_at=clock_timestamp() WHERE user_id=$1 AND id=$2',
+          [owner, accountId],
+        );
+      }
     }).catch(() => {});
   } finally {
     if (timer) clearTimeout(timer);

@@ -5,12 +5,8 @@ import {
   useRef,
   useState,
 } from 'react';
-import {
-  actionNotice,
-  mailApi as api,
-  requestAction,
-  type Undoable,
-} from './mail-api.js';
+import { ActionStatus } from './action-status.js';
+import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { Reader } from './reader.js';
 
@@ -93,52 +89,13 @@ export function Mail() {
     load(new AbortController().signal).catch(() => {});
   }, [load]);
 
-  const [undoable, setUndoable] = useState<(Undoable & { until: number })[]>(
-    [],
-  );
-  const track = useCallback((action: Undoable) => {
-    setUndoable((list) =>
-      [
-        { ...action, until: Date.now() + action.undoMs },
-        ...list.filter((item) => item.id !== action.id),
-      ].slice(0, 5),
-    );
-  }, []);
-
-  // The server keeps undo deadlines, so a reload or restart restores the bar.
-  useEffect(() => {
-    const controller = new AbortController();
-    api<{ undoable: Undoable[] }>('actions', { signal: controller.signal })
-      .then((result) => {
-        for (const action of [...result.undoable].reverse()) track(action);
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [track]);
-
-  useEffect(() => {
-    if (!undoable.length) return;
-    const next = Math.min(...undoable.map((item) => item.until));
-    const timer = setTimeout(
-      () =>
-        setUndoable((list) => list.filter((item) => item.until > Date.now())),
-      Math.max(0, next - Date.now()),
-    );
-    return () => clearTimeout(timer);
-  }, [undoable]);
-
-  async function undoAction(action: Undoable) {
-    setUndoable((list) => list.filter((item) => item.id !== action.id));
-    try {
-      await api(`actions/${action.id}/undo`, { method: 'POST', body: '{}' });
-      setNotice(`Undone: ${actionNotice(action)}`);
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : 'Unable to undo this action.',
-      );
-    }
+  const [latestAction, setLatestAction] = useState<Undoable | null>(null);
+  const track = useCallback((action: Undoable) => setLatestAction(action), []);
+  const [actionRevision, setActionRevision] = useState(0);
+  const refreshActions = useCallback(() => {
     reload();
-  }
+    setActionRevision((value) => value + 1);
+  }, [reload]);
 
   async function toggleRead(message: Message) {
     const kind = message.unread ? 'read' : 'unread';
@@ -303,20 +260,7 @@ export function Mail() {
           {notice}
         </p>
       )}
-      <ul className="undo-bar" aria-label="Recent actions" aria-live="polite">
-        {undoable.map((action) => (
-          <li key={action.id}>
-            {actionNotice(action)}{' '}
-            <button
-              type="button"
-              aria-label={`Undo: ${actionNotice(action)}`}
-              onClick={() => void undoAction(action)}
-            >
-              Undo
-            </button>
-          </li>
-        ))}
-      </ul>
+      <ActionStatus fresh={latestAction} onChange={refreshActions} />
       {failure && (
         <p role="alert" className="error">
           {failure}{' '}
@@ -623,6 +567,7 @@ export function Mail() {
               mailbox={mailbox}
               folders={mailboxes}
               onChange={reload}
+              actionRevision={actionRevision}
               onAction={(action) => {
                 track(action);
                 reload();

@@ -178,6 +178,7 @@ export function Reader({
   folders,
   onChange,
   onAction,
+  actionRevision,
 }: {
   id: string;
   account: string;
@@ -185,6 +186,7 @@ export function Reader({
   folders: { id: string; accountId: string; path: string }[];
   onChange: () => void;
   onAction: (action: Undoable) => void;
+  actionRevision: number;
 }) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
@@ -298,9 +300,9 @@ export function Reader({
 
   // Follow the durable action until the worker reports the provider outcome.
   useEffect(() => {
-    if (!pendingAction) return;
+    if (!pendingAction && !actionRevision) return;
     const controller = new AbortController();
-    const timer = setInterval(async () => {
+    async function poll() {
       try {
         const current = await mailApi<Detail>(endpoint, {
           signal: controller.signal,
@@ -309,16 +311,21 @@ export function Reader({
         setDetail((value) =>
           value ? { ...value, message: current.message } : value,
         );
-        if (current.message.lastAction?.state !== 'pending') onChange();
+        if (pendingAction && current.message.lastAction?.state !== 'pending')
+          onChange();
       } catch {
         // The interval keeps polling while the action is pending.
       }
-    }, 1500);
+    }
+    void poll();
+    const timer = pendingAction
+      ? setInterval(() => void poll(), 1500)
+      : undefined;
     return () => {
       controller.abort();
       clearInterval(timer);
     };
-  }, [pendingAction, endpoint, onChange]);
+  }, [pendingAction, endpoint, onChange, actionRevision]);
 
   async function mark(kind: MailAction['kind'], folder?: string) {
     setActionError('');
@@ -455,18 +462,11 @@ export function Reader({
                     ? 'Undone.'
                     : ''}
           </span>
-          {lastAction?.state === 'failed' && (
+          {(lastAction?.state === 'failed' ||
+            lastAction?.state === 'conflict') && (
             <span role="alert" className="error">
-              {actionText[lastAction.kind].pending} failed at your provider; the
-              change was undone.{' '}
-              {(lastAction.kind === 'read' || lastAction.kind === 'unread') && (
-                <button
-                  type="button"
-                  onClick={() => void mark(lastAction.kind)}
-                >
-                  Try again
-                </button>
-              )}
+              {lastAction.error ?? 'The provider did not confirm this action.'}{' '}
+              See Recent actions for its status and available controls.
             </span>
           )}
           {actionError && (

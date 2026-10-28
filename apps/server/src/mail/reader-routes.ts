@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import {
   type ActionKind,
+  actionErrors,
   currentFolder,
   moveDestination,
   moveKinds,
@@ -64,7 +65,7 @@ export function registerReaderRoutes(
       m.received_at AS "receivedAt",m.sent_at AS "sentAt",m.message_id AS "messageId",m.in_reply_to AS "inReplyTo",
       NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id
         AND '\\Seen'=ANY(seen.flags)) AS unread,
-      (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state) FROM mail_actions x
+      (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state,'code',x.error_code) FROM mail_actions x
         WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction",
       (SELECT json_build_object('archive',bool_or(t.role='${moveRoles.archive}'),'trash',bool_or(t.role='${moveRoles.trash}'))
         FROM mailboxes t WHERE t.user_id=$1 AND t.account_id=m.account_id AND t.role IN ('${moveRoles.archive}','${moveRoles.trash}')
@@ -83,6 +84,16 @@ export function registerReaderRoutes(
       const restore =
         folder &&
         (await restoreDestination(pool, owner, message.accountId, id, folder));
+      if (message.lastAction) {
+        const { code, ...action } = message.lastAction;
+        message.lastAction = {
+          ...action,
+          error:
+            code && action.state !== 'pending'
+              ? (actionErrors[code] ?? null)
+              : null,
+        };
+      }
       message.folderId = folder?.id ?? null;
       message.restoreTo = restore && restore.id !== folder?.id ? restore : null;
       const neighbors = await Promise.all(
@@ -198,7 +209,7 @@ export function registerReaderRoutes(
         // Locking the message serializes action order with its local changes.
         const message = (
           await db.query(
-            `SELECT m.account_id FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
+            `SELECT m.account_id,m.subject FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
         AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=m.id) FOR UPDATE`,
             [owner, request.params.id],
           )
@@ -231,8 +242,8 @@ export function registerReaderRoutes(
           target = destination.target.id;
         }
         const inserted = await db.query(
-          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,source_mailbox_id,target_mailbox_id,undo_until,next_attempt_at)
-          VALUES($1,$2,$3,$4,$5,$6,$7,clock_timestamp()+interval '5 seconds',clock_timestamp()+interval '5 seconds')
+          `INSERT INTO mail_actions(id,user_id,account_id,message_id,kind,source_mailbox_id,target_mailbox_id,subject,undo_until,next_attempt_at)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,clock_timestamp()+interval '5 seconds',clock_timestamp()+interval '5 seconds')
           ON CONFLICT (id) DO NOTHING`,
           [
             action,
@@ -242,6 +253,7 @@ export function registerReaderRoutes(
             kind,
             source,
             target,
+            message.subject,
           ],
         );
         if (!inserted.rowCount) return 'conflict';
@@ -269,19 +281,160 @@ export function registerReaderRoutes(
     },
   );
 
-  // Undoable actions survive navigation, reloads and server restarts until their deadline.
-  app.get('/api/mail/actions', async (request) => ({
-    undoable: (
-      await pool.query(
-        `SELECT a.id,a.kind,m.subject,t.path AS target,${undoMs} FROM mail_actions a
-        JOIN mail_messages m ON m.user_id=a.user_id AND m.id=a.message_id
+  // Recent outcomes plus unresolved failures and conflicts. Undo deadlines survive
+  // navigation, reloads and server restarts because they come from here.
+  app.get<{ Querystring: { cursor?: string } }>(
+    '/api/mail/actions',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          properties: {
+            cursor: { type: 'string', pattern: '^[01]:[0-9]{1,19}$' },
+          },
+          additionalProperties: false,
+        },
+      },
+    },
+    async (request) => {
+      const [priority, before] = request.query.cursor?.split(':') ?? [
+        null,
+        null,
+      ];
+      const rows = (
+        await pool.query(
+          `SELECT a.id,a.kind,a.state,a.subject,a.message_id AS "messageId",a.target_mailbox_id AS "targetId",
+        t.path AS target,a.error_code AS code,${undoMs},a.seq::text AS seq,
+        CASE WHEN a.state='applied' THEN 1 ELSE 0 END AS priority FROM mail_actions a
         LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.id=a.target_mailbox_id
-        WHERE a.user_id=$1 AND a.state='pending' AND a.undo_until>clock_timestamp()
-        ORDER BY a.seq DESC LIMIT 20`,
-        [request.mailUser],
-      )
-    ).rows,
-  }));
+        WHERE a.user_id=$1 AND a.state<>'cancelled' AND a.dismissed_at IS NULL
+        AND (a.completed_at>clock_timestamp()-interval '10 minutes' OR a.state IN ('pending','failed','conflict'))
+        AND ($2::int IS NULL OR CASE WHEN a.state='applied' THEN 1 ELSE 0 END>$2
+          OR (CASE WHEN a.state='applied' THEN 1 ELSE 0 END=$2 AND a.seq::numeric<$3::numeric))
+        ORDER BY priority,a.seq DESC LIMIT 51`,
+          [request.mailUser, priority, before],
+        )
+      ).rows;
+      const page = rows.slice(0, 50);
+      const last = page.at(-1);
+      return {
+        actions: page.map(
+          ({ code, seq: _seq, priority: _priority, ...action }) => ({
+            ...action,
+            error:
+              code && action.state !== 'pending'
+                ? (actionErrors[code] ?? null)
+                : null,
+          }),
+        ),
+        nextCursor: rows.length > 50 ? `${last.priority}:${last.seq}` : null,
+      };
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/mail/actions/:id/retry',
+    { schema: { params } },
+    async (request, reply) => {
+      const owner = request.mailUser ?? '';
+      const result = await transaction(pool, async (db) => {
+        const original = (
+          await db.query(
+            'SELECT message_id FROM mail_actions WHERE user_id=$1 AND id=$2',
+            [owner, request.params.id],
+          )
+        ).rows[0];
+        if (!original) return null;
+        // Use the same message -> action lock order as new intents. Retrying an
+        // old intent must never jump ahead of a newer choice in another tab.
+        const message = (
+          await db.query(
+            'SELECT id FROM mail_messages WHERE user_id=$1 AND id=$2 FOR UPDATE',
+            [owner, original.message_id],
+          )
+        ).rows[0];
+        const action = (
+          await db.query(
+            'SELECT * FROM mail_actions WHERE user_id=$1 AND id=$2 FOR UPDATE',
+            [owner, request.params.id],
+          )
+        ).rows[0];
+        if (!action) return null;
+        // A repeated retry request returns the existing attempt, never a new intent.
+        if (action.state === 'pending' || action.state === 'applied')
+          return action.state;
+        if (action.state !== 'failed')
+          return {
+            error:
+              'Only failed actions can be retried. Review the current mail before making another change.',
+          };
+        const current = message && (await currentFolder(db, owner, message.id));
+        if (!current)
+          return {
+            error:
+              'This message is no longer available. Sync and review your mail.',
+          };
+        const newer = await db.query(
+          `SELECT id FROM mail_actions WHERE user_id=$1 AND message_id=$2 AND seq>$3 AND state<>'cancelled' LIMIT 1`,
+          [owner, message.id, action.seq],
+        );
+        if (newer.rowCount)
+          return {
+            error:
+              'A newer action exists for this message. Review its current state before making another change.',
+          };
+        if (moveKinds.includes(action.kind)) {
+          const target = (
+            await db.query(
+              'SELECT id FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND id=$3',
+              [owner, action.account_id, action.target_mailbox_id],
+            )
+          ).rows[0];
+          if (!target || current.id !== action.source_mailbox_id)
+            return {
+              error:
+                'The message or destination changed. Review your mail before moving it again.',
+            };
+        }
+        await db.query(
+          `UPDATE mail_actions SET state='pending',attempts=0,error_code=NULL,completed_at=NULL,dismissed_at=NULL,
+          undo_until=clock_timestamp()+interval '5 seconds',next_attempt_at=clock_timestamp()+interval '5 seconds'
+          WHERE user_id=$1 AND id=$2`,
+          [owner, action.id],
+        );
+        await db.query(
+          `UPDATE mail_memberships SET flags=${withSeen('flags', '$3::text')} WHERE user_id=$1 AND message_id=$2`,
+          [owner, message.id, action.kind],
+        );
+        await refreshPendingFolder(db, owner, message.id);
+        return 'pending';
+      });
+      if (!result)
+        return reply.code(404).send({ message: 'Action not found.' });
+      if (typeof result !== 'string')
+        return reply.code(409).send({ message: result.error });
+      return reply
+        .code(result === 'pending' ? 202 : 200)
+        .send({ state: result });
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/mail/actions/:id/dismiss',
+    { schema: { params } },
+    async (request, reply) => {
+      const result = await pool.query(
+        `UPDATE mail_actions SET dismissed_at=COALESCE(dismissed_at,clock_timestamp())
+        WHERE user_id=$1 AND id=$2 AND state<>'pending' RETURNING id`,
+        [request.mailUser, request.params.id],
+      );
+      if (!result.rowCount)
+        return reply
+          .code(404)
+          .send({ message: 'No finished action to dismiss.' });
+      return { dismissed: true };
+    },
+  );
 
   app.post<{ Params: { id: string } }>(
     '/api/mail/actions/:id/undo',

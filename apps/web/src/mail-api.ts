@@ -12,7 +12,8 @@ export async function mailApi<T>(path: string, options: RequestInit = {}) {
 export type MailAction = {
   id: string;
   kind: 'read' | 'unread' | 'archive' | 'trash' | 'move' | 'restore';
-  state: 'pending' | 'applied' | 'failed' | 'cancelled';
+  state: 'pending' | 'applied' | 'failed' | 'cancelled' | 'conflict';
+  error?: string | null;
 };
 
 // Each user intent gets one operation ID, so a repeated request cannot duplicate it.
@@ -39,6 +40,11 @@ export type Undoable = {
   target: string | null;
   undoMs: number;
 };
+
+export type ActionFeedback = Undoable &
+  MailAction & {
+    messageId: string | null;
+  };
 
 export function actionNotice({ kind, subject, target }: Undoable) {
   const name = `“${subject || '(No subject)'}”`;

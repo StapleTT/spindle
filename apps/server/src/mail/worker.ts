@@ -47,7 +47,8 @@ export async function startMailWorker(
       'DELETE FROM mail_content WHERE expires_at<clock_timestamp()',
     );
     await pool.query(
-      `DELETE FROM mail_actions WHERE state<>'pending' AND completed_at<clock_timestamp()-interval '7 days'`,
+      `DELETE FROM mail_actions WHERE state<>'pending' AND (state IN ('applied','cancelled') OR dismissed_at IS NOT NULL)
+      AND completed_at<clock_timestamp()-interval '7 days'`,
     );
     const actions =
       await pool.query(`SELECT DISTINCT user_id,account_id FROM mail_actions

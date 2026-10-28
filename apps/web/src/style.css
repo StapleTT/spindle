@@ -93,6 +93,15 @@ button[aria-pressed="true"] {
   border-block-end: 1px solid GrayText;
   overflow-wrap: anywhere;
 }
+.action-status {
+  max-height: 18rem;
+  overflow: auto;
+  padding-inline-start: 1.5rem;
+}
+.action-status li {
+  margin-block: 0.5rem;
+  overflow-wrap: anywhere;
+}
 .message-list .unread .message-subject {
   font-weight: 700;
 }
