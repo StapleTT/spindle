@@ -39,3 +39,5 @@ The disposable-database integration suite verifies ownership, foreign admin/acco
 Provider synchronization additionally requires `0016_provider_drafts.sql` and the updated worker; see [upgrade, recovery and limits](provider-drafts.md). Clean open editors adopt synchronized native revisions; unsaved browser recovery is preserved.
 
 Use [Send later](send-later.md) to freeze a saved draft for scheduled SMTP dispatch. Outbox supports guarded rescheduling and Cancel and edit; an unconfirmed submission is recovered with its original operation and time.
+
+[Recipient autocomplete](contacts.md) adds optional private suggestions to To/Cc/Bcc, with caret-aware replacement and keyboard selection; manual entry and existing autosave/recovery remain authoritative.

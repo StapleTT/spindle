@@ -264,3 +264,14 @@ The composer previews local timezone/offset and UTC, rejects nonexistent DST tim
 A database guard preserves the not-before bound for older queue writers. Deploy migration 0024, compatible API/worker, then web; retain data/guards on rollback and drain workers first. Closed browsers do not block delivery; overdue schedules resume when the worker returns, subject to live access and send checks. Native provider API parity and live/production/manual/load acceptance remain separate. See [Send later behavior, limits, upgrade and proof](send-later.md).
 
 User confirmation on 2026-10-29: Send later works. This records user workflow acceptance; remaining production/restart/provider/manual K10 checks remain separate.
+
+
+## D025 — private recipient autocomplete
+
+Status: agent implementation choices for the user's requested contact autocomplete on 2026-10-29.
+
+Derive suggestions from owned synchronized From/To/Cc participants, excluding active Drafts, deleted memberships, Trash/Junk and all Bcc/body/Outbox sources. Reuse local Postgres data and a generated participant-only full-text index, without adding a contact registry, provider lookup or new worker job. Prefix matches prefer the sending account within match quality, then frequency/recency; bound suggestions to eight contacts from 2,000 matching messages with visible coverage. Preserve distinct plus/dotted addresses and exclude known connected self identities. Send-as alias management remains excluded by D018.
+
+Use one accessible recipient combobox for To/Cc/Bcc. Replace only the cursor's recipient, quote display names safely, filter already-entered addresses, preserve arbitrary manual entry and existing autosave/recovery, and reject overflowing insertion. Guard stale/aborted requests and IME; use the existing mail/account invalidations and a separate owner lookup budget. Deletion follows eligible source mail/account/user deletion; a paginated private JSON endpoint exports the same derived set. Full user export UI and manual address-book features remain separate.
+
+Migration 0026 is additive and retained on rollback; no dependencies/environment/provider budget change. See [recipient behavior, privacy, bounds, export and proof](contacts.md). Final Claude Design and manual/large-mailbox/provider release acceptance stay open.

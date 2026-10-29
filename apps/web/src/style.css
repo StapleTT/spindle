@@ -307,3 +307,29 @@ dialog::backdrop {
   font-weight: 700;
   text-decoration-thickness: 0.15em;
 }
+
+.recipient-field {
+  position: relative;
+}
+.recipient-field input {
+  width: 100%;
+}
+.recipient-suggestions {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid currentColor;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.recipient-suggestions [role="option"] {
+  padding: 0.5rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.recipient-suggestions [aria-selected="true"] {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+  background: #e4ebf2;
+  color: #17202a;
+}

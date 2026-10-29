@@ -6,6 +6,7 @@ import { ForwardPreview } from './forward-preview.js';
 import { MailApiError, mailApi } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { ProviderDraftStatus } from './provider-draft-status.js';
+import { RecipientInput } from './recipient-input.js';
 import { RichEditor } from './rich-editor.js';
 import { useDraft } from './use-draft.js';
 
@@ -320,19 +321,15 @@ export function Composer({
           </select>
         </label>
         {(['to', 'cc', 'bcc'] as const).map((field) => (
-          <label key={field}>
-            {field === 'to' ? 'To' : field === 'cc' ? 'Cc' : 'Bcc'}
-            <input
-              type="text"
-              autoComplete="off"
-              spellCheck={false}
-              maxLength={4000}
-              value={content[field]}
-              onChange={(event) =>
-                draft.update({}, { [field]: event.target.value })
-              }
-            />
-          </label>
+          <RecipientInput
+            key={field}
+            label={field === 'to' ? 'To' : field === 'cc' ? 'Cc' : 'Bcc'}
+            value={content[field]}
+            values={[content.to, content.cc, content.bcc]}
+            field={['to', 'cc', 'bcc'].indexOf(field)}
+            account={value.accountId}
+            onChange={(next) => draft.update({}, { [field]: next })}
+          />
         ))}
         <p className="account-status">
           Separate recipients with commas. Incomplete addresses can be saved

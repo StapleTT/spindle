@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 import type { Auth } from '../auth/auth.js';
 import type { AuthConfig } from '../auth/config.js';
 import { authHeaders } from '../auth/routes.js';
+import { registerContactRoutes } from './contacts.js';
 import type { ContentConfig } from './content-config.js';
 import { registerConversationStateRoutes } from './conversation-state.js';
 import { registerConversationRoutes } from './conversations.js';
@@ -108,28 +109,32 @@ export async function registerMailRoutes(
       !(await consumeLimit(
         pool,
         current.user.id,
-        request.method === 'GET'
-          ? 'read'
-          : request.routeOptions.url?.startsWith('/api/mail/uploads')
-            ? 'upload'
-            : request.routeOptions.url === '/api/mail/drafts/:id/send'
-              ? 'send'
-              : request.routeOptions.url?.startsWith('/api/mail/drafts')
-                ? 'draft'
-                : request.routeOptions.url?.startsWith('/api/mail/messages/')
-                  ? 'reader'
-                  : 'write',
-        request.method === 'GET'
-          ? 240
-          : request.routeOptions.url?.startsWith('/api/mail/uploads')
-            ? 60
-            : request.routeOptions.url === '/api/mail/drafts/:id/send'
-              ? 10
-              : request.routeOptions.url?.startsWith('/api/mail/drafts')
-                ? 120
-                : request.routeOptions.url?.startsWith('/api/mail/messages/')
-                  ? 60
-                  : 10,
+        request.routeOptions.url?.startsWith('/api/mail/contacts')
+          ? 'contacts'
+          : request.method === 'GET'
+            ? 'read'
+            : request.routeOptions.url?.startsWith('/api/mail/uploads')
+              ? 'upload'
+              : request.routeOptions.url === '/api/mail/drafts/:id/send'
+                ? 'send'
+                : request.routeOptions.url?.startsWith('/api/mail/drafts')
+                  ? 'draft'
+                  : request.routeOptions.url?.startsWith('/api/mail/messages/')
+                    ? 'reader'
+                    : 'write',
+        request.routeOptions.url?.startsWith('/api/mail/contacts')
+          ? 120
+          : request.method === 'GET'
+            ? 240
+            : request.routeOptions.url?.startsWith('/api/mail/uploads')
+              ? 60
+              : request.routeOptions.url === '/api/mail/drafts/:id/send'
+                ? 10
+                : request.routeOptions.url?.startsWith('/api/mail/drafts')
+                  ? 120
+                  : request.routeOptions.url?.startsWith('/api/mail/messages/')
+                    ? 60
+                    : 10,
       ))
     )
       return reply
@@ -473,6 +478,7 @@ export async function registerMailRoutes(
     },
   );
   registerTriageRoutes(app, pool);
+  registerContactRoutes(app, pool);
   registerReaderRoutes(app, pool, content);
   registerConversationRoutes(app, pool);
   registerConversationStateRoutes(app, pool);
