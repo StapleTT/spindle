@@ -36,6 +36,7 @@ try {
             'apps/web/test/signatures.browser.ts',
             'apps/web/test/provider-drafts.browser.ts',
             'apps/web/test/smtp.browser.ts',
+            'apps/web/test/send-later.browser.ts',
             'apps/web/test/replies.browser.ts',
             'apps/web/test/attachments.browser.ts',
           ]
@@ -53,6 +54,7 @@ try {
             'apps/server/test/signatures.integration.ts',
             'apps/server/test/provider-drafts.integration.ts',
             'apps/server/test/smtp.integration.ts',
+            'apps/server/test/send-later.integration.ts',
             'apps/server/test/replies.integration.ts',
             'apps/server/test/outgoing-attachments.integration.ts',
           ]),

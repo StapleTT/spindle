@@ -83,7 +83,7 @@ export async function processOutgoing(
     }
     const row = (
       await pool.query(
-        `SELECT * FROM mail_outbox WHERE user_id=$1 AND account_id=$2 AND state='queued' AND next_attempt_at<=clock_timestamp() ORDER BY seq LIMIT 1`,
+        `SELECT * FROM mail_outbox WHERE user_id=$1 AND account_id=$2 AND state='queued' AND next_attempt_at<=clock_timestamp() AND (scheduled_at IS NULL OR scheduled_at<=clock_timestamp()) ORDER BY seq LIMIT 1`,
         [owner, accountId],
       )
     ).rows[0];
@@ -117,13 +117,59 @@ export async function processOutgoing(
           );
           return;
         }
-        const claimed = await withLease(pool, account, (db) =>
-          db.query(
+        const claimed = await withLease(pool, account, async (db) => {
+          const current = (
+            await db.query(
+              `SELECT id FROM mail_outbox WHERE user_id=$1 AND id=$2 AND state='queued'
+            AND next_attempt_at<=clock_timestamp() AND (scheduled_at IS NULL OR scheduled_at<=clock_timestamp())`,
+              [owner, row.id],
+            )
+          ).rowCount;
+          if (!current) return { rowCount: 0 };
+          const draft = (
+            await db.query(
+              'SELECT revision,account_id FROM mail_drafts WHERE user_id=$1 AND id=$2 FOR UPDATE',
+              [owner, row.draft_id],
+            )
+          ).rows[0];
+          const limits = (
+            await db.query(
+              `SELECT count(*)::int AS messages,coalesce(sum(jsonb_array_length(recipients)),0)::int AS recipients
+            FROM mail_outbox WHERE user_id=$1 AND id<>$2 AND started_at>clock_timestamp()-interval '1 day'`,
+              [owner, row.id],
+            )
+          ).rows[0];
+          const files = (
+            await db.query(
+              `SELECT 1 FROM mail_draft_attachments d JOIN mail_uploads f ON f.user_id=d.user_id AND f.id=d.file_id
+            WHERE d.user_id=$1 AND d.draft_id=$2 AND f.state<>'ready' LIMIT 1`,
+              [owner, row.draft_id],
+            )
+          ).rowCount;
+          const code =
+            !draft ||
+            draft.revision !== row.draft_revision ||
+            draft.account_id !== accountId
+              ? 'draft_changed'
+              : files
+                ? 'attachments_unavailable'
+                : limits.messages >= 100 ||
+                    limits.recipients + row.recipients.length > 500
+                  ? 'send_limit'
+                  : null;
+          if (code) {
+            await db.query(
+              "UPDATE mail_outbox SET state='failed',error_code=$3,completed_at=clock_timestamp() WHERE user_id=$1 AND id=$2 AND state='queued'",
+              [owner, row.id, code],
+            );
+            return { rowCount: 0 };
+          }
+          return db.query(
             `UPDATE mail_outbox SET state='sending',started_at=clock_timestamp(),attempts=attempts+1
-          WHERE user_id=$1 AND id=$2 AND state='queued' AND next_attempt_at<=clock_timestamp() RETURNING id`,
+          WHERE user_id=$1 AND id=$2 AND state='queued' AND next_attempt_at<=clock_timestamp() AND (scheduled_at IS NULL OR scheduled_at<=clock_timestamp()) RETURNING id`,
             [owner, row.id],
-          ),
-        );
+          );
+        });
         if (claimed.rowCount) {
           sending = row.id;
           if (!smtp)

@@ -28,7 +28,7 @@ Migration `0021_mail_events.sql` adds selective row triggers using transactional
 | `accounts` | Account sync/status/settings, SMTP identity/readiness and signatures             |
 | `actions`  | Pending/completed/failed/conflict action feedback and dismissal                  |
 | `drafts`   | Draft revisions and provider Drafts reconciliation                               |
-| `outbox`   | Sending and Sent-copy outcomes                                                   |
+| `outbox`   | Sending, schedule/reschedule and Sent-copy outcomes                              |
 | `files`    | Upload/scanning states and draft attachment links                                |
 | `searches` | Private saved searches                                                           |
 
@@ -57,3 +57,5 @@ Disposable-database API tests exercise real HTTP streams and two API instances: 
 All 177 integration tests passed; the focused SSE API suite passed again after its notification-storm scheduling correction. Focused SSE, IDLE, conversations, search, composer and provider Drafts browser journeys passed. `npm run check` verifies lint/typechecks, 39 unit tests and both builds. Local application/replay of 0021 preserved 3,736 messages/memberships, eleven cached bodies, existing users/sessions/drafts/signatures/credentials/uploads and six immutable Outbox records. Tests used synthetic mail and sent no real-recipient messages.
 
 Full-browser, live-provider, production proxy and large deployment/load acceptance remain pending. The knowledge graph is marked stale for a later rebuild.
+
+Send later migration 0024 extends Outbox invalidation to committed schedule/revision changes; it introduces no new SSE topic.

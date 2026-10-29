@@ -23,6 +23,12 @@ export function defaultSenderName(profileName: string) {
     .join('');
 }
 export const smtpErrors: Record<string, string> = {
+  send_limit:
+    'The daily dispatch limit was reached (100 messages or 500 recipients). Review and retry later; this message was not submitted.',
+  draft_changed:
+    'The saved draft or sending account changed. Review the preserved draft and queue a new send.',
+  attachments_unavailable:
+    'An attachment is no longer ready to send. Review the preserved draft and its security checks before retrying.',
   provider_draft_changed:
     'This draft changed or was removed in another mail client. Open the draft and review the provider version before sending.',
   draft_check_failed:

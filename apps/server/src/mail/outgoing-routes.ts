@@ -30,7 +30,18 @@ const smtpFields =
   'host,port,transport,username,display_name AS "displayName",save_sent_copy AS "saveSentCopy",state,checked_at AS "checkedAt",error_code AS code';
 const outboxFields = `id,state,subject,sender,recipients,accepted,rejected,error_code AS code,sent_copy AS "sentCopy",
   draft_id AS "draftId",source_draft_id AS "sourceDraftId",created_at AS "createdAt",seq::text AS cursor,
-  GREATEST(0,floor(extract(epoch FROM next_attempt_at-clock_timestamp())*1000))::int AS "undoMs"`;
+  scheduled_at AS "scheduledAt",schedule_revision AS "scheduleRevision",started_at AS "startedAt",
+  CASE WHEN scheduled_at IS NOT NULL THEN 0 ELSE LEAST(2147483647,GREATEST(0,floor(extract(epoch FROM next_attempt_at-clock_timestamp())*1000)))::int END AS "undoMs"`;
+
+function validSchedule(value: string) {
+  const at = Date.parse(value);
+  return (
+    Number.isFinite(at) &&
+    at >= Date.now() + 5000 &&
+    at <= Date.now() + 366 * 86400000
+  );
+}
+const scheduleProperty = { type: 'string', format: 'date-time' };
 
 export function registerOutgoingRoutes(
   app: FastifyInstance,
@@ -203,7 +214,10 @@ export function registerOutgoingRoutes(
     },
   );
 
-  app.post<{ Params: { id: string }; Body: { id: string; revision: number } }>(
+  app.post<{
+    Params: { id: string };
+    Body: { id: string; revision: number; scheduledAt?: string };
+  }>(
     '/api/mail/drafts/:id/send',
     {
       schema: {
@@ -215,6 +229,7 @@ export function registerOutgoingRoutes(
           properties: {
             id: uuid,
             revision: { type: 'integer', minimum: 1, maximum: 2147483647 },
+            scheduledAt: scheduleProperty,
           },
         },
       },
@@ -226,15 +241,29 @@ export function registerOutgoingRoutes(
         await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
         const previous = (
           await db.query(
-            'SELECT id,state,source_draft_id,draft_revision FROM mail_outbox WHERE user_id=$1 AND id=$2',
+            'SELECT id,state,source_draft_id,draft_revision,scheduled_at AS "scheduledAt" FROM mail_outbox WHERE user_id=$1 AND id=$2',
             [owner, operation],
           )
         ).rows[0];
         if (previous)
           return previous.source_draft_id === request.params.id &&
             previous.draft_revision === request.body.revision
-            ? { outbox: { id: previous.id, state: previous.state } }
+            ? {
+                outbox: {
+                  id: previous.id,
+                  state: previous.state,
+                  scheduledAt: previous.scheduledAt,
+                },
+              }
             : { error: 'This send ID was already used.' };
+        if (
+          request.body.scheduledAt &&
+          !validSchedule(request.body.scheduledAt)
+        )
+          return {
+            error:
+              'Choose a send time at least five seconds ahead and within the next year.',
+          };
         const at = (
           await db.query(
             'SELECT account_id FROM mail_drafts WHERE user_id=$1 AND id=$2',
@@ -369,8 +398,8 @@ export function registerOutgoingRoutes(
           };
         const inserted = (
           await db.query(
-            `INSERT INTO mail_outbox(id,user_id,account_id,draft_id,source_draft_id,draft_revision,smtp_version,sender,recipients,subject,message_id,raw,save_sent_copy,mime_size)
-        VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT DO NOTHING RETURNING id,state`,
+            `INSERT INTO mail_outbox(id,user_id,account_id,draft_id,source_draft_id,draft_revision,smtp_version,sender,recipients,subject,message_id,raw,save_sent_copy,mime_size,scheduled_at,next_attempt_at)
+        VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,GREATEST(clock_timestamp()+interval '5 seconds',COALESCE($14::timestamptz,clock_timestamp()))) ON CONFLICT DO NOTHING RETURNING id,state,scheduled_at AS "scheduledAt"`,
             [
               operation,
               owner,
@@ -385,6 +414,7 @@ export function registerOutgoingRoutes(
               message.raw,
               smtp.save_sent_copy,
               stream ? 1 : null,
+              request.body.scheduledAt ?? null,
             ],
           )
         ).rows[0];
@@ -403,7 +433,7 @@ export function registerOutgoingRoutes(
             );
           }
           await db.query(
-            "UPDATE mail_outbox SET mime_size=$3,next_attempt_at=clock_timestamp()+interval '5 seconds' WHERE user_id=$1 AND id=$2",
+            "UPDATE mail_outbox SET mime_size=$3,next_attempt_at=GREATEST(clock_timestamp()+interval '5 seconds',COALESCE(scheduled_at,clock_timestamp())) WHERE user_id=$1 AND id=$2",
             [owner, inserted.id, bytes],
           );
         }
@@ -426,6 +456,74 @@ export function registerOutgoingRoutes(
       if (!result) return reply.code(404).send({ message: 'Draft not found.' });
       if (result.error) return reply.code(409).send({ message: result.error });
       return reply.code(202).send(result);
+    },
+  );
+
+  app.patch<{
+    Params: { id: string };
+    Body: { revision: number; scheduledAt: string };
+  }>(
+    '/api/mail/outbox/:id/reschedule',
+    {
+      schema: {
+        params,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['revision', 'scheduledAt'],
+          properties: {
+            revision: { type: 'integer', minimum: 1, maximum: 2147483646 },
+            scheduledAt: scheduleProperty,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const owner = request.mailUser ?? '',
+        { scheduledAt, revision } = request.body;
+      const result = await transaction(pool, async (db) => {
+        await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
+        const row = (
+          await db.query(
+            'SELECT * FROM mail_outbox WHERE user_id=$1 AND id=$2',
+            [owner, request.params.id],
+          )
+        ).rows[0];
+        if (!row) return null;
+        await db.query(
+          'SELECT id FROM mail_accounts WHERE user_id=$1 AND id=$2 FOR UPDATE',
+          [owner, row.account_id],
+        );
+        await db.query(
+          'SELECT id FROM mail_drafts WHERE user_id=$1 AND id=$2 FOR UPDATE',
+          [owner, row.draft_id],
+        );
+        if (
+          row.schedule_revision === revision + 1 &&
+          row.scheduled_at?.getTime() === Date.parse(scheduledAt)
+        )
+          return { ok: true };
+        if (!validSchedule(scheduledAt))
+          return {
+            error:
+              'Choose a send time at least five seconds ahead and within the next year.',
+          };
+        const changed = await db.query(
+          `UPDATE mail_outbox SET scheduled_at=$3,next_attempt_at=$3,schedule_revision=schedule_revision+1
+          WHERE user_id=$1 AND id=$2 AND state='queued' AND scheduled_at IS NOT NULL AND started_at IS NULL AND attempts=0 AND schedule_revision=$4 RETURNING id`,
+          [owner, row.id, scheduledAt, revision],
+        );
+        return changed.rowCount
+          ? { ok: true }
+          : {
+              error:
+                'The schedule changed or dispatch already started. Refresh Outbox before trying again.',
+            };
+      });
+      if (!result)
+        return reply.code(404).send({ message: 'Outbox message not found.' });
+      if (result.error) return reply.code(409).send({ message: result.error });
+      return { ok: true };
     },
   );
 
@@ -493,7 +591,11 @@ export function registerOutgoingRoutes(
               [owner, row.id],
             );
             return cancelled.rowCount || row.state === 'cancelled'
-              ? 'cancelled'
+              ? {
+                  state: 'cancelled',
+                  draftId: row.draft_id,
+                  scheduledAt: row.scheduled_at,
+                }
               : 'refused';
           }
           const smtp = (
@@ -522,7 +624,7 @@ export function registerOutgoingRoutes(
           )
             return 'refused';
           await db.query(
-            "UPDATE mail_outbox SET state='queued',attempts=0,error_code=NULL,completed_at=NULL,next_attempt_at=clock_timestamp()+interval '5 seconds' WHERE user_id=$1 AND id=$2 AND state='failed'",
+            "UPDATE mail_outbox SET state='queued',attempts=0,error_code=NULL,completed_at=NULL,next_attempt_at=GREATEST(clock_timestamp()+interval '5 seconds',COALESCE(scheduled_at,clock_timestamp())) WHERE user_id=$1 AND id=$2 AND state='failed'",
             [owner, row.id],
           );
           return 'queued';
@@ -536,7 +638,7 @@ export function registerOutgoingRoutes(
                 ? 'This message has already started sending. It cannot be recalled.'
                 : 'This outcome cannot be safely retried, or the draft/settings changed. Review Outbox and your draft.',
           });
-        return { state: result };
+        return typeof result === 'object' ? result : { state: result };
       },
     );
 }

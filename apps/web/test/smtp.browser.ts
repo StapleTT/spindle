@@ -196,7 +196,9 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
       .filter({ hasText: /fetch|queue/i })
       .waitFor();
     await page.unroute('**/api/mail/drafts/*/send', lostResponse);
-    await page.getByRole('button', { name: 'Send', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Recover send request', exact: true })
+      .click();
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     assert.equal(
       Number(

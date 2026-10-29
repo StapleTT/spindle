@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react';
+import { DateTimeInput, futureInstant, localTime } from './date-time.js';
 import { mailApi } from './mail-api.js';
 import { navigateMail } from './mail-navigation.js';
 
@@ -8,11 +9,6 @@ export type ConversationState = {
   snoozedUntil: string | null;
   version: string;
 };
-
-function localTime(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
 
 export function ConversationControls({
   anchor,
@@ -64,21 +60,12 @@ export function ConversationControls({
   }
   function snooze(event: FormEvent) {
     event.preventDefault();
-    const date = new Date(time);
-    if (
-      !Number.isFinite(date.getTime()) ||
-      localTime(date) !== time ||
-      date.getTime() <= Date.now()
-    ) {
-      setError(
-        'Choose a valid future time. Some local times do not exist during a daylight-saving change.',
-      );
-      return;
+    try {
+      void change({ snoozedUntil: futureInstant(time) });
+    } catch (error) {
+      setError((error as Error).message);
     }
-    void change({ snoozedUntil: date.toISOString() });
   }
-  const date = new Date(time),
-    valid = Number.isFinite(date.getTime()) && localTime(date) === time;
   return (
     <section aria-label="Conversation settings">
       <p className="account-status">
@@ -139,25 +126,7 @@ export function ConversationControls({
       )}
       {choosing && (
         <form onSubmit={snooze}>
-          <label>
-            Snooze until
-            <input
-              type="datetime-local"
-              required
-              value={time}
-              onChange={(event) => setTime(event.target.value)}
-            />
-          </label>
-          <p className="account-status">
-            Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}.{' '}
-            {valid && (
-              <>
-                Wake at{' '}
-                {date.toLocaleString(undefined, { timeZoneName: 'short' })} (
-                {date.toISOString()}).
-              </>
-            )}
-          </p>
+          <DateTimeInput label="Snooze until" value={time} onChange={setTime} />
           <button type="submit" disabled={busy}>
             {state.snoozedUntil ? 'Save snooze time' : 'Snooze'}
           </button>{' '}

@@ -251,3 +251,14 @@ Apply private settings to the bounded header-linked conversation within one acco
 Store local settings and independent field versions on synchronized messages. Existing fenced metadata/header writes propagate the latest explicit choices, including false/null, into new copies and merged components. Splits retain snapshots on existing members; removed conversations do not leave permanent rules. Guard changes by the last-read version. Keep the 1,000-copy bound, ownership, verified sessions, provider connection budget, draft recovery and immutable Outbox guarantees.
 
 Reuse the existing dispatcher for durable due scans and SSE for committed invalidation. Recheck ownership and due timestamps under user/account locks; database-clock list filtering also recovers overdue visibility when a worker is stopped. The UI previews local timezone/offset and UTC, rejects nonexistent DST times and stores one absolute instant. Keep additive migrations 0022/0023 on rollback. See [behavior, limits, upgrade and proof](conversation-state.md). Scheduled sending, notifications and remaining live/load/manual acceptance stay separate.
+
+
+## D024 — scheduled SMTP sending
+
+Status: agent implementation choices for the user's requested Send later on 2026-10-29.
+
+Extend the immutable Outbox with a UTC scheduled lower bound and guarded schedule revision. Reuse existing enqueue, MIME/attachment freezing, provider Drafts preflight, dispatcher, account fencing, cancellation, retry and uncertain-delivery protections. Future schedules must not starve metadata/IDLE work. Recheck current ownership/settings/draft/file readiness and rolling dispatch limits before claim; no automatic resend after ambiguous acceptance.
+
+The composer previews local timezone/offset and UTC, rejects nonexistent DST times, and flushes autosave before scheduling. Outbox reschedules only an unstarted intent. Cancel and edit releases the preserved draft and requires an explicit new enqueue; it carries the previous time into the composer. Recover unconfirmed enqueues using the original operation/revision/time across reloads. Reschedule changes dispatch metadata, preserving the original frozen MIME headers and bytes.
+
+A database guard preserves the not-before bound for older queue writers. Deploy migration 0024, compatible API/worker, then web; retain data/guards on rollback and drain workers first. Closed browsers do not block delivery; overdue schedules resume when the worker returns, subject to live access and send checks. Native provider API parity and live/production/manual/load acceptance remain separate. See [Send later behavior, limits, upgrade and proof](send-later.md).

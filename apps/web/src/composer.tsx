@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { DateTimeInput, futureInstant, localTime } from './date-time.js';
 import { plainHtml, removeRecovery, startDraft } from './draft-api.js';
 import { DraftAttachments } from './draft-attachments.js';
 import { ForwardPreview } from './forward-preview.js';
@@ -27,7 +28,19 @@ export function Composer({
   accounts: Account[];
 }) {
   const draft = useDraft(user, id);
-  const { conversation } = useMailLocation();
+  const { conversation, schedule } = useMailLocation();
+  const [scheduling, setScheduling] = useState(Boolean(schedule));
+  const [sendTime, setSendTime] = useState(() =>
+    localTime(new Date(schedule || Date.now() + 3600000)),
+  );
+  const cacheKey = `spindle:send:${user}:${id}`;
+  const [unconfirmed, setUnconfirmed] = useState(() => {
+    try {
+      return Boolean(sessionStorage.getItem(cacheKey));
+    } catch {
+      return false;
+    }
+  });
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState('');
@@ -52,32 +65,42 @@ export function Composer({
             Retry loading draft
           </button>
         )}
+        {unconfirmed && (
+          <button type="button" disabled={busy} onClick={() => void send()}>
+            Recover send request
+          </button>
+        )}
+        {sendError && <p role="alert">{sendError}</p>}
         <button type="button" onClick={close}>
           Back to drafts
         </button>
       </section>
     );
-  async function send() {
+  async function send(scheduledAt?: string) {
     setBusy(true);
     setSendError('');
-    const cacheKey = `spindle:send:${user}:${id}`;
     try {
-      let operation: { id: string; revision: number } | null = JSON.parse(
-        sessionStorage.getItem(cacheKey) ?? 'null',
-      );
+      let operation: {
+        id: string;
+        revision: number;
+        scheduledAt?: string;
+      } | null = JSON.parse(sessionStorage.getItem(cacheKey) ?? 'null');
       if (!operation) {
         if (!(await draft.flush())) return;
         operation = {
           id: crypto.randomUUID(),
           revision: draft.currentRevision(),
+          ...(scheduledAt ? { scheduledAt } : {}),
         };
         sessionStorage.setItem(cacheKey, JSON.stringify(operation));
       }
+      setUnconfirmed(true);
       const result = await mailApi<{ outbox: { state: string } }>(
         `drafts/${id}/send`,
         { method: 'POST', body: JSON.stringify(operation) },
       );
       sessionStorage.removeItem(cacheKey);
+      setUnconfirmed(false);
       if (result.outbox.state === 'cancelled') {
         setSendError(
           'The previous send was cancelled. Review your draft before sending again.',
@@ -86,8 +109,10 @@ export function Composer({
       }
       navigateMail({ draft: '', view: 'outbox', message: '' });
     } catch (error) {
-      if (error instanceof MailApiError && error.status < 500)
+      if (error instanceof MailApiError && error.status < 500) {
         sessionStorage.removeItem(cacheKey);
+        setUnconfirmed(false);
+      }
       setSendError(
         error instanceof Error
           ? error.message
@@ -112,6 +137,17 @@ export function Composer({
   const accountMissing =
     value.accountId &&
     !accounts.some((account) => account.id === value.accountId);
+  const cannotSend =
+    busy ||
+    Boolean(draft.outbox) ||
+    !attachmentsReady ||
+    draft.providerSync.some(
+      (item) =>
+        item.accountId === value.accountId &&
+        ['conflict', 'unknown'].includes(item.state),
+    ) ||
+    draft.status === 'conflict' ||
+    selectedAccount?.smtpState !== 'ready';
   return (
     <section className="composer" aria-labelledby="composer-heading">
       <h2 id="composer-heading" ref={heading} tabIndex={-1}>
@@ -252,6 +288,15 @@ export function Composer({
           </a>
         </p>
       )}
+      {unconfirmed && (
+        <p role="status">
+          A send request is unconfirmed. Recover its original request and
+          delivery time before scheduling or sending another copy.{' '}
+          <button type="button" disabled={busy} onClick={() => void send()}>
+            Recover send request
+          </button>
+        </p>
+      )}
       <fieldset disabled={busy} className="composer-fields">
         <label>
           Sending account
@@ -385,21 +430,18 @@ export function Composer({
       <div className="account-actions">
         <button
           type="button"
-          disabled={
-            busy ||
-            Boolean(draft.outbox) ||
-            !attachmentsReady ||
-            draft.providerSync.some(
-              (item) =>
-                item.accountId === value.accountId &&
-                ['conflict', 'unknown'].includes(item.state),
-            ) ||
-            draft.status === 'conflict' ||
-            selectedAccount?.smtpState !== 'ready'
-          }
+          disabled={cannotSend || scheduling || unconfirmed}
           onClick={() => void send()}
         >
           Send
+        </button>
+        <button
+          type="button"
+          disabled={cannotSend || unconfirmed}
+          aria-expanded={scheduling}
+          onClick={() => setScheduling(!scheduling)}
+        >
+          Send later
         </button>
 
         <button
@@ -421,6 +463,38 @@ export function Composer({
           Discard draft
         </button>
       </div>
+      {scheduling && (
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            try {
+              void send(futureInstant(sendTime));
+            } catch (error) {
+              setSendError((error as Error).message);
+            }
+          }}
+        >
+          <DateTimeInput
+            label="Send at"
+            value={sendTime}
+            onChange={setSendTime}
+          />
+          <p>
+            The saved message and attachments will be frozen in Outbox until
+            dispatch. You can reschedule or cancel and edit there.
+          </p>
+          <button type="submit" disabled={cannotSend || unconfirmed}>
+            Schedule send
+          </button>{' '}
+          <button
+            type="button"
+            disabled={busy || unconfirmed}
+            onClick={() => setScheduling(false)}
+          >
+            Cancel scheduling
+          </button>
+        </form>
+      )}
       {confirmDiscard && (
         <fieldset className="notice">
           <legend>Confirm discard</legend>

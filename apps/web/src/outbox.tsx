@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
+import { DateTimeInput, futureInstant, localTime } from './date-time.js';
 import { mailApi } from './mail-api.js';
 import { mailPollDelay, useMailRevision } from './mail-events.js';
-import { mailHref } from './mail-navigation.js';
+import { mailHref, navigateMail } from './mail-navigation.js';
 
 export type OutboxMessage = {
   id: string;
@@ -16,6 +17,9 @@ export type OutboxMessage = {
   draftId: string | null;
   undoMs: number;
   createdAt: string;
+  scheduledAt: string | null;
+  scheduleRevision: number;
+  startedAt: string | null;
 };
 type Page = { messages: OutboxMessage[]; nextCursor: string | null };
 export function useOutbox() {
@@ -87,8 +91,11 @@ export function OutboxFeedback({ messages }: { messages: OutboxMessage[] }) {
   if (!recent) return null;
   return (
     <p role="status">
-      Outgoing mail: {stateText[recent.state]} — “
-      {recent.subject || '(No subject)'}”.{' '}
+      Outgoing mail:{' '}
+      {recent.state === 'queued' && recent.scheduledAt && !recent.startedAt
+        ? 'Scheduled'
+        : stateText[recent.state]}{' '}
+      — “{recent.subject || '(No subject)'}”.{' '}
       <a href={mailHref({ view: 'outbox', draft: '', message: '' })}>
         Review Outbox
       </a>
@@ -98,14 +105,31 @@ export function OutboxFeedback({ messages }: { messages: OutboxMessage[] }) {
 export function Outbox({ data }: { data: ReturnType<typeof useOutbox> }) {
   const [busy, setBusy] = useState(''),
     [notice, setNotice] = useState('');
-  async function action(message: OutboxMessage, kind: 'cancel' | 'retry') {
+  const [rescheduling, setRescheduling] = useState<OutboxMessage | null>(null),
+    [time, setTime] = useState('');
+  async function action(
+    message: OutboxMessage,
+    kind: 'cancel' | 'retry' | 'edit',
+  ) {
     setBusy(message.id);
     setNotice('');
     try {
-      await mailApi(`outbox/${message.id}/${kind}`, {
+      const result = await mailApi<{
+        draftId?: string | null;
+        scheduledAt?: string | null;
+      }>(`outbox/${message.id}/${kind === 'edit' ? 'cancel' : kind}`, {
         method: 'POST',
         body: '{}',
       });
+      if (kind === 'edit' && result.draftId)
+        navigateMail({
+          view: 'drafts',
+          draft: result.draftId,
+          message: '',
+          schedule: result.scheduledAt ?? '',
+        });
+      else if (kind === 'edit')
+        setNotice('The preserved draft is no longer available.');
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : 'Unable to change this send.',
@@ -134,12 +158,31 @@ export function Outbox({ data }: { data: ReturnType<typeof useOutbox> }) {
         {data.messages.map((message) => (
           <li key={message.id}>
             <strong>
-              {stateText[message.state]}: {message.subject || '(No subject)'}
+              {message.state === 'queued' &&
+              message.scheduledAt &&
+              !message.startedAt
+                ? 'Scheduled'
+                : stateText[message.state]}
+              : {message.subject || '(No subject)'}
             </strong>
             <p>
               From {message.sender} · To {message.recipients.join(', ')}
             </p>
-            {message.state === 'queued' && (
+            {message.scheduledAt && (
+              <p>
+                Scheduled for{' '}
+                <time dateTime={message.scheduledAt}>
+                  {new Date(message.scheduledAt).toLocaleString(undefined, {
+                    timeZoneName: 'short',
+                  })}
+                </time>
+                .{' '}
+                {message.state === 'queued' && !message.startedAt
+                  ? 'Dispatch starts at or after this time when the worker is available.'
+                  : ''}
+              </p>
+            )}
+            {message.state === 'queued' && !message.scheduledAt && (
               <p>
                 Waiting for dispatch
                 {message.undoMs > 0
@@ -180,6 +223,35 @@ export function Outbox({ data }: { data: ReturnType<typeof useOutbox> }) {
                 Cancel send
               </button>
             )}
+            {message.state === 'queued' &&
+              message.scheduledAt &&
+              !message.startedAt && (
+                <>
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() => {
+                      setRescheduling(message);
+                      setTime(
+                        localTime(
+                          new Date(message.scheduledAt ?? Date.now() + 3600000),
+                        ),
+                      );
+                    }}
+                  >
+                    Reschedule send
+                  </button>{' '}
+                  {message.draftId && (
+                    <button
+                      type="button"
+                      disabled={Boolean(busy)}
+                      onClick={() => void action(message, 'edit')}
+                    >
+                      Cancel and edit
+                    </button>
+                  )}
+                </>
+              )}
             {message.state === 'failed' && message.draftId && (
               <button
                 type="button"
@@ -195,6 +267,7 @@ export function Outbox({ data }: { data: ReturnType<typeof useOutbox> }) {
                   view: 'drafts',
                   draft: message.draftId,
                   message: '',
+                  schedule: message.scheduledAt ?? '',
                 })}
               >
                 {['failed', 'cancelled'].includes(message.state)
@@ -205,6 +278,52 @@ export function Outbox({ data }: { data: ReturnType<typeof useOutbox> }) {
           </li>
         ))}
       </ul>
+      {rescheduling && (
+        <form
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setBusy(rescheduling.id);
+            setNotice('');
+            try {
+              const scheduledAt = futureInstant(time);
+              await mailApi(`outbox/${rescheduling.id}/reschedule`, {
+                method: 'PATCH',
+                body: JSON.stringify({
+                  revision: rescheduling.scheduleRevision,
+                  scheduledAt,
+                }),
+              });
+              setRescheduling(null);
+            } catch (error) {
+              setNotice(
+                error instanceof Error
+                  ? error.message
+                  : 'Unable to reschedule this message.',
+              );
+            } finally {
+              setBusy('');
+              data.refresh();
+            }
+          }}
+        >
+          <h3>Reschedule {rescheduling.subject || '(No subject)'}</h3>
+          <DateTimeInput
+            label="New send time"
+            value={time}
+            onChange={setTime}
+          />
+          <button type="submit" disabled={Boolean(busy)}>
+            Save send time
+          </button>{' '}
+          <button
+            type="button"
+            disabled={Boolean(busy)}
+            onClick={() => setRescheduling(null)}
+          >
+            Cancel rescheduling
+          </button>
+        </form>
+      )}
       {data.more && (
         <button type="button" onClick={data.showMore}>
           Show older outgoing messages

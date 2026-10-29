@@ -9,6 +9,7 @@ export type MailLocation = {
   conversation: string;
   draft: string;
   view: string;
+  schedule: string;
 };
 
 function readLocation(): MailLocation {
@@ -22,11 +23,19 @@ function readLocation(): MailLocation {
     conversation: params.get('conversation') ?? '',
     draft: params.get('draft') ?? '',
     view: params.get('view') ?? '',
+    schedule: params.get('schedule') ?? '',
   };
 }
 
 export function mailHref(patch: Partial<MailLocation>) {
-  const next = { ...readLocation(), ...patch };
+  const current = readLocation();
+  const next = { ...current, ...patch };
+  if (
+    patch.draft !== undefined &&
+    patch.draft !== current.draft &&
+    patch.schedule === undefined
+  )
+    next.schedule = '';
   if (patch.message !== undefined && patch.conversation === undefined)
     next.conversation = '';
   if (patch.draft && patch.conversation === undefined) next.conversation = '';
@@ -35,6 +44,7 @@ export function mailHref(patch: Partial<MailLocation>) {
     next.draft = '';
     next.view = '';
   }
+  if (!next.draft) next.schedule = '';
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(next))
     if (value) params.set(key, value);

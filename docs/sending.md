@@ -6,7 +6,7 @@
 2. Enter the provider's SMTP hostname, port, encryption, login email and password/app password. Common choices are required STARTTLS on 587 or implicit TLS on 465. Plaintext and invalid certificates are refused.
 3. Choose **Sent folder handling**. The default expects the provider to save Sent and only checks for its copy. Enable Spindle copies only when the provider does not save outgoing mail itself. Selecting both mechanisms can create duplicates; IMAP has no atomic append-if-absent operation shared with the provider's SMTP service.
 4. Choose **Save and check SMTP**. The worker tests TLS and authentication without sending an email. Wait for **SMTP connection checked. Ready to send**.
-5. Open a draft, complete its recipients, choose that account and select **Send**. Review **Outbox** for its outcome.
+5. Open a draft, complete its recipients, choose that account and select **Send**, or use [**Send later**](send-later.md) to schedule it. Review **Outbox** for its outcome.
 
 The authenticated SMTP login must be a single email address and is the From address. This slice supports ASCII mailbox addresses with Unicode display names, subjects and bodies. It does not support non-email SMTP login names, arbitrary From addresses, aliases or OAuth SMTP login. The provider still enforces its sender policy when mail is submitted; a successful connection check cannot guarantee future availability or recipient delivery. Spindle's Resend system-email configuration is separate and unchanged.
 
@@ -56,7 +56,7 @@ Copy checks retry every five minutes for up to a day. No designated folder is re
 
 Settings, drafts, outbox metadata, recipient outcomes and worker jobs enforce the signed-in verified user's ownership. Admins receive no access to another user's mail. UI lists read Postgres only. Outbox status persists across navigation/reload and is polled independently of the composer. Additional history uses keyset pagination.
 
-Limits are 50 deduplicated recipients/message, 512 KiB encoded MIME without ordinary file attachments or 30 MiB with them, 10 enqueue requests/minute, and 100 submissions or 500 recipient submissions/day/user. Files also have per-file/draft/storage limits described in [attachments](attachments.md). Cancelled submissions count toward daily limits. Draft limits continue to apply. Settings/cancel/retry use the existing general write budget. These conservative initial limits are stored/enforced across API instances; they are not a bulk-mail service.
+Limits are 50 deduplicated recipients/message, 512 KiB encoded MIME without ordinary file attachments or 30 MiB with them, 10 enqueue requests/minute, and 100 submissions or 500 recipient submissions/day/user. Files also have per-file/draft/storage limits described in [attachments](attachments.md). Cancelled submissions count toward enqueue limits. The worker also rechecks 100 messages / 500 recipients per rolling day using actual dispatch attempts, including scheduled mail; a dispatch-limit refusal is reported as a definite failure. Draft limits continue to apply. Settings/cancel/retry use the existing general write budget. These conservative initial limits are stored/enforced across API instances; they are not a bulk-mail service.
 
 Fully accepted rows with settled Sent-copy outcomes and cancelled rows are cleaned up after seven days. Unresolved failures, partial acceptance and unknown deliveries remain available. Disconnect removes SMTP credentials, stops queued sends, clears draft account associations and retains outbox history. Already-started provider operations cannot be recalled and may remain unknown; disconnect cannot undo an external acceptance. User deletion cascades the owned stored content.
 
@@ -71,3 +71,5 @@ Integration tests use synthetic TLS SMTP and IMAP servers. They cover encrypted/
 Local verification on 2026-10-28: 21 unit tests, 92 integration tests (including outer tests), five Chromium journeys and `npm run check` passed. Migration `0011` was applied and replayed with all existing record counts preserved, including 3,644 messages and four drafts; SMTP settings and outbox started empty.
 
 Live-account update — 2026-10-28: the user confirmed that messages send successfully. This records working SMTP sending for the connected account. Remaining I11 acceptance covers recipient-side reply/threading, provider Drafts visibility, attachments, undo-send and restart recovery as those features are completed/reviewed.
+
+[Send later](send-later.md) adds UTC deadlines, guarded reschedule/cancel-and-edit and startup recovery to the same immutable Outbox. It requires migration 0024 and compatible API/worker deployment.
