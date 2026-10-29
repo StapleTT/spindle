@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Pool } from 'pg';
 import { SearchError, searchCondition, searchProperty } from './search.js';
-import { receivedMembershipCondition } from './view.js';
+import { localStateFields, receivedMembershipCondition } from './view.js';
 
 export class ConversationLimitError extends Error {}
 export const conversationLimit = 1000;
@@ -12,18 +12,19 @@ const received = `EXISTS(SELECT 1 FROM mail_memberships mm JOIN mailboxes b
 // Header IDs link a conversation, never physical message identity or ownership.
 // UNION terminates cycles; the materialized LIMIT bounds expansion before sorting.
 export async function conversationIds(
-  pool: Pool,
+  pool: Pick<Pool, 'query'>,
   owner: string,
   anchor: string,
+  includeUnreceived = false,
 ) {
   const rows = (
     await pool.query<{ id: string }>(
       `
     WITH RECURSIVE related(id,account_id,tokens) AS (
-      SELECT m.id,m.account_id,m.thread_tokens FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2 AND ${received}
+      SELECT m.id,m.account_id,m.thread_tokens FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2 AND ${includeUnreceived ? 'true' : received}
       UNION
       SELECT m.id,m.account_id,m.thread_tokens FROM related r JOIN mail_messages m
-        ON m.user_id=$1 AND m.account_id=r.account_id AND m.thread_tokens && r.tokens WHERE ${received}
+        ON m.user_id=$1 AND m.account_id=r.account_id AND m.thread_tokens && r.tokens WHERE ${includeUnreceived ? 'true' : received}
     ), bounded AS MATERIALIZED (SELECT id FROM related LIMIT ${conversationLimit + 1})
     SELECT id FROM bounded`,
       [owner, anchor],
@@ -133,6 +134,12 @@ export function registerConversationRoutes(app: FastifyInstance, pool: Pool) {
       const messages = rows.slice(0, 50);
       return {
         anchorId: anchor,
+        state: (
+          await pool.query(
+            `SELECT ${localStateFields} FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2`,
+            [owner, anchor],
+          )
+        ).rows[0],
         total: ids.length,
         messages,
         nextCursor: rows.length > 50 ? messages.at(-1)?.id : null,

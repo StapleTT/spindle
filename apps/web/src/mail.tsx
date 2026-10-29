@@ -70,6 +70,9 @@ type Message = {
   sender: { name: string; address: string }[];
   receivedAt: string;
   unread: boolean;
+  pinned: boolean;
+  muted: boolean;
+  snoozedUntil: string | null;
 };
 type Page = {
   messages: Message[];
@@ -370,12 +373,14 @@ export function Mail({ userId }: { userId: string }) {
   const mailList = (
     <section aria-label="Message list">
       <h2>
-        {q
-          ? 'Search results'
-          : (selected?.path ??
-            (account
-              ? `${accounts.find((item) => item.id === account)?.name ?? 'Account'} inbox`
-              : 'Unified inbox'))}
+        {['in:pinned', 'in:muted', 'in:snoozed'].includes(q)
+          ? `${q.slice(3, 4).toUpperCase()}${q.slice(4)} mail`
+          : q
+            ? 'Search results'
+            : (selected?.path ??
+              (account
+                ? `${accounts.find((item) => item.id === account)?.name ?? 'Account'} inbox`
+                : 'Unified inbox'))}
       </h2>
       <p className="account-status">
         Mail from local storage. Open a message to read it. Sync continues in
@@ -449,6 +454,11 @@ export function Mail({ userId }: { userId: string }) {
                 </a>
                 <div className="account-status">
                   {message.accountName}
+                  {message.pinned ? ' · Pinned' : ''}
+                  {message.muted ? ' · Muted' : ''}
+                  {message.snoozedUntil
+                    ? ` · Snoozed until ${new Date(message.snoozedUntil).toLocaleString()}`
+                    : ''}
                   {message.unread ? ' · Unread' : ''}{' '}
                   <button
                     type="button"
@@ -650,6 +660,25 @@ export function Mail({ userId }: { userId: string }) {
           >
             Unified inbox
           </button>
+          {['pinned', 'muted', 'snoozed'].map((scope) => (
+            <button
+              key={scope}
+              type="button"
+              aria-pressed={q === `in:${scope}`}
+              onClick={() =>
+                navigateMail({
+                  q: `in:${scope}`,
+                  account: '',
+                  mailbox: '',
+                  cursor: '',
+                  message: '',
+                })
+              }
+            >
+              {scope[0]?.toUpperCase()}
+              {scope.slice(1)}
+            </button>
+          ))}
           <button
             type="button"
             data-mail-command="outbox"
@@ -996,6 +1025,7 @@ export function Mail({ userId }: { userId: string }) {
                     mailbox={mailbox}
                     query={q}
                     revision={`${actionRevision}:${latestAction?.id ?? ''}`}
+                    onChange={reload}
                   />
                   <Reader
                     key={`${messageId}:${account}:${mailbox}:${q}:${conversation}`}

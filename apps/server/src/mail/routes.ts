@@ -5,6 +5,7 @@ import type { Auth } from '../auth/auth.js';
 import type { AuthConfig } from '../auth/config.js';
 import { authHeaders } from '../auth/routes.js';
 import type { ContentConfig } from './content-config.js';
+import { registerConversationStateRoutes } from './conversation-state.js';
 import { registerConversationRoutes } from './conversations.js';
 import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
@@ -24,7 +25,7 @@ import {
 import { registerSignatureRoutes, signatureField } from './signatures.js';
 import { consumeLimit, transaction } from './store.js';
 import { registerTriageRoutes } from './triage-routes.js';
-import { receivedMembershipCondition } from './view.js';
+import { localStateFields, receivedMembershipCondition } from './view.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -51,8 +52,10 @@ function parseCursor(value: string | undefined, key?: string) {
     );
     if (
       !Array.isArray(cursor) ||
-      cursor.length !== (key ? 3 : 2) ||
+      ![key ? 3 : 2, key ? 4 : 3].includes(cursor.length) ||
       (key && cursor[2] !== key) ||
+      (cursor.length === (key ? 4 : 3) &&
+        typeof cursor[key ? 3 : 2] !== 'boolean') ||
       typeof cursor[0] !== 'string' ||
       !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(cursor[0]) ||
       !Number.isFinite(Date.parse(cursor[0])) ||
@@ -64,7 +67,11 @@ function parseCursor(value: string | undefined, key?: string) {
       )
     )
       return false;
-    return cursor as [string, string];
+    return [cursor[0], cursor[1], cursor[key ? 3 : 2] ?? false] as [
+      string,
+      string,
+      boolean,
+    ];
   } catch {
     return false;
   }
@@ -344,10 +351,11 @@ export async function registerMailRoutes(
     mailboxes: (
       await pool.query(
         `SELECT b.id,b.account_id AS "accountId",b.name,b.path,b.role,b.initial_complete AS "initialComplete",
-      count(mm.message_id) FILTER(WHERE b.role='\\Drafts' OR (${receivedMembershipCondition}))::int AS total,
-      count(mm.message_id) FILTER(WHERE (b.role='\\Drafts' OR (${receivedMembershipCondition})) AND NOT('\\Seen'=ANY(mm.flags)))::int AS unread
+      count(mm.message_id) FILTER(WHERE (b.role='\\Drafts' OR (${receivedMembershipCondition})) AND (b.role IS DISTINCT FROM 'inbox' OR coalesce(m.local_snoozed_until<=clock_timestamp(),true)))::int AS total,
+      count(mm.message_id) FILTER(WHERE (b.role='\\Drafts' OR (${receivedMembershipCondition})) AND NOT('\\Seen'=ANY(mm.flags)) AND (b.role IS DISTINCT FROM 'inbox' OR coalesce(m.local_snoozed_until<=clock_timestamp(),true)))::int AS unread
       FROM mailboxes b LEFT JOIN mail_memberships mm ON mm.user_id=b.user_id AND mm.account_id=b.account_id
         AND COALESCE(mm.pending_mailbox_id,mm.mailbox_id)=b.id
+      LEFT JOIN mail_messages m ON m.user_id=mm.user_id AND m.id=mm.message_id
       WHERE b.user_id=$1 GROUP BY b.id ORDER BY b.account_id,CASE WHEN b.role='inbox' THEN 0 ELSE 1 END,b.path`,
         [request.mailUser],
       )
@@ -414,6 +422,7 @@ export async function registerMailRoutes(
         after?.[0] ?? null,
         after?.[1] ?? null,
         limit + 1,
+        after?.[2] ?? false,
       ];
       let search: ReturnType<typeof searchCondition>;
       try {
@@ -427,11 +436,11 @@ export async function registerMailRoutes(
         `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
        m.received_at AS "receivedAt",m.sent_at AS "sentAt",
        to_char(m.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime",
-       ${unreadCondition} AS unread
+       ${unreadCondition} AS unread,${localStateFields}
        FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
        WHERE ${search.condition}
-       AND ($4::timestamptz IS NULL OR (m.received_at,m.id)<($4::timestamptz,$5::uuid))
-       ORDER BY m.received_at DESC,m.id DESC LIMIT $6`,
+       AND ($4::timestamptz IS NULL OR (m.local_pinned,m.received_at,m.id)<($7::boolean,$4::timestamptz,$5::uuid))
+       ORDER BY m.local_pinned DESC,m.received_at DESC,m.id DESC LIMIT $6`,
         values,
       );
       const hasMore = result.rows.length > limit;
@@ -455,8 +464,8 @@ export async function registerMailRoutes(
             ? Buffer.from(
                 JSON.stringify(
                   key
-                    ? [last.cursorTime, last.id, key]
-                    : [last.cursorTime, last.id],
+                    ? [last.cursorTime, last.id, key, last.pinned]
+                    : [last.cursorTime, last.id, last.pinned],
                 ),
               ).toString('base64url')
             : null,
@@ -466,6 +475,7 @@ export async function registerMailRoutes(
   registerTriageRoutes(app, pool);
   registerReaderRoutes(app, pool, content);
   registerConversationRoutes(app, pool);
+  registerConversationStateRoutes(app, pool);
   registerSignatureRoutes(app, pool);
   registerDraftRoutes(app, pool, content);
   registerUploadRoutes(app, pool);

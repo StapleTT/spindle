@@ -154,8 +154,8 @@ export function registerReaderRoutes(
             (
               await pool.query(
                 `SELECT m.id FROM mail_messages m WHERE ${condition}
-        AND (m.received_at,m.id) ${operator} (SELECT received_at,id FROM mail_messages WHERE user_id=$1 AND id=$4)
-        ORDER BY m.received_at ${order},m.id ${order} LIMIT 1`,
+        AND (m.local_pinned,m.received_at,m.id) ${operator} (SELECT local_pinned,received_at,id FROM mail_messages WHERE user_id=$1 AND id=$4)
+        ORDER BY m.local_pinned ${order},m.received_at ${order},m.id ${order} LIMIT 1`,
                 neighborsValues,
               )
             ).rows[0]?.id ?? null

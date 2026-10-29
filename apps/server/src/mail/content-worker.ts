@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { trimContentCache } from './content-cache.js';
+import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
 import { listAttachments, MAX_ATTACHMENT_BYTES } from './media.js';
@@ -180,6 +181,7 @@ export async function fetchMessageContent(
             'UPDATE mail_messages SET reference_ids=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
             [owner, accountId, messageId, metadata.references],
           );
+          await reconcileConversationState(db, owner, accountId, [messageId]);
           await trimContentCache(db, owner, messageId);
         }
       });
@@ -234,6 +236,7 @@ export async function fetchMessageContent(
         'UPDATE mail_messages SET reference_ids=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
         [owner, accountId, messageId, parsed.reply.references],
       );
+      await reconcileConversationState(db, owner, accountId, [messageId]);
       for (const image of parsed.images)
         await db.query(
           `INSERT INTO mail_content_images(user_id,account_id,message_id,position,content_type,data)

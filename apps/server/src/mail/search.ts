@@ -59,13 +59,21 @@ export function parseSearch(query: string): Term[] {
       );
     if (
       field === 'in' &&
-      (!['anywhere', 'inbox', 'archive', 'sent', 'trash', 'spam'].includes(
-        value,
-      ) ||
+      (![
+        'anywhere',
+        'inbox',
+        'archive',
+        'sent',
+        'trash',
+        'spam',
+        'pinned',
+        'muted',
+        'snoozed',
+      ].includes(value) ||
         exclude)
     )
       throw new SearchError(
-        'Use in:inbox/archive/sent/trash/spam/anywhere without a minus.',
+        'Use in:inbox/archive/sent/trash/spam/anywhere/pinned/muted/snoozed without a minus.',
       );
     if (
       ['before', 'after'].includes(field) &&

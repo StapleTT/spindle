@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+import {
+  ConversationControls,
+  type ConversationState,
+} from './conversation-controls.js';
 import { mailApi } from './mail-api.js';
 import { mailPollDelay, useMailRevision } from './mail-events.js';
 import { mailHref } from './mail-navigation.js';
@@ -13,7 +17,12 @@ type Item = {
   headersPending: boolean;
   folders: { path: string; role: string | null }[];
 };
-type Page = { messages: Item[]; total: number; nextCursor: string | null };
+type Page = {
+  messages: Item[];
+  total: number;
+  nextCursor: string | null;
+  state: ConversationState;
+};
 export function Conversation({
   anchor,
   selected,
@@ -21,6 +30,7 @@ export function Conversation({
   mailbox,
   query,
   revision,
+  onChange,
 }: {
   anchor: string;
   selected: string;
@@ -28,6 +38,7 @@ export function Conversation({
   mailbox: string;
   query: string;
   revision: string;
+  onChange: () => void;
 }) {
   const liveRevision = useMailRevision(['mail', 'accounts']);
   const [data, setData] = useState<Page | null>(null),
@@ -48,6 +59,7 @@ export function Conversation({
       try {
         let cursor: string | null = null,
           total = 0;
+        let pageState: ConversationState | undefined;
         const messages: Item[] = [];
         for (let index = 0; index < pages; index++) {
           const page: Page = await mailApi<Page>(
@@ -56,17 +68,25 @@ export function Conversation({
           );
           messages.push(...page.messages);
           total = page.total;
+          pageState = page.state;
           cursor = page.nextCursor;
           if (!cursor) break;
         }
         if (controller.signal.aborted) return;
-        setData({
+        if (!pageState)
+          throw new Error('Conversation settings are unavailable.');
+        const state = pageState;
+        setData((current) => ({
           messages: [
             ...new Map(messages.map((item) => [item.id, item])).values(),
           ],
           total,
           nextCursor: cursor,
-        });
+          state:
+            current && BigInt(current.state.version) > BigInt(state.version)
+              ? current.state
+              : state,
+        }));
         setError('');
       } catch (failure) {
         if (!controller.signal.aborted)
@@ -91,7 +111,8 @@ export function Conversation({
       <h2>Conversation{data ? ` (${data.total} messages)` : ''}</h2>
       <p className="account-status">
         Related messages in this account, including Sent and mail outside this
-        search or folder. Actions affect only the open message.
+        search or folder. Read, move and delete actions affect only the open
+        message.
       </p>
       {error && (
         <p role="status">
@@ -104,6 +125,15 @@ export function Conversation({
       {!data && !error && <p role="status">Loading conversation…</p>}
       {data && (
         <>
+          <ConversationControls
+            anchor={anchor}
+            state={data.state}
+            onChange={(state) => {
+              setData((current) => (current ? { ...current, state } : current));
+              onChange();
+            }}
+            onReload={() => setRetry((n) => n + 1)}
+          />
           {data.messages.some((item) => item.headersPending) && (
             <p className="account-status">
               Some reply headers have not synchronized yet. More related

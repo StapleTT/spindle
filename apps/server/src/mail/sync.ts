@@ -1,6 +1,7 @@
 import type { FetchMessageObject } from 'imapflow';
 import type { Pool, PoolClient } from 'pg';
 import { pendingKind, withSeen } from './actions.js';
+import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
 import { parseReplyHeaders } from './parse.js';
@@ -97,7 +98,7 @@ async function saveMessage(
       [...(mail.flags ?? [])].slice(0, 100).map((flag) => text(flag, 200)),
     ],
   );
-  return mail.uid;
+  return { uid: mail.uid, id: result.rows[0].id as string };
 }
 
 export async function syncAccount(
@@ -226,10 +227,21 @@ export async function syncAccount(
             );
           }
           const retained: number[] = [];
+          const anchors: string[] = [];
           for (const message of messages) {
-            const uid = await saveMessage(db, account, box, validity, message);
-            if (uid !== null) retained.push(uid);
+            const saved = await saveMessage(
+              db,
+              account,
+              box,
+              validity,
+              message,
+            );
+            if (saved !== null) {
+              retained.push(saved.uid);
+              anchors.push(saved.id);
+            }
           }
+          await reconcileConversationState(db, owner, id, anchors);
           await db.query(
             `DELETE FROM mail_memberships WHERE user_id=$1 AND account_id=$2 AND mailbox_id=$3
              AND uid_validity=$4 AND uid BETWEEN $5 AND $6 AND NOT(uid=ANY($7::bigint[]))`,

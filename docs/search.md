@@ -4,19 +4,19 @@ Search reads the signed-in user's synchronized Postgres data. It never connects 
 
 ## Search and coverage
 
-Use **Search mail**, optionally choose an account/folder, and submit. Query, scope and pagination live in the URL fragment, so reload, browser Back and reader navigation preserve them. Results sort by received date descending, then local UUID descending. Keyset cursors are bound to the user, query, account and folder. Previous/Next uses the same filters and order; opening mail does not mark it read.
+Use **Search mail**, optionally choose an account/folder, and submit. Query, scope and pagination live in the URL fragment, so reload, browser Back and reader navigation preserve them. Results sort pinned messages first, then received date descending and local UUID descending within each group. Reader neighbors use the same ordering. Keyset cursors are bound to the user, query, account and folder. Previous/Next uses the same filters and order; opening mail does not mark it read.
 
-| Syntax                                      | Meaning                                                |
-| ------------------------------------------- | ------------------------------------------------------ |
-| `project launch`                            | Both words, in indexed headers or available body text  |
-| `"project launch"`                          | Adjacent full-text tokens; punctuation is normalized   |
-| `-subject:cancelled`                        | Exclude a word/phrase or supported filter              |
-| `from:alice`, `to:"Bob Example"`            | Sender or To display names/addresses; To excludes Cc   |
-| `subject:project`, `body:minutes`           | Restrict the full-text term to that field              |
-| `is:read`, `is:unread`                      | Current local read state, including pending actions    |
-| `has:attachment`                            | Attachment metadata in a current cached body           |
-| `after:2026-10-01`, `before:2026-11-01`     | Received date, inclusive after / exclusive before, UTC |
-| `in:inbox/archive/sent/trash/spam/anywhere` | Choose one role scope, without a minus                 |
+| Syntax                                                           | Meaning                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------ |
+| `project launch`                                                 | Both words, in indexed headers or available body text  |
+| `"project launch"`                                               | Adjacent full-text tokens; punctuation is normalized   |
+| `-subject:cancelled`                                             | Exclude a word/phrase or supported filter              |
+| `from:alice`, `to:"Bob Example"`                                 | Sender or To display names/addresses; To excludes Cc   |
+| `subject:project`, `body:minutes`                                | Restrict the full-text term to that field              |
+| `is:read`, `is:unread`                                           | Current local read state, including pending actions    |
+| `has:attachment`                                                 | Attachment metadata in a current cached body           |
+| `after:2026-10-01`, `before:2026-11-01`                          | Received date, inclusive after / exclusive before, UTC |
+| `in:inbox/archive/sent/trash/spam/anywhere/pinned/muted/snoozed` | Choose one role scope, without a minus                 |
 
 Search combines terms with AND; there is no OR, wildcard, fuzzy matching or stemming. Text matching uses Postgres's `simple` configuration, including normalized address tokens. Unknown operators, malformed quotes/dates, control characters, over 500 characters or over 32 terms are rejected. A selected folder takes precedence over `in:`. Without a folder or `in:`, searches cover synchronized received folders including Sent and Archive, excluding Trash/Junk. Empty search restores the ordinary inbox/folder view. Active Drafts remain in the composer workspace. **Clear search** retains the current account/folder; **Unified inbox** clears both scope and query.
 
@@ -66,3 +66,5 @@ Implementation verification on 2026-10-28: `npm run check` passed with 39 unit t
 Conversation threading adds related cross-folder context inside the reader. Search results, counts, selected rows and batch scope remain per message. Out-of-scope members are labeled, while Previous/Next continues through the source result set. See [conversations](conversations.md).
 
 [Authenticated SSE](events.md) refreshes committed mail and saved-search changes across private tabs without replacing typed queries or focus. Reconnection refetches local state; polling remains recovery.
+
+[Pin, mute and snooze](conversation-state.md) add private conversation settings and sidebar views. Snoozed inbox messages are hidden from inbox views/counts until their deadline, while ordinary all-folder search can still find them.

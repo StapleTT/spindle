@@ -3,6 +3,7 @@ import type { PgBoss } from 'pg-boss';
 import { logger } from '../logger.js';
 import { applyMailActions } from './actions.js';
 import { type ContentJob, fetchMessageContent } from './content-worker.js';
+import { wakeSnoozedConversations } from './conversation-state.js';
 import type { MailKeys } from './credentials.js';
 import { cleanupUploads, fetchForwardFile, scanUpload } from './file-worker.js';
 import { watchInbox } from './idle.js';
@@ -54,6 +55,7 @@ export async function startMailWorker(
   // next_sync_at is a transactional outbox: committed connect/sync requests survive
   // API/queue outages. The dispatcher can safely replay them after a restart.
   async function dispatch() {
+    await wakeSnoozedConversations(pool);
     await cleanupUploads(pool);
     await pool.query(`UPDATE mail_uploads f SET state='failed',error_code='source_unavailable',reserved_bytes=0
       WHERE f.state='pending_fetch' AND NOT EXISTS(SELECT 1 FROM mail_accounts a WHERE a.user_id=f.user_id AND a.id::text=f.source->>'accountId')`);

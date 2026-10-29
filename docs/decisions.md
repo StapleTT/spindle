@@ -240,3 +240,14 @@ Use native EventSource and committed Postgres NOTIFY triggers to invalidate owne
 Reconnect starts a new ordered transport with reset/refetch; durable database state and retained polling recover missed notifications rather than replaying an event log. Coalesce UI invalidations and reuse existing revision/dirty-state guards, preserving search/focus, draft recovery, iframe identity and image consent. Provider I/O, worker queues and connection budgets remain unchanged. Compose waits for initial account lookup to preserve sender/signature defaults.
 
 The additive `0021_mail_events.sql` preserves existing mail and immutable Outbox data. Each API process reserves a session-persistent Postgres LISTEN connection; deployment needs unbuffered same-origin proxy streaming. Keep this migration on application rollback. See [protocol, recovery, deployment and proof](events.md). Production proxy/load and remaining live-provider acceptance remain open.
+
+
+## D023 — local conversation pin, mute and snooze
+
+Status: agent implementation choices for the user's requested pin/mute/snooze on 2026-10-29.
+
+Apply private settings to the bounded header-linked conversation within one account, preserving per-message provider actions and physical identity. Pin orders its messages first. Mute records notification suppression without marking read or hiding mail; notification delivery remains K06. Snooze hides inbox membership/counts until an absolute UTC deadline, including new replies; explicit Snoozed/search views retain access. Wakeup does not undo provider moves/deletes or put archived mail into the inbox.
+
+Store local settings and independent field versions on synchronized messages. Existing fenced metadata/header writes propagate the latest explicit choices, including false/null, into new copies and merged components. Splits retain snapshots on existing members; removed conversations do not leave permanent rules. Guard changes by the last-read version. Keep the 1,000-copy bound, ownership, verified sessions, provider connection budget, draft recovery and immutable Outbox guarantees.
+
+Reuse the existing dispatcher for durable due scans and SSE for committed invalidation. Recheck ownership and due timestamps under user/account locks; database-clock list filtering also recovers overdue visibility when a worker is stopped. The UI previews local timezone/offset and UTC, rejects nonexistent DST times and stores one absolute instant. Keep additive migrations 0022/0023 on rollback. See [behavior, limits, upgrade and proof](conversation-state.md). Scheduled sending, notifications and remaining live/load/manual acceptance stay separate.

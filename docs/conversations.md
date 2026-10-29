@@ -4,7 +4,7 @@ Open a message to see its **Conversation** timeline. It links synchronized messa
 
 The timeline includes related received mail across folders, including Sent, Archive, Trash and Junk; active Drafts stay in the composer. Each entry shows sender, received time, folder, read state and whether it matches the current search/folder. It orders the displayed messages oldest first, initially showing the latest 50. **Show earlier conversation messages** loads earlier pages, which stay loaded when selecting another member. Physical IMAP folder copies retain their separate IDs and actions, even when they share an RFC Message-ID.
 
-Inbox/search rows, counts and selection remain per message. The timeline supplies conversation context without collapsing search matches or turning a selected-message action into a whole-thread operation. This slice does not add thread-wide archive/read/delete controls, pin/mute/snooze or provider-native thread IDs.
+Inbox/search rows, counts and selection remain per message. The timeline supplies conversation context without collapsing search matches or turning a selected-message action into a whole-thread operation. This slice does not add thread-wide archive/read/delete controls or provider-native thread IDs. Local [pin/mute/snooze settings](conversation-state.md) are now implemented separately.
 
 ## Reader, replies and navigation
 
