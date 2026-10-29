@@ -11,6 +11,7 @@ import { scanFile } from '../src/mail/file-scanner.js';
 import { scanUpload } from '../src/mail/file-worker.js';
 import { connectImap } from '../src/mail/imap.js';
 import { processOutgoing } from '../src/mail/outgoing-worker.js';
+import { draftHash } from '../src/mail/provider-draft-mime.js';
 import { syncProviderDrafts } from '../src/mail/provider-drafts.js';
 import { syncAccount } from '../src/mail/sync.js';
 import { startMailWorker } from '../src/mail/worker.js';
@@ -187,6 +188,90 @@ test('owned provider Drafts synchronization and recovery', {
       await sync();
       assert.equal((await link(draft.id)).state, 'removed');
       assert.equal(imap.server.control.listMessages('Drafts').length, 1);
+    },
+  );
+  await t.test(
+    'provider transport-header normalization does not create a new local edit or conflict with autosave',
+    async () => {
+      const draft = await save();
+      const normalize: typeof connectImap = async (...args) => {
+        const client = await connectImap(...args),
+          append = client.append.bind(client);
+        client.append = async (...values) => {
+          values[1] = Buffer.from(
+            values[1]
+              .toString()
+              .replace('\r\n\r\n', '\r\nX-Provider-Normalized: yes\r\n\r\n'),
+          );
+          return append(...values);
+        };
+        return client;
+      };
+      await sync(normalize);
+      const current = (await request(`drafts/${draft.id}`)).json().draft;
+      assert.equal(
+        current.revision,
+        1,
+        'An unchanged provider echo must not increment the editor revision',
+      );
+      assert.equal(current.saveId, draft.saveId);
+      await save(draft.id, 1, { subject: 'Typing continues in the same tab' });
+      await sync(normalize);
+      assert.equal((await link(draft.id)).state, 'synced');
+      assert.equal(
+        (await request(`drafts/${draft.id}`)).json().draft.revision,
+        2,
+      );
+      const typing = await save();
+      await sync(async (...args) => {
+        const client = await normalize(...args),
+          append = client.append.bind(client);
+        client.append = async (...values) => {
+          const result = await append(...values);
+          await save(typing.id, 1, {
+            subject: 'Edited during a normalized APPEND',
+          });
+          return result;
+        };
+        return client;
+      });
+      assert.equal((await link(typing.id)).state, 'pending');
+      assert.equal(
+        (await request(`drafts/${typing.id}`)).json().draft.revision,
+        2,
+      );
+      await sync(normalize);
+      assert.equal((await link(typing.id)).state, 'synced');
+      assert.equal(
+        (await request(`drafts/${typing.id}`)).json().draft.content.subject,
+        'Edited during a normalized APPEND',
+      );
+    },
+  );
+  await t.test(
+    'content hashes left stale by an older worker cannot hide genuine provider edits',
+    async () => {
+      const draft = await save();
+      await sync();
+      const old = await copy(draft.id),
+        changed = await replace(draft.id, 'Genuine newer provider value');
+      const raw = imap.server.control.getMessage('Drafts', changed.uid).raw;
+      assert.ok(raw);
+      await save(draft.id, 1, { subject: 'Genuine newer provider value' });
+      // Simulate a pre-upgrade worker accepting new provider bytes without refreshing the derived hash.
+      await pool.query(
+        'UPDATE mail_draft_copies SET uid=$3,hash=$4,size_bytes=$5 WHERE user_id=$1 AND id=$2',
+        [owner.id, old.id, String(changed.uid), draftHash(raw), raw.length],
+      );
+      await pool.query(
+        "UPDATE mail_draft_links SET state='synced',synced_revision=2 WHERE user_id=$1 AND source_draft_id=$2",
+        [owner.id, draft.id],
+      );
+      await replace(draft.id, content.subject);
+      await sync();
+      const current = (await request(`drafts/${draft.id}`)).json().draft;
+      assert.equal(current.content.subject, content.subject);
+      assert.equal(current.revision, 3);
     },
   );
   await t.test(
@@ -393,6 +478,14 @@ test('owned provider Drafts synchronization and recovery', {
         const append = client.append.bind(client);
         client.append = async (...values) => {
           appends++;
+          values[1] = Buffer.from(
+            values[1]
+              .toString()
+              .replace(
+                '\r\n\r\n',
+                '\r\nX-Provider-Normalized: recovered\r\n\r\n',
+              ),
+          );
           await append(...values);
           throw new Error('Lost acknowledgment');
         };
@@ -409,6 +502,10 @@ test('owned provider Drafts synchronization and recovery', {
       assert.equal((await link(draft.id)).state, 'synced');
       assert.equal(imap.server.control.listMessages('Drafts').length, 1);
       assert.equal(appends, 1);
+      assert.equal(
+        (await request(`drafts/${draft.id}`)).json().draft.revision,
+        1,
+      );
     },
   );
   await t.test(

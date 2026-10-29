@@ -241,8 +241,8 @@ export function Composer({
       {draft.status === 'conflict' && (
         <div className="notice">
           <p>
-            Another tab changed this draft, or it was removed. Choose how to
-            keep your work.
+            The saved draft changed or was removed. Choose how to keep your
+            work.
           </p>
           {draft.conflict && (
             <details>

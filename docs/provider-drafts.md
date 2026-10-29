@@ -42,3 +42,16 @@ Draft-navigation correction — 2026-10-28: provider Drafts previously used ordi
 Correction validation: `npm run check` passed with 36 unit tests and both builds; all 135 integration tests and four affected Chromium journeys passed. Health/readiness returned 200. No new migration, queue reset or recreation of existing removal conflicts was required.
 
 User acceptance — 2026-10-28: the user confirmed that drafts synchronization now works as intended after the navigation correction. Full restart, other-provider and remaining M3/I11 acceptance stay separate.
+
+
+## False-conflict correction — 2026-10-29
+
+Some providers add transport headers or rewrite MIME encoding when storing a draft. Previously any raw-byte difference was treated as an external edit, incrementing the local revision even when editable content was unchanged. That made the same browser's next autosave stale and could show the draft-conflict warning while typing alone.
+
+Migration `0025_provider_draft_content_hash.sql` adds nullable parsed-content fingerprints and their source raw hashes to provider copies. New outgoing snapshots record the parsed value before APPEND; native imports record their parsed baseline. Reconciliation recognizes a matching editable value without rewriting the local draft, save ID or revision. Fingerprints include recipients/Bcc, subject/body, reply context, preserved formatted content and attachment filenames/bytes. Real content changes still use the existing conflict/adoption rules. A newer local autosave remains pending when the provider merely normalizes an older uploaded snapshot.
+
+The source hash invalidates a derived fingerprint if an older worker changes raw-copy metadata without refreshing it. Existing copies and unsupported/oversized parsed snapshots retain conservative raw-change handling until a fresh baseline is available. Lost APPEND recovery uses the stored baseline and does not append again. Existing conflicts are not automatically dismissed, merged or overwritten: use **Save my edits as a new draft** to preserve work already blocked by a warning, or compare the saved version before explicitly loading it.
+
+Apply 0025 before restarting/deploying the worker. Retain its additive columns on application rollback; older code ignores them. Migration application/replay preserved existing drafts, mappings, cached mail, credentials, attachment chunks and immutable Outbox records. No new dependency or environment setting is required.
+
+Proof: a synthetic provider adding only a header reproduced a false revision change from 1 to 2 before the fix. All 25 focused API/Chromium regression checks passed across provider Drafts and composer autosave, covering normalized APPEND, concurrent autosave, interrupted acknowledgements, mixed-version cache invalidation, clean editor adoption, genuine cross-tab/provider conflicts and preserved recovery. `npm run check` covers lint/typechecks, 40 unit tests and both builds; the new fingerprint test checks encoding equivalence while requiring Bcc, reply and file-byte changes to remain distinct. No real mail was changed or sent for tests. Full-suite, live-provider-specific rewrite and load acceptance remain separate.

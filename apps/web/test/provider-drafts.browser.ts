@@ -9,6 +9,7 @@ import { chromium, type Page, type Route } from 'playwright';
 import { createServer } from 'vite';
 import { migrateDatabase } from '../../server/src/db/migrate.js';
 import { readMailKeys } from '../../server/src/mail/credentials.js';
+import { connectImap } from '../../server/src/mail/imap.js';
 import { syncProviderDrafts } from '../../server/src/mail/provider-drafts.js';
 import { syncAccount } from '../../server/src/mail/sync.js';
 import {
@@ -262,6 +263,40 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     await page
       .getByText('Saved to provider Drafts.', { exact: true })
       .waitFor();
+    // A provider-added header must not make this tab's next autosave stale.
+    await subject.fill('Typing before provider normalization');
+    await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
+    const beforeEcho = (await stored()).revision;
+    await pool.query(
+      'UPDATE mail_draft_links SET next_attempt_at=clock_timestamp() WHERE user_id=$1',
+      [owner.id],
+    );
+    await syncProviderDrafts(pool, keys, owner.id, account, async (...args) => {
+      const client = await connectImap(...args),
+        append = client.append.bind(client);
+      client.append = async (...values) => {
+        values[1] = Buffer.from(
+          values[1]
+            .toString()
+            .replace('\r\n\r\n', '\r\nX-Provider-Normalized: browser\r\n\r\n'),
+        );
+        return append(...values);
+      };
+      return client;
+    });
+    assert.equal((await stored()).revision, beforeEcho);
+    await subject.fill('Typing after provider normalization');
+    await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
+    assert.equal(
+      (await stored()).content.subject,
+      'Typing after provider normalization',
+    );
+    assert.equal(
+      await page
+        .getByText('Draft conflict. Your edits are preserved.', { exact: true })
+        .count(),
+      0,
+    );
     // A delayed poll from before a successful save must not roll the editor back.
     let sawPoll = () => {};
     const started = new Promise<void>((resolve) => {

@@ -29,6 +29,23 @@ export type DraftValue = {
   forward: ForwardContent | null;
   files: { filename: string; data: Buffer }[];
 };
+// Hash the parsed editable value, not provider-added headers or MIME encoding.
+export function draftContentHash(value: DraftValue) {
+  return draftHash(
+    Buffer.from(
+      JSON.stringify({
+        content: value.content,
+        replyContext: value.replyContext,
+        forward: value.forward,
+        files: value.files.map((file) => ({
+          filename: file.filename,
+          hash: draftHash(file.data),
+        })),
+      }),
+    ),
+  );
+}
+
 export function composeProviderDraft(
   id: string,
   link: string,

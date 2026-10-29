@@ -15,6 +15,7 @@ import { connectImap } from './imap.js';
 import {
   composeProviderDraft,
   type DraftValue,
+  draftContentHash,
   draftHash,
   parseProviderDraft,
 } from './provider-draft-mime.js';
@@ -41,6 +42,8 @@ export type RemoteCopy = {
   size_bytes: number;
   revision: number;
   modseq: string | null;
+  content_hash?: string | null;
+  content_hash_source?: string | null;
 };
 type Link = {
   id: string;
@@ -124,6 +127,9 @@ async function locate(
   force = false,
   includeDeleted = false,
 ): Promise<{ copy: RemoteCopy; changed: boolean; raw?: Buffer } | null> {
+  // An older worker may have refreshed the raw hash without this derived cache.
+  if (copy.content_hash_source !== copy.hash)
+    copy = { ...copy, content_hash: null, content_hash_source: null };
   if (!client.mailbox) throw new Error('draft_sync_unavailable');
   const validity = String(client.mailbox.uidValidity);
   let uid = copy.uid_validity === validity ? copy.uid : null;
@@ -211,7 +217,7 @@ async function fence(pool: Pool, account: MailAccount) {
 
 async function saveCopy(db: PoolClient, copy: RemoteCopy) {
   await db.query(
-    'UPDATE mail_draft_copies SET uid=$3,uid_validity=$4,hash=$5,size_bytes=$6,modseq=$7 WHERE user_id=$1 AND id=$2',
+    'UPDATE mail_draft_copies SET uid=$3,uid_validity=$4,hash=$5,size_bytes=$6,modseq=$7,content_hash=$8,content_hash_source=$9 WHERE user_id=$1 AND id=$2',
     [
       copy.user_id,
       copy.id,
@@ -220,6 +226,8 @@ async function saveCopy(db: PoolClient, copy: RemoteCopy) {
       copy.hash,
       copy.size_bytes,
       copy.modseq,
+      copy.content_hash ?? null,
+      copy.content_hash_source ?? null,
     ],
   );
 }
@@ -373,6 +381,34 @@ async function acceptRemote(
     ).rows[0] as Link | undefined;
     if (!current) return;
     const draft = await localDraft(db, account.user_id, current.draft_id);
+    const contentHash = draftContentHash(parsed);
+    if (copy.content_hash && copy.content_hash === contentHash) {
+      await saveCopy(db, { ...copy, content_hash_source: copy.hash });
+      if (
+        current.active_copy_id === copy.id &&
+        !['conflict', 'unknown'].includes(current.state)
+      ) {
+        const synced =
+          draft?.account_id === account.id &&
+          draft.revision === current.synced_revision;
+        await db.query(
+          `UPDATE mail_draft_links SET state=$3,error_code=NULL,next_attempt_at=clock_timestamp()+CASE WHEN $4 THEN interval '60 seconds' ELSE interval '1 second' END
+          WHERE user_id=$1 AND id=$2`,
+          [
+            account.user_id,
+            current.id,
+            synced ? 'synced' : 'pending',
+            Boolean(synced),
+          ],
+        );
+      }
+      return;
+    }
+    copy = {
+      ...copy,
+      content_hash: contentHash,
+      content_hash_source: copy.hash,
+    };
     const candidate = await storeValue(
       db,
       account.user_id,
@@ -695,7 +731,14 @@ async function processLink(
       if (bytes > MIME_BYTES) throw new Error('draft_too_large');
       chunks.push(data);
     }
-    return { id, revision: current.revision, raw: Buffer.concat(chunks) };
+    const raw = Buffer.concat(chunks);
+    let contentHash: string | null = null;
+    try {
+      contentHash = draftContentHash(await parseProviderDraft(raw));
+    } catch {
+      /* Older oversized/unsupported drafts keep conservative raw-change handling. */
+    }
+    return { id, revision: current.revision, raw, contentHash };
   });
   if (!snapshot) return;
   await locked(client, active?.path ?? preferred, async () => {
@@ -720,8 +763,8 @@ async function processLink(
       )
         return false;
       await db.query(
-        `INSERT INTO mail_draft_copies(id,user_id,link_id,state,path,uid_validity,message_id,marker,hash,size_bytes,revision)
-        VALUES($1,$2,$3,'appending',$4,$5,$6,$1,$7,$8,$9)`,
+        `INSERT INTO mail_draft_copies(id,user_id,link_id,state,path,uid_validity,message_id,marker,hash,size_bytes,revision,content_hash,content_hash_source)
+        VALUES($1,$2,$3,'appending',$4,$5,$6,$1,$7,$8,$9,$10,CASE WHEN $10::text IS NULL THEN NULL ELSE $7 END)`,
         [
           snapshot.id,
           account.user_id,
@@ -732,6 +775,7 @@ async function processLink(
           draftHash(snapshot.raw),
           snapshot.raw.length,
           snapshot.revision,
+          snapshot.contentHash,
         ],
       );
       return true;
@@ -894,7 +938,7 @@ async function importNative(
         )
       ).rows[0].id;
       await db.query(
-        `INSERT INTO mail_draft_copies(id,user_id,link_id,state,path,uid_validity,uid,message_id,hash,size_bytes,revision) VALUES($1,$2,$3,'active',$4,$5,$6,$7,$8,$9,1)`,
+        `INSERT INTO mail_draft_copies(id,user_id,link_id,state,path,uid_validity,uid,message_id,hash,size_bytes,revision,content_hash,content_hash_source) VALUES($1,$2,$3,'active',$4,$5,$6,$7,$8,$9,1,$10,$8)`,
         [
           copyId,
           account.user_id,
@@ -905,6 +949,7 @@ async function importNative(
           copy.message_id,
           copy.hash,
           copy.size_bytes,
+          draftContentHash(value),
         ],
       );
       await db.query(

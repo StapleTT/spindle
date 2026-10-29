@@ -6,8 +6,45 @@ import { simpleParser } from 'mailparser';
 import MailComposer from 'nodemailer/lib/mail-composer';
 import {
   composeProviderDraft,
+  draftContentHash,
   parseProviderDraft,
 } from '../src/mail/provider-draft-mime.js';
+
+test('draft content fingerprints ignore transport encoding but retain private recipients, reply context and attachment bytes', async () => {
+  async function value(patch: object = {}) {
+    const compiled = new MailComposer({
+      from: 'sender@example.test',
+      to: 'recipient@example.test',
+      bcc: 'hidden@example.test',
+      subject: 'Same editable draft',
+      text: 'Draft café\nSecond line',
+      textEncoding: 'quoted-printable',
+      attachments: [{ filename: 'note.txt', content: Buffer.from('one') }],
+      ...patch,
+    }).compile();
+    compiled.keepBcc = true;
+    return parseProviderDraft(await compiled.build());
+  }
+  const original = draftContentHash(await value());
+  assert.equal(
+    draftContentHash(
+      await value({
+        textEncoding: 'base64',
+        headers: { 'X-Provider-Transport': 'added' },
+      }),
+    ),
+    original,
+  );
+  for (const patch of [
+    { to: 'different@example.test' },
+    { bcc: 'changed-private@example.test' },
+    { subject: 'An actual edit' },
+    { text: 'Changed body' },
+    { inReplyTo: '<different-parent@example.test>' },
+    { attachments: [{ filename: 'note.txt', content: Buffer.from('two') }] },
+  ])
+    assert.notEqual(draftContentHash(await value(patch)), original);
+});
 
 const content = {
   to: '',

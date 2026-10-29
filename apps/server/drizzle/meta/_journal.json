@@ -176,6 +176,13 @@
       "when": 1793410000000,
       "tag": "0024_send_later",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793420000000,
+      "tag": "0025_provider_draft_content_hash",
+      "breakpoints": true
     }
   ]
 }
