@@ -5,16 +5,12 @@ import { applyMailActions } from './actions.js';
 import { type ContentJob, fetchMessageContent } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
 import { cleanupUploads, fetchForwardFile, scanUpload } from './file-worker.js';
+import { watchInbox } from './idle.js';
 import { MAX_ATTACHMENTS } from './media.js';
 import { processOutgoing } from './outgoing-worker.js';
 import { syncProviderDrafts } from './provider-drafts.js';
 import { syncAccount } from './sync.js';
-
-// User-requested fetches and mail actions take priority over another metadata pass.
-const contentPending = `SELECT 1 FROM mail_content WHERE user_id=$1 AND account_id=$2 AND (state='pending' OR reply_headers_pending)
-  UNION ALL SELECT 1 FROM mail_content_attachments WHERE user_id=$1 AND account_id=$2 AND state='pending'
-  UNION ALL SELECT 1 FROM mail_actions WHERE user_id=$1 AND account_id=$2 AND state='pending'
-  UNION ALL SELECT 1 FROM mail_outbox WHERE user_id=$1 AND account_id=$2 AND state IN ('queued','sending') LIMIT 1`;
+import { contentPending } from './work-pending.js';
 
 type ActionJob = {
   kind: 'actions' | 'outgoing' | 'draft-attachment' | 'provider-drafts';
@@ -28,6 +24,7 @@ export async function startMailWorker(
   pool: Pool,
   keys: MailKeys,
 ) {
+  const shutdown = new AbortController();
   await boss.createQueue('mail-sync', {
     policy: 'exclusive',
     retryLimit: 3,
@@ -182,11 +179,24 @@ export async function startMailWorker(
         { singletonKey: account.id },
       );
     }
+    // IDLE rotates through ready inboxes after real sync work, using the same slot.
+    const idle =
+      await pool.query(`SELECT a.id,a.user_id FROM mail_accounts a JOIN users u ON u.id=a.user_id
+      WHERE u.email_verified AND a.status='ready' AND a.next_idle_at<=clock_timestamp() AND a.next_sync_at>clock_timestamp()
+      AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())
+      AND EXISTS(SELECT 1 FROM mailboxes b WHERE b.user_id=a.user_id AND b.account_id=a.id AND b.role='inbox' AND b.initial_complete)
+      ORDER BY a.next_idle_at,a.id LIMIT 100`);
+    for (const account of idle.rows)
+      await boss.send(
+        'mail-sync',
+        { kind: 'idle', userId: account.user_id, accountId: account.id },
+        { singletonKey: `idle:${account.id}` },
+      );
   }
   await boss.work('mail-dispatch', { pollingIntervalSeconds: 1 }, async () =>
     dispatch(),
   );
-  await boss.work<{ accountId: string; userId: string }>(
+  await boss.work<{ accountId: string; userId: string; kind?: 'idle' }>(
     'mail-sync',
     { localConcurrency: 1, pollingIntervalSeconds: 1 },
     async ([job]) => {
@@ -199,14 +209,32 @@ export async function startMailWorker(
           data.accountId,
         ) ||
         data.userId.length === 0 ||
-        data.userId.length > 128
+        data.userId.length > 128 ||
+        (data.kind !== undefined && data.kind !== 'idle')
       )
         throw new Error('Invalid mail job');
+      if (shutdown.signal.aborted) return;
       if (
         (await pool.query(contentPending, [data.userId, data.accountId]))
           .rowCount
       )
         return;
+      if (data.kind === 'idle') {
+        const changed = await watchInbox(
+          pool,
+          keys,
+          data.userId,
+          data.accountId,
+          shutdown.signal,
+        );
+        if (
+          !changed ||
+          shutdown.signal.aborted ||
+          (await pool.query(contentPending, [data.userId, data.accountId]))
+            .rowCount
+        )
+          return;
+      }
       await syncAccount(pool, keys, data.userId, data.accountId);
     },
   );
@@ -292,5 +320,8 @@ export async function startMailWorker(
       .catch(() => logger.error('Mail dispatch unavailable'));
   }, 5000);
   timer.unref();
-  return () => clearInterval(timer);
+  return () => {
+    clearInterval(timer);
+    shutdown.abort();
+  };
 }

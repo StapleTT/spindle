@@ -26,6 +26,7 @@ try {
         ? [
             'apps/web/test/auth.browser.ts',
             'apps/web/test/mail.browser.ts',
+            'apps/web/test/idle.browser.ts',
             'apps/web/test/search.browser.ts',
             'apps/web/test/conversations.browser.ts',
             'apps/web/test/reader.browser.ts',
@@ -39,6 +40,7 @@ try {
         : [
             'apps/server/test/auth.integration.ts',
             'apps/server/test/mail.integration.ts',
+            'apps/server/test/idle.integration.ts',
             'apps/server/test/search.integration.ts',
             'apps/server/test/conversations.integration.ts',
             'apps/server/test/reader.integration.ts',

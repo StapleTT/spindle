@@ -8,8 +8,14 @@ export type ImapSettings = {
   username: string;
 };
 
-export async function connectImap(settings: ImapSettings, password: string) {
+export async function connectImap(
+  settings: ImapSettings,
+  password: string,
+  signal?: AbortSignal,
+) {
+  signal?.throwIfAborted();
   const address = await resolveMailHost(settings.host);
+  signal?.throwIfAborted();
   const client = new ImapFlow({
     host: address,
     port: settings.port,
@@ -30,6 +36,8 @@ export async function connectImap(settings: ImapSettings, password: string) {
   });
   // An error event must never leak provider diagnostics or crash the worker.
   client.on('error', () => {});
+  const abort = () => client.close();
+  signal?.addEventListener('abort', abort, { once: true });
   const timeout = setTimeout(() => client.close(), 30000);
   try {
     await client.connect();
@@ -39,5 +47,6 @@ export async function connectImap(settings: ImapSettings, password: string) {
     throw new Error('IMAP connection failed');
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener('abort', abort);
   }
 }

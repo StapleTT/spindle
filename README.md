@@ -2,7 +2,7 @@
 
 Spindle brings your private mailboxes into one unified inbox. The 2.0 plan includes hosted/self-hosted deployment and keyboard-first workflows.
 
-The current rewrite supports invite-only signup, verified-email/password login and recovery, private IMAP connections and polling sync, a cached isolated reader with image controls, attachments and triage/undo, SMTP/Outbox, replies/formatted forwards, synchronized drafts, scanned outgoing files, sender names, per-account signatures, local search/saved views, split reader, keyboard/batch triage and account-scoped conversations. Native Gmail/Outlook integrations, remaining product features and production readiness are still planned. The visual design system will be imported from Claude Design later. Send-as aliases are excluded from scope.
+The current rewrite supports invite-only signup, verified-email/password login and recovery, private IMAP connections, inbox IDLE refresh and polling reconciliation, a cached isolated reader with image controls, attachments and triage/undo, SMTP/Outbox, replies/formatted forwards, synchronized drafts, scanned outgoing files, sender names, per-account signatures, local search/saved views, split reader, keyboard/batch triage and account-scoped conversations. Native Gmail/Outlook integrations, remaining product features and production readiness are still planned. The visual design system will be imported from Claude Design later. Send-as aliases are excluded from scope.
 
 See the [confirmed decisions](docs/decisions.md), [rebuild brief](REBUILD_BRIEF.md), and [task checklist](REBUILD_TASKS.md).
 

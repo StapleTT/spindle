@@ -234,7 +234,8 @@ export async function registerMailRoutes(
         if (existing) {
           await db.query(
             `UPDATE mail_accounts SET name=$3,transport=$4,credential=$5,status='pending',
-          error_code=NULL,failures=0,next_sync_at=clock_timestamp(),sync_request=gen_random_uuid(),lease_token=NULL,lease_until=NULL
+          error_code=NULL,failures=0,next_sync_at=clock_timestamp(),sync_request=gen_random_uuid(),lease_token=NULL,lease_until=NULL,
+          next_idle_at=clock_timestamp(),idle_failures=0
           WHERE user_id=$1 AND id=$2`,
             [owner, id, body.name, body.transport, credential],
           );
