@@ -11,6 +11,7 @@ import {
   writeRecovery,
 } from './draft-api.js';
 import { MailApiError, mailApi } from './mail-api.js';
+import { useMailRevision } from './mail-events.js';
 
 type Status =
   | 'loading'
@@ -27,6 +28,7 @@ type Attempt = {
 };
 
 export function useDraft(user: string, id: string) {
+  const liveRevision = useMailRevision(['drafts', 'files', 'outbox']);
   const [value, setValue] = useState<DraftValue | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [error, setError] = useState('');
@@ -311,7 +313,7 @@ export function useDraft(user: string, id: string) {
   }
   useEffect(() => {
     const controller = new AbortController();
-    const timer = setInterval(() => {
+    function poll() {
       if (!latest.current) return;
       void getDraft(id, controller.signal)
         .then((remote) => {
@@ -327,12 +329,14 @@ export function useDraft(user: string, id: string) {
             adoptSaved(remote);
         })
         .catch(() => {});
-    }, 5000);
+    }
+    if (liveRevision) poll();
+    const timer = setInterval(poll, 5000);
     return () => {
       controller.abort();
       clearInterval(timer);
     };
-  }, [id, adoptSaved]);
+  }, [id, adoptSaved, liveRevision]);
   async function discard() {
     if (saving.current) await saving.current;
     if (blocked.current) {

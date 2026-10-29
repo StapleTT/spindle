@@ -67,7 +67,7 @@ This closes U04 and supersedes the original legacy migration phase in the task p
 
 ## Next work and remaining prerequisites
 
-The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. SMTP outbox/sending, [reply/reply-all/forward](replies.md) and [outgoing file attachments](attachments.md) are also implemented. The live ClamAV service is verified. IMAP Drafts synchronization is implemented and user-confirmed; per-account signatures are implemented and reviewed. Local search/keyboard triage and the account-scoped conversation reader are implemented; live updates still use polling. Remaining live workflow/file/restart acceptance and other providers remain pending. Send-as aliases are excluded by D018; the checked primary sender remains authoritative.
+The initial audience, ownership, login and fresh-start decisions are settled. The local foundation, authentication, polling IMAP sync, cached reader/attachments, triage feedback and local composer/drafts are implemented. SMTP outbox/sending, [reply/reply-all/forward](replies.md) and [outgoing file attachments](attachments.md) are also implemented. The live ClamAV service is verified. IMAP Drafts synchronization is implemented and user-confirmed; per-account signatures are implemented and reviewed. Local search/keyboard triage and the account-scoped conversation reader are implemented; committed local updates now use authenticated SSE with reset/refetch and polling recovery (D022). Remaining live workflow/file/restart acceptance and other providers remain pending. Send-as aliases are excluded by D018; the checked primary sender remains authoritative.
 
 | Plan item   | Remaining prerequisite                                                  | Owner                               | Needed by                                                               |
 | ----------- | ----------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -220,7 +220,7 @@ Status: agent implementation choices for the user's requested conversation threa
 
 Use exact validated Message-ID/In-Reply-To/References links within one owned connected account, without subject fallback. Persist bounded References independently of body caches through normal metadata sync and existing MIME/header fetches. Derive current connected components from an indexed local token graph; handle cycles and late/missing ancestors without a persistent merge registry. Cap expansion at 1,000 physical message copies and pages at 50. Preserve physical message identity, immutable Outbox outcomes and active Drafts separation.
 
-The reader provides chronological cross-folder context, including synchronized Sent replies. Opening another member reuses safe per-message rendering, image consent, attachments, reply identity and actions. Inbox/search rows and batch scope stay per message. An owned source anchors the original search/folder and result navigation; context never grants cross-account or cross-user access. Inbox IDLE notifications are implemented under D021; local browser polling remains until authenticated SSE. See [conversation behavior and upgrade](conversations.md).
+The reader provides chronological cross-folder context, including synchronized Sent replies. Opening another member reuses safe per-message rendering, image consent, attachments, reply identity and actions. Inbox/search rows and batch scope stay per message. An owned source anchors the original search/folder and result navigation; context never grants cross-account or cross-user access. Inbox IDLE notifications are implemented under D021; authenticated SSE invalidates local browser views under D022, with polling recovery. See [conversation behavior and upgrade](conversations.md).
 
 ## D021 — bounded inbox IDLE refresh
 
@@ -228,4 +228,15 @@ Status: agent implementation choices for the user's requested IMAP IDLE refresh 
 
 Run short read-only inbox watches in the existing metadata queue/connection slot, after current backfill/sync and ahead of the next normal poll. Notifications commit an owned, fenced rescan request and use the existing authoritative sync path; they never directly change message flags or identity. Preserve two provider connections per worker and rotate accounts with durable scheduling/backoff. Yield for account/user/lease changes, requested content/actions/sending/drafts, due metadata work and shutdown. Keep normal polling for unsupported IDLE, missed notifications and bounded reconciliation; failures use separate retries without disabling working mail. Reconnect resets watch backoff.
 
-The additive `0020_imap_idle.sql` preserves mail, credentials, drafts and immutable Outbox data. The API remains local-only and the browser retains its ten-second refresh. Authenticated SSE, non-INBOX notifications and remaining CONDSTORE/QRESYNC/large-mailbox acceptance are separate scope. See [IDLE behavior and upgrade](imap.md#inbox-idle-refresh--2026-10-29).
+The additive `0020_imap_idle.sql` preserves mail, credentials, drafts and immutable Outbox data. The API remains local-only. D022 adds authenticated SSE with polling recovery; non-INBOX notifications and remaining CONDSTORE/QRESYNC/large-mailbox acceptance stay separate. See [IDLE behavior and upgrade](imap.md#inbox-idle-refresh--2026-10-29).
+
+
+## D022 — authenticated local SSE invalidation
+
+Status: agent implementation choices for the user's requested SSE on 2026-10-29.
+
+Use native EventSource and committed Postgres NOTIFY triggers to invalidate owned local views across API instances. Send topic names only. Authenticate through Better Auth, recheck the owned session/expiry/verified user before events and while idle, deny cross-origin and query-selected streams, and bound connections/backpressure/lifetime. Platform admins gain no mailbox access.
+
+Reconnect starts a new ordered transport with reset/refetch; durable database state and retained polling recover missed notifications rather than replaying an event log. Coalesce UI invalidations and reuse existing revision/dirty-state guards, preserving search/focus, draft recovery, iframe identity and image consent. Provider I/O, worker queues and connection budgets remain unchanged. Compose waits for initial account lookup to preserve sender/signature defaults.
+
+The additive `0021_mail_events.sql` preserves existing mail and immutable Outbox data. Each API process reserves a session-persistent Postgres LISTEN connection; deployment needs unbuffered same-origin proxy streaming. Keep this migration on application rollback. See [protocol, recovery, deployment and proof](events.md). Production proxy/load and remaining live-provider acceptance remain open.

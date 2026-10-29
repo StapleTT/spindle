@@ -52,6 +52,12 @@ function App() {
     if (message) feedback.current?.focus();
   }, [message]);
 
+  useEffect(() => {
+    const check = () => void refetch();
+    window.addEventListener('spindle:session-check', check);
+    return () => window.removeEventListener('spindle:session-check', check);
+  }, [refetch]);
+
   function notify(text: string, failed = false) {
     setError(failed);
     setMessage(text);
@@ -223,7 +229,11 @@ function App() {
           <button type="button" disabled={busy} onClick={() => void signOut()}>
             Sign out
           </button>
-          <Mail key={session.user.id} userId={session.user.id} />
+          {session.user.emailVerified ? (
+            <Mail key={session.user.id} userId={session.user.id} />
+          ) : (
+            <p>Verify your email to access your mail.</p>
+          )}
         </section>
       ) : (
         <section aria-labelledby="auth-title">

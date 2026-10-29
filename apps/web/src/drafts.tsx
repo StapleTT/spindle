@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { type DraftSummary, recoveryDrafts } from './draft-api.js';
 import { mailApi } from './mail-api.js';
+import { useMailRevision } from './mail-events.js';
 import { mailHref } from './mail-navigation.js';
 import { providerDraftText } from './provider-draft-status.js';
 
@@ -22,6 +23,12 @@ export function DraftList({
   user: string;
   accountId?: string;
 }) {
+  const liveRevision = useMailRevision([
+    'drafts',
+    'files',
+    'outbox',
+    'accounts',
+  ]);
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
   const [issues, setIssues] = useState<SyncIssue[]>([]);
   const [busy, setBusy] = useState(false);
@@ -68,7 +75,7 @@ export function DraftList({
       controller.abort();
       clearInterval(timer);
     };
-  }, [attempt, accountId]);
+  }, [attempt, accountId, liveRevision]);
   async function resolve(issue: SyncIssue, action: 'retry' | 'leaveProvider') {
     setBusy(true);
     try {

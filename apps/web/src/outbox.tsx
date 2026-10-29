@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { mailApi } from './mail-api.js';
+import { mailPollDelay, useMailRevision } from './mail-events.js';
 import { mailHref } from './mail-navigation.js';
 
 export type OutboxMessage = {
@@ -18,6 +19,7 @@ export type OutboxMessage = {
 };
 type Page = { messages: OutboxMessage[]; nextCursor: string | null };
 export function useOutbox() {
+  const liveRevision = useMailRevision(['outbox']);
   const [messages, setMessages] = useState<OutboxMessage[]>([]),
     [error, setError] = useState('');
   const [pages, setPages] = useState(1),
@@ -52,7 +54,7 @@ export function useOutbox() {
           );
       } finally {
         if (!controller.signal.aborted)
-          timer = setTimeout(() => void load(), 2000);
+          timer = setTimeout(() => void load(), mailPollDelay(2000));
       }
     }
     void load();
@@ -60,7 +62,7 @@ export function useOutbox() {
       controller.abort();
       clearTimeout(timer);
     };
-  }, [pages, revision]);
+  }, [pages, revision, liveRevision]);
   return {
     messages,
     error,

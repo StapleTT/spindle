@@ -64,3 +64,5 @@ Automated proof uses disposable databases and synthetic mail: parser limits/para
 Implementation verification on 2026-10-28: `npm run check` passed with 39 unit tests; all 149 integration tests passed; six focused Chromium journeys passed, including eight search/triage subchecks. Local migration/replay preserved existing counts and protected content, and health/readiness returned 200. The full browser suite and manual large-mailbox/screen-reader acceptance were not run for this slice.
 
 Conversation threading adds related cross-folder context inside the reader. Search results, counts, selected rows and batch scope remain per message. Out-of-scope members are labeled, while Previous/Next continues through the source result set. See [conversations](conversations.md).
+
+[Authenticated SSE](events.md) refreshes committed mail and saved-search changes across private tabs without replacing typed queries or focus. Reconnection refetches local state; polling remains recovery.

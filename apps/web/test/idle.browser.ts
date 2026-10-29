@@ -129,11 +129,18 @@ test('IDLE-triggered inbox arrival appears automatically and cached mail survive
     while (!idleStarts && Date.now() < end)
       await new Promise((resolve) => setTimeout(resolve, 50));
     assert.ok(idleStarts > 0, 'Worker entered real IMAP IDLE');
+    await page
+      .getByText(
+        'Live updates are reconnecting. Automatic refresh continues.',
+        { exact: true },
+      )
+      .waitFor({ state: 'hidden' });
     const search = page.getByRole('searchbox', {
       name: 'Search mail',
       exact: true,
     });
     await search.fill('unfinished search');
+    const started = Date.now();
     fixture.server.control.addMessage('INBOX', {
       raw: rawMail('Arrived through IDLE', 'idle-browser-arrived@example.test'),
       flags: [],
@@ -142,6 +149,10 @@ test('IDLE-triggered inbox arrival appears automatically and cached mail survive
     await page
       .getByRole('link', { name: 'Arrived through IDLE', exact: true })
       .waitFor();
+    assert.ok(
+      Date.now() - started < 6000,
+      'IDLE plus SSE updates the UI before the former ten-second poll',
+    );
     assert.equal(await search.inputValue(), 'unfinished search');
     assert.equal(
       await search.evaluate((node) => node === document.activeElement),

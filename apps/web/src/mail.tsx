@@ -9,6 +9,11 @@ import {
 } from 'react';
 import { ActionStatus } from './action-status.js';
 import { type Signature, startDraft } from './draft-api.js';
+import {
+  mailPollDelay,
+  subscribeMailChanges,
+  useMailEvents,
+} from './mail-events.js';
 
 const SignatureSettings = lazy(() =>
   import('./signature-settings.js').then((module) => ({
@@ -74,6 +79,7 @@ type Page = {
 
 export function Mail({ userId }: { userId: string }) {
   const root = useRef<HTMLElement>(null);
+  const live = useMailEvents(userId);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [split, setSplit] = useState(() => {
     try {
@@ -92,6 +98,7 @@ export function Mail({ userId }: { userId: string }) {
   );
   const [smtpAccount, setSmtpAccount] = useState<Account | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountsReady, setAccountsReady] = useState(false);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [configured, setConfigured] = useState(true);
   const {
@@ -140,6 +147,7 @@ export function Mail({ userId }: { userId: string }) {
       )
         return;
       setAccounts(connections.accounts);
+      setAccountsReady(true);
       setConfigured(connections.configured);
       setMailboxes(folders.mailboxes);
       setPage(messages);
@@ -153,6 +161,8 @@ export function Mail({ userId }: { userId: string }) {
   const reload = useCallback(() => {
     load(new AbortController().signal).catch(() => {});
   }, [load]);
+
+  useEffect(() => subscribeMailChanges(['mail', 'accounts'], reload), [reload]);
 
   const [latestAction, setLatestAction] = useState<Undoable | null>(null);
   const track = useCallback((action: Undoable) => setLatestAction(action), []);
@@ -263,7 +273,13 @@ export function Mail({ userId }: { userId: string }) {
       }
     }
     void poll();
-    const timer = setInterval(() => void poll(), 10000);
+    let lastPoll = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - lastPoll >= mailPollDelay(10000)) {
+        lastPoll = Date.now();
+        void poll();
+      }
+    }, 1000);
     return () => {
       controller.abort();
       clearInterval(timer);
@@ -515,6 +531,11 @@ export function Mail({ userId }: { userId: string }) {
           {notice}
         </p>
       )}
+      {!live && (
+        <p role="status">
+          Live updates are reconnecting. Automatic refresh continues.
+        </p>
+      )}
       <KeyboardTriage root={root} />
       <SearchControls
         query={q}
@@ -571,6 +592,7 @@ export function Mail({ userId }: { userId: string }) {
           <button
             data-mail-command="compose"
             type="button"
+            disabled={!accountsReady}
             onClick={() => {
               const selectedId =
                 account || selected?.accountId || accounts[0]?.id || null;

@@ -95,10 +95,25 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
       tab.on('dialog', (dialog) => void dialog.accept());
     };
     watch(page);
+    let releaseAccounts!: () => void;
+    const accountsReady = new Promise<void>((resolve) => {
+      releaseAccounts = resolve;
+    });
+    await page.route('**/api/mail/accounts', async (route) => {
+      await accountsReady;
+      await route.continue();
+    });
     await page.goto(config.appUrl);
     await page
       .getByRole('heading', { name: 'Unified inbox', exact: true })
       .waitFor();
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Compose', exact: true })
+        .isDisabled(),
+      true,
+    );
+    releaseAccounts();
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     await page
       .getByRole('heading', { name: 'New message', exact: true })

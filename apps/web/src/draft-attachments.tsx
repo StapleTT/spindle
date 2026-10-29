@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { mailApi } from './mail-api.js';
+import { mailPollDelay, useMailRevision } from './mail-events.js';
 
 type FileInfo = {
   id: string;
@@ -31,6 +32,7 @@ export function DraftAttachments({
   onReady: (ready: boolean) => void;
   disabled: boolean;
 }) {
+  const liveRevision = useMailRevision(['files']);
   const [files, setFiles] = useState<Record<string, FileInfo>>({});
   const [progress, setProgress] = useState<Record<string, number>>({});
   const [error, setError] = useState('');
@@ -68,7 +70,7 @@ export function DraftAttachments({
             (file) => !['ready', 'failed', 'quarantined'].includes(file.state),
           )
         )
-          timer = setTimeout(() => void load(), 1500);
+          timer = setTimeout(() => void load(), mailPollDelay(1500));
       } catch (failure) {
         if (!controller.signal.aborted) {
           setError(
@@ -85,7 +87,7 @@ export function DraftAttachments({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [key, attempt]);
+  }, [key, attempt, liveRevision]);
   useEffect(() => {
     onReady(ids.every((id) => files[id]?.state === 'ready'));
   }, [ids, files, onReady]);

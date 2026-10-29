@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { mailApi } from './mail-api.js';
+import { useMailRevision } from './mail-events.js';
 import { navigateMail } from './mail-navigation.js';
 export type SearchCoverage = { messages: number; cachedBodies: number };
 type SavedSearch = {
@@ -33,6 +34,7 @@ export function SearchControls({
   split: boolean;
   onSplit: () => void;
 }) {
+  const liveRevision = useMailRevision(['searches']);
   const [text, setText] = useState(query),
     [accountId, setAccount] = useState(account),
     [mailboxId, setMailbox] = useState(mailbox);
@@ -67,7 +69,7 @@ export function SearchControls({
           );
       });
     return () => controller.abort();
-  }, [revision]);
+  }, [revision, liveRevision]);
   function apply(q = text) {
     navigateMail({
       q: q.trim(),

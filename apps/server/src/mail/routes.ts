@@ -8,6 +8,7 @@ import type { ContentConfig } from './content-config.js';
 import { registerConversationRoutes } from './conversations.js';
 import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
+import { registerMailEvents } from './events.js';
 import { registerUploadRoutes } from './file-uploads.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerProviderDraftRoutes } from './provider-draft-routes.js';
@@ -129,6 +130,8 @@ export async function registerMailRoutes(
         .header('retry-after', '60')
         .send({ message: 'Too many requests. Try again in a minute.' });
   });
+
+  registerMailEvents(app, pool, config);
 
   app.get('/api/mail/accounts', async (request) => ({
     configured: keys.keys.has(keys.active),

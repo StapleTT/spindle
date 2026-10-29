@@ -59,4 +59,4 @@ CI uses Node 24, Postgres, synthetic IMAP mail and Chromium to run the same chec
 
 Local search syntax, coverage limits, shortcuts and selected-message recovery are documented in [search and keyboard triage](docs/search.md).
 
-[Conversation threading](docs/conversations.md) joins synchronized received/Sent messages in the reader while preserving per-message search, selection and actions.
+[Conversation threading](docs/conversations.md) joins synchronized received/Sent messages in the reader while preserving per-message search, selection and actions. [Live SSE updates](docs/events.md) refresh committed local changes across private tabs, with reconnect/refetch and polling recovery. Deployment needs a session-persistent Postgres connection and an unbuffered same-origin streaming proxy.

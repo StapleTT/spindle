@@ -6,6 +6,7 @@ import {
   mailApi,
   type Undoable,
 } from './mail-api.js';
+import { mailPollDelay, useMailRevision } from './mail-events.js';
 
 type Page = { actions: ActionFeedback[]; nextCursor: string | null };
 type TimedAction = ActionFeedback & { until: number };
@@ -18,6 +19,7 @@ export function ActionStatus({
   fresh: Undoable | null;
   onChange: () => void;
 }) {
+  const liveRevision = useMailRevision(['actions']);
   const [actions, setActions] = useState<TimedAction[]>([]);
   const [pages, setPages] = useState(1);
   const [more, setMore] = useState(false);
@@ -85,7 +87,7 @@ export function ActionStatus({
           );
       } finally {
         if (!controller.signal.aborted)
-          timer = setTimeout(() => void poll(), 2000);
+          timer = setTimeout(() => void poll(), mailPollDelay(2000));
       }
     }
     void poll();
@@ -93,7 +95,7 @@ export function ActionStatus({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [fresh, pages, revision, onChange]);
+  }, [fresh, pages, revision, onChange, liveRevision]);
 
   useEffect(() => {
     if (!actions.some((action) => action.until > Date.now())) return;

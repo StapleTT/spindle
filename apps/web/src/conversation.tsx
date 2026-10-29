@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { mailApi } from './mail-api.js';
+import { mailPollDelay, useMailRevision } from './mail-events.js';
 import { mailHref } from './mail-navigation.js';
 
 type Item = {
@@ -28,6 +29,7 @@ export function Conversation({
   query: string;
   revision: string;
 }) {
+  const liveRevision = useMailRevision(['mail', 'accounts']);
   const [data, setData] = useState<Page | null>(null),
     [error, setError] = useState(''),
     [pages, setPages] = useState(1),
@@ -75,7 +77,7 @@ export function Conversation({
           );
       } finally {
         if (!controller.signal.aborted)
-          timer = setTimeout(() => void load(), 10000);
+          timer = setTimeout(() => void load(), mailPollDelay(10000));
       }
     }
     void load();
@@ -83,7 +85,7 @@ export function Conversation({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [endpoint, pages, revision, retry]);
+  }, [endpoint, pages, revision, retry, liveRevision]);
   return (
     <section className="conversation" aria-label="Conversation">
       <h2>Conversation{data ? ` (${data.total} messages)` : ''}</h2>

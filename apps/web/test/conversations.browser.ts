@@ -310,6 +310,44 @@ test('conversation timeline preserves scoped navigation, reply identity, message
       },
     );
     await t.test(
+      'SSE metadata updates preserve formatted-body image consent and input focus',
+      async () => {
+        await openRoot();
+        await timeline
+          .getByRole('link', { name: 'Sent reply', exact: true })
+          .click();
+        await title.filter({ hasText: 'Sent reply' }).waitFor();
+        await page
+          .getByRole('button', { name: 'Display images', exact: true })
+          .click();
+        await page
+          .getByRole('button', { name: 'Hide images', exact: true })
+          .waitFor();
+        const source = await page.locator('iframe').getAttribute('src');
+        await search.fill('unfinished query');
+        await pool.query(
+          'UPDATE mail_messages SET subject=$2 WHERE user_id=$1 AND id=$3',
+          [owner.id, 'Sent reply updated', child],
+        );
+        await title.filter({ hasText: 'Sent reply updated' }).waitFor();
+        assert.equal(await page.locator('iframe').getAttribute('src'), source);
+        assert.equal(await search.inputValue(), 'unfinished query');
+        assert.equal(
+          await search.evaluate((node) => node === document.activeElement),
+          true,
+        );
+        await page
+          .getByRole('button', { name: 'Hide images', exact: true })
+          .waitFor();
+        await pool.query(
+          'UPDATE mail_messages SET subject=$2 WHERE user_id=$1 AND id=$3',
+          [owner.id, 'Sent reply', child],
+        );
+        await title.filter({ hasText: 'Sent reply' }).waitFor();
+        await search.fill('subject:original');
+      },
+    );
+    await t.test(
       'actions and reply headers belong to the opened member, and composer returns to its conversation',
       async () => {
         await openRoot();

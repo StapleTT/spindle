@@ -7,6 +7,7 @@ import {
   requestAction,
   type Undoable,
 } from './mail-api.js';
+import { useMailRevision } from './mail-events.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
 
 type Person = { name: string; address: string };
@@ -196,6 +197,7 @@ export function Reader({
   actionRevision: number;
   userId: string;
 }) {
+  const liveRevision = useMailRevision(['mail', 'accounts', 'actions']);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -322,7 +324,7 @@ export function Reader({
 
   // Follow the durable action until the worker reports the provider outcome.
   useEffect(() => {
-    if (!pendingAction && !actionRevision) return;
+    if (!pendingAction && !actionRevision && !liveRevision) return;
     const controller = new AbortController();
     async function poll() {
       try {
@@ -335,7 +337,15 @@ export function Reader({
         );
         if (pendingAction && current.message.lastAction?.state !== 'pending')
           onChange();
-      } catch {
+      } catch (failure) {
+        if (
+          !controller.signal.aborted &&
+          failure instanceof MailApiError &&
+          failure.status === 404
+        ) {
+          setDetail(null);
+          setError(failure.message);
+        }
         // The interval keeps polling while the action is pending.
       }
     }
@@ -347,7 +357,7 @@ export function Reader({
       controller.abort();
       clearInterval(timer);
     };
-  }, [pendingAction, endpoint, onChange, actionRevision]);
+  }, [pendingAction, endpoint, onChange, actionRevision, liveRevision]);
 
   async function mark(kind: MailAction['kind'], folder?: string) {
     setActionError('');
