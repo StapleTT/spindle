@@ -15,6 +15,11 @@ import {
 import { trimContentCache } from './content-cache.js';
 import type { ContentConfig } from './content-config.js';
 import { attachmentUrl, bodyUrl } from './content-server.js';
+import {
+  ConversationLimitError,
+  conversationIds,
+  conversationQuery,
+} from './conversations.js';
 import type { AttachmentInfo } from './media.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import {
@@ -37,6 +42,7 @@ const view = {
     account: { type: 'string', format: 'uuid' },
     mailbox: { type: 'string', format: 'uuid' },
     q: searchProperty,
+    conversation: conversationQuery,
   },
   additionalProperties: false,
 };
@@ -48,7 +54,12 @@ export function registerReaderRoutes(
 ) {
   app.get<{
     Params: { id: string };
-    Querystring: { account?: string; mailbox?: string; q?: string };
+    Querystring: {
+      account?: string;
+      mailbox?: string;
+      q?: string;
+      conversation?: string;
+    };
   }>(
     '/api/mail/messages/:id',
     {
@@ -71,11 +82,38 @@ export function registerReaderRoutes(
           return reply.code(400).send({ message: error.message });
         throw error;
       }
+      const anchor = request.query.conversation;
+      const neighborsValues = [...values];
+      if (anchor) {
+        neighborsValues[3] = anchor;
+        if (
+          !(
+            await pool.query(
+              `SELECT 1 FROM mail_messages m WHERE ${condition} AND m.id=$4`,
+              neighborsValues,
+            )
+          ).rowCount
+        )
+          return reply.code(404).send({
+            message:
+              'Conversation source not found in this view. Return to the message list.',
+          });
+        try {
+          if (!(await conversationIds(pool, owner, anchor)).includes(id))
+            return reply
+              .code(404)
+              .send({ message: 'Message not found in this conversation.' });
+        } catch (error) {
+          if (error instanceof ConversationLimitError)
+            return reply.code(413).send({ message: error.message });
+          throw error;
+        }
+      }
       const message = (
         await pool.query(
           `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
       m.received_at AS "receivedAt",m.sent_at AS "sentAt",m.message_id AS "messageId",m.in_reply_to AS "inReplyTo",
-      ${unreadCondition} AS unread,
+      ${anchor ? "NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id AND '\\Seen'=ANY(seen.flags))" : unreadCondition} AS unread,
       (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state,'code',x.error_code) FROM mail_actions x
         WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction",
       (SELECT json_build_object('archive',bool_or(t.role='${moveRoles.archive}'),'trash',bool_or(t.role='${moveRoles.trash}'))
@@ -83,7 +121,7 @@ export function registerReaderRoutes(
         AND NOT EXISTS(SELECT 1 FROM mail_memberships here WHERE here.user_id=$1 AND here.message_id=m.id
           AND COALESCE(here.pending_mailbox_id,here.mailbox_id)=t.id)) AS "canMove"
       FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
-      WHERE ${condition} AND m.id=$4`,
+      WHERE (${condition}${anchor ? ' OR (m.user_id=$1 AND m.id=$4)' : ''}) AND m.id=$4`,
           values,
         )
       ).rows[0];
@@ -118,7 +156,7 @@ export function registerReaderRoutes(
                 `SELECT m.id FROM mail_messages m WHERE ${condition}
         AND (m.received_at,m.id) ${operator} (SELECT received_at,id FROM mail_messages WHERE user_id=$1 AND id=$4)
         ORDER BY m.received_at ${order},m.id ${order} LIMIT 1`,
-                values,
+                neighborsValues,
               )
             ).rows[0]?.id ?? null
           );

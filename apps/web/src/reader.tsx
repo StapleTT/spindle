@@ -176,6 +176,7 @@ function AttachmentItem({
 export function Reader({
   id,
   query = '',
+  conversation = '',
   account,
   mailbox,
   folders,
@@ -186,6 +187,7 @@ export function Reader({
 }: {
   id: string;
   query?: string;
+  conversation?: string;
   account: string;
   mailbox: string;
   folders: { id: string; accountId: string; path: string }[];
@@ -220,6 +222,7 @@ export function Reader({
   if (account) params.set('account', account);
   if (mailbox) params.set('mailbox', mailbox);
   if (query) params.set('q', query);
+  if (conversation) params.set('conversation', conversation);
   const endpoint = `messages/${id}?${params}`;
 
   useEffect(() => {
@@ -437,6 +440,7 @@ export function Reader({
               draft: result.draft.id,
               view: 'drafts',
               message: '',
+              conversation,
             });
           return;
         }

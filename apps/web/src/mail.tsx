@@ -21,6 +21,7 @@ const Composer = lazy(() =>
 );
 
 import { BatchActions } from './batch-actions.js';
+import { Conversation } from './conversation.js';
 import { DraftList } from './drafts.js';
 import { KeyboardTriage } from './keyboard-triage.js';
 import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
@@ -99,6 +100,7 @@ export function Mail({ userId }: { userId: string }) {
     mailbox,
     cursor,
     message: messageId,
+    conversation,
     draft: draftId,
     view,
   } = useMailLocation();
@@ -218,8 +220,8 @@ export function Mail({ userId }: { userId: string }) {
   useEffect(() => {
     if (!messageId && previousMessage.current)
       focusNext.current = previousMessage.current;
-    previousMessage.current = messageId;
-  }, [messageId]);
+    previousMessage.current = conversation || messageId;
+  }, [messageId, conversation]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: Selection belongs to the current query and page.
   useEffect(() => {
     setSelectedIds([]);
@@ -963,21 +965,33 @@ export function Mail({ userId }: { userId: string }) {
             <div className={split && messageId ? 'split-mail' : ''}>
               {(!messageId || split) && mailList}
               {messageId && (
-                <Reader
-                  key={`${messageId}:${account}:${mailbox}:${q}`}
-                  id={messageId}
-                  query={q}
-                  account={account}
-                  mailbox={mailbox}
-                  folders={mailboxes}
-                  onChange={reload}
-                  actionRevision={actionRevision}
-                  userId={userId}
-                  onAction={(action) => {
-                    track(action);
-                    reload();
-                  }}
-                />
+                <div>
+                  <Conversation
+                    key={`${conversation || messageId}:${account}:${mailbox}:${q}`}
+                    anchor={conversation || messageId}
+                    selected={messageId}
+                    account={account}
+                    mailbox={mailbox}
+                    query={q}
+                    revision={`${actionRevision}:${latestAction?.id ?? ''}`}
+                  />
+                  <Reader
+                    key={`${messageId}:${account}:${mailbox}:${q}:${conversation}`}
+                    id={messageId}
+                    conversation={conversation}
+                    query={q}
+                    account={account}
+                    mailbox={mailbox}
+                    folders={mailboxes}
+                    onChange={reload}
+                    actionRevision={actionRevision}
+                    userId={userId}
+                    onAction={(action) => {
+                      track(action);
+                      reload();
+                    }}
+                  />
+                </div>
               )}
             </div>
           )}

@@ -81,3 +81,7 @@ Local proof on 2026-10-27: lint, both typechecks, 17 unit tests, 49 integration 
 ## Search navigation
 
 The reader accepts the active local search/account/folder scope. Previous/Next shares the list's filters and received-date/UUID ordering, and Back restores list focus. Read/unread actions that remove the current search result advance to its neighbor. Optional split view preserves row versus reader keyboard context; [search and keyboard triage](search.md) documents coverage and shortcuts.
+
+## Conversation context
+
+The [conversation timeline](conversations.md) connects owned messages across folders in one account. Select a member to use this same reader and its per-message image consent, attachment controls and action/reply paths. The original source anchors search/folder navigation; opening the timeline itself never fetches other bodies or marks mail read.

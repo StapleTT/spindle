@@ -1,0 +1,37 @@
+# Conversation threading
+
+Open a message to see its **Conversation** timeline. It links synchronized messages in the same connected account using exact, validated Message-ID, In-Reply-To and References identifiers. Subject alone never groups mail. Matching identifiers are relationship hints, not proof of sender authenticity or permission to access another message.
+
+The timeline includes related received mail across folders, including Sent, Archive, Trash and Junk; active Drafts stay in the composer. Each entry shows sender, received time, folder, read state and whether it matches the current search/folder. It orders the displayed messages oldest first, initially showing the latest 50. **Show earlier conversation messages** loads earlier pages, which stay loaded when selecting another member. Physical IMAP folder copies retain their separate IDs and actions, even when they share an RFC Message-ID.
+
+Inbox/search rows, counts and selection remain per message. The timeline supplies conversation context without collapsing search matches or turning a selected-message action into a whole-thread operation. This slice does not add thread-wide archive/read/delete controls, pin/mute/snooze or provider-native thread IDs.
+
+## Reader, replies and navigation
+
+Choose a timeline entry to open that specific message in the existing reader. Only that message can request a missing body; listing the conversation does not fetch any bodies or mark anything read. HTML isolation/sanitization, attachment controls and per-message image opt-in use the existing implementation. Switching messages resets image consent. The message toolbar and shortcuts apply to the open message, with the existing durable outcomes and individual five-second Undo.
+
+Related messages outside the original result set carry an `Outside current view` label. Their read state reflects their own memberships, rather than the source folder's flags. Reply, Reply all and Forward use the open message's receiving account and reply metadata. Sent copies join after the provider's Sent folder is synchronized; pending/unknown Outbox snapshots are not treated as delivered mail or resent to populate a conversation.
+
+The URL retains the original source message in `conversation=` and the active search/account/folder. The server verifies that source against the original view and verifies that the selected message belongs to its owned account-scoped conversation before allowing the contextual read. Back restores the source list and focus. Previous/Next and j/k continue through the original result set from that source; timeline links select individual conversation members. Selecting another list result clears the conversation context. Browser reload/history and split reader use the same URL state.
+
+Reply composition retains this context for **Back to original message**. Reopened response drafts without a surviving navigation context open their owned source in an all-folder view. If the source disappears or no longer matches its search, return to the list and choose a current source; Spindle does not broaden the original search silently. Slow prior timeline, reader or action responses cannot replace newer selections.
+
+## Local graph and limits
+
+`mail_messages.reference_ids` stores up to 100 validated References IDs independently of the expiring body cache. Normal metadata sync requests only the References header in addition to its existing envelope/flags; the worker retains the same lease, TLS, two-connection budget, batch limits and polling schedule. Already parsed MIME/header upgrades also update these IDs. Invalid or oversized reference headers leave ordinary envelope sync available; unknown headers can be retried during normal sync. Missing References on existing messages fill as background metadata scans revisit them, without an eager full-mailbox fetch during upgrade.
+
+A generated `thread_tokens` array and GIN index provide local graph edges. A bounded recursive query finds connected messages, including siblings with missing common ancestors and parents that arrive later. UNION terminates cycles. Ownership, connected account and received-message eligibility are checked during traversal. The graph is derived from current metadata: deleting a bridge or correcting its headers can split a conversation; cache eviction cannot erase retained References. No separate persistent merge registry or new queue is required.
+
+Expansion stops after 1,001 candidates. Conversations over 1,000 synchronized message copies refuse expansion with an explanation; their individual messages remain readable through ordinary list/search navigation. Timeline pages are capped at 50, with received-date/UUID keyset order and cursors restricted to that conversation. Results reflect the current synchronized history, not all mail retained by a provider. Local polling refreshes the timeline every ten seconds and after message action-state changes; genuine push updates remain the next feature.
+
+## Upgrade and rollback
+
+Apply additive `0019_conversations.sql` with `npm run db:migrate` before deploying the new API/worker/web. It adds nullable References metadata, validated immutable SQL token helpers, a generated token array and its GIN index. Already cached parsed References backfill locally. Original headers, bodies, membership identity, drafts/signatures, credentials, uploads and immutable Outbox snapshots are preserved. Keep the additive migration during application rollback; older code ignores the new metadata and index. Do not reset local mail or provider checkpoints. Index creation locks the message table, so use a maintenance window for large hosted datasets.
+
+## Verification
+
+Disposable API tests cover private ownership (including foreign admins and unverified/anonymous users), same-account boundaries, no subject fallback, distinct copies, cycles, missing/late/deleted/corrected ancestry, excluded Drafts, contextual reader authorization, search neighbors, unchanged read flags, tied-date pagination, malformed IDs, oversized graph refusal and actual ImapKit References sync/backfill without body fetches. No provider calls occur during conversation queries.
+
+The focused Chromium journey covers chronological cross-folder context, Sent/archive reads outside a search, reload and source focus, isolated HTML and independent image consent, per-message action/Undo and reply identity, return from composer, earlier pages, delayed-response isolation and narrow-screen reflow. Existing search, reader, reply, composer and provider-Drafts journeys remain regression checks. Live-provider conversation review and large-mailbox/manual screen-reader acceptance remain separate from this implementation proof.
+
+Verification on 2026-10-28: all 156 integration tests passed; six focused Chromium journeys passed across conversations, search, reader, replies, composer and provider Drafts. The new conversation journey includes three workflow checks. `npm run check` covers lint, typecheck, 39 unit tests and both builds. The local migration/replay preserved original counts and protected hashes; health/readiness and the new web module were checked separately. No real mail actions or sending were used as tests. Full-browser and live-provider/manual large-mailbox/screen-reader acceptance remain separate.

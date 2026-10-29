@@ -3,7 +3,7 @@ import { plainHtml, removeRecovery, startDraft } from './draft-api.js';
 import { DraftAttachments } from './draft-attachments.js';
 import { ForwardPreview } from './forward-preview.js';
 import { MailApiError, mailApi } from './mail-api.js';
-import { mailHref, navigateMail } from './mail-navigation.js';
+import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { ProviderDraftStatus } from './provider-draft-status.js';
 import { RichEditor } from './rich-editor.js';
 import { useDraft } from './use-draft.js';
@@ -27,6 +27,7 @@ export function Composer({
   accounts: Account[];
 }) {
   const draft = useDraft(user, id);
+  const { conversation } = useMailLocation();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [busy, setBusy] = useState(false);
   const [sendError, setSendError] = useState('');
@@ -35,7 +36,8 @@ export function Composer({
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
   const value = draft.value;
-  const close = () => navigateMail({ draft: '', view: 'drafts' });
+  const close = () =>
+    navigateMail({ draft: '', view: 'drafts', conversation: '' });
   if (!value)
     return (
       <section aria-label="Composer">
@@ -118,7 +120,14 @@ export function Composer({
       {draft.replyContext && (
         <div className="reply-context">
           {draft.replyContext.sourceMessageId && (
-            <a href={mailHref({ message: draft.replyContext.sourceMessageId })}>
+            <a
+              href={mailHref({
+                message: draft.replyContext.sourceMessageId,
+                ...(conversation
+                  ? { conversation }
+                  : { q: 'in:anywhere', account: '', mailbox: '', cursor: '' }),
+              })}
+            >
               Back to original message
             </a>
           )}

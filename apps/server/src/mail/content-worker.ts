@@ -175,7 +175,13 @@ export async function fetchMessageContent(
             Buffer.byteLength(encoded),
           ],
         );
-        if (updated.rowCount) await trimContentCache(db, owner, messageId);
+        if (updated.rowCount) {
+          await db.query(
+            'UPDATE mail_messages SET reference_ids=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
+            [owner, accountId, messageId, metadata.references],
+          );
+          await trimContentCache(db, owner, messageId);
+        }
       });
       return;
     }
@@ -224,6 +230,10 @@ export async function fetchMessageContent(
         ],
       );
       if (!updated.rowCount) return;
+      await db.query(
+        'UPDATE mail_messages SET reference_ids=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
+        [owner, accountId, messageId, parsed.reply.references],
+      );
       for (const image of parsed.images)
         await db.query(
           `INSERT INTO mail_content_images(user_id,account_id,message_id,position,content_type,data)

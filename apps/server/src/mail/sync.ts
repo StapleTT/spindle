@@ -3,6 +3,7 @@ import type { Pool, PoolClient } from 'pg';
 import { pendingKind, withSeen } from './actions.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
+import { parseReplyHeaders } from './parse.js';
 import {
   claimAccount,
   type MailAccount,
@@ -47,12 +48,22 @@ async function saveMessage(
   const received = validDate(mail.internalDate) ?? new Date(0);
   if (account.history_since && received < account.history_since) return null;
   const sent = validDate(envelope?.date);
+  // Retain bounded References independently of the expiring body cache.
+  let references: string[] | null = null;
+  if (Buffer.isBuffer(mail.headers) && mail.headers.length <= 64 * 1024) {
+    try {
+      references = (await parseReplyHeaders(mail.headers)).references;
+    } catch {
+      // Invalid reply headers cannot prevent ordinary metadata synchronization.
+    }
+  }
   const result = await client.query(
-    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes,reference_ids)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
      ON CONFLICT (account_id,remote_key) DO UPDATE SET subject=EXCLUDED.subject,
        sender=EXCLUDED.sender, recipients=EXCLUDED.recipients, sent_at=EXCLUDED.sent_at,
-       received_at=EXCLUDED.received_at, size_bytes=EXCLUDED.size_bytes
+       received_at=EXCLUDED.received_at, size_bytes=EXCLUDED.size_bytes,
+       reference_ids=COALESCE(EXCLUDED.reference_ids,mail_messages.reference_ids)
      RETURNING id`,
     [
       account.user_id,
@@ -69,6 +80,7 @@ async function saveMessage(
       received,
       text(envelope?.inReplyTo),
       mail.size ?? 0,
+      references,
     ],
   );
   await client.query(
@@ -187,6 +199,7 @@ export async function syncAccount(
               flags: true,
               internalDate: true,
               size: true,
+              headers: ['references'],
             },
             { uid: true },
           )) {
@@ -198,7 +211,8 @@ export async function syncAccount(
               throw new Error('Invalid IMAP batch');
             batchBytes +=
               Buffer.byteLength(JSON.stringify(message.envelope ?? {})) +
-              Buffer.byteLength(JSON.stringify([...(message.flags ?? [])]));
+              Buffer.byteLength(JSON.stringify([...(message.flags ?? [])])) +
+              (message.headers?.length ?? 0);
             if (batchBytes > 8 * 1024 * 1024)
               throw new Error('Mail metadata batch exceeds limit');
             messages.push(message);

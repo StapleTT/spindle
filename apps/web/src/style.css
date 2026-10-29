@@ -288,3 +288,22 @@ dialog::backdrop {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.conversation {
+  margin-block: 1rem;
+  padding: 0.75rem;
+  border: 1px solid GrayText;
+  overflow-wrap: anywhere;
+}
+.conversation ol {
+  max-height: 18rem;
+  overflow: auto;
+  padding-left: 1.5rem;
+}
+.conversation li {
+  margin-block: 0.6rem;
+}
+.conversation [aria-current] {
+  font-weight: 700;
+  text-decoration-thickness: 0.15em;
+}

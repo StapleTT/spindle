@@ -5,6 +5,7 @@ import type { Auth } from '../auth/auth.js';
 import type { AuthConfig } from '../auth/config.js';
 import { authHeaders } from '../auth/routes.js';
 import type { ContentConfig } from './content-config.js';
+import { registerConversationRoutes } from './conversations.js';
 import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
 import { registerUploadRoutes } from './file-uploads.js';
@@ -460,6 +461,7 @@ export async function registerMailRoutes(
   );
   registerTriageRoutes(app, pool);
   registerReaderRoutes(app, pool, content);
+  registerConversationRoutes(app, pool);
   registerSignatureRoutes(app, pool);
   registerDraftRoutes(app, pool, content);
   registerUploadRoutes(app, pool);
