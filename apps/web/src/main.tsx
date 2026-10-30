@@ -274,10 +274,10 @@ function App() {
           aria-busy={busy}
           aria-labelledby="auth-title"
         >
-          <div className="auth-brand">
+          <a className="auth-brand" href="/landing/" title="Spindle home page">
             <SpindleLogo size={38} />
             Spindle
-          </div>
+          </a>
           <div className="auth-heading">
             <h1 id="auth-title">{title}</h1>
             <p id={view === 'reset' ? 'password-hint' : undefined}>
@@ -419,6 +419,9 @@ function App() {
                 Request another reset link
               </button>
             )}
+            <a className="home-link" href="/landing/">
+              What is Spindle? Visit the home page
+            </a>
           </nav>
         </form>
       )}

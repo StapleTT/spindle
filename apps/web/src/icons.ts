@@ -30,6 +30,7 @@ export { default as formatQuote } from '@material-symbols/svg-400/rounded/format
 export { default as formatStrikethrough } from '@material-symbols/svg-400/rounded/format_strikethrough.svg';
 export { default as forward } from '@material-symbols/svg-400/rounded/forward.svg';
 export { default as hideImage } from '@material-symbols/svg-400/rounded/hide_image.svg';
+export { default as home } from '@material-symbols/svg-400/rounded/home.svg';
 export { default as inbox } from '@material-symbols/svg-400/rounded/inbox.svg';
 export { default as keep } from '@material-symbols/svg-400/rounded/keep.svg';
 export { default as keepFill } from '@material-symbols/svg-400/rounded/keep-fill.svg';
@@ -37,6 +38,7 @@ export { default as keyboard } from '@material-symbols/svg-400/rounded/keyboard.
 export { default as lightMode } from '@material-symbols/svg-400/rounded/light_mode.svg';
 export { default as link } from '@material-symbols/svg-400/rounded/link.svg';
 export { default as lock } from '@material-symbols/svg-400/rounded/lock.svg';
+export { default as logout } from '@material-symbols/svg-400/rounded/logout.svg';
 export { default as mail } from '@material-symbols/svg-400/rounded/mail.svg';
 export { default as manageAccounts } from '@material-symbols/svg-400/rounded/manage_accounts.svg';
 export { default as markEmailRead } from '@material-symbols/svg-400/rounded/mark_email_read.svg';

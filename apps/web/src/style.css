@@ -2934,3 +2934,81 @@ label.avatar input {
 .compose-popover.schedule .form-actions {
   flex-wrap: nowrap;
 }
+
+/* Sign-in links to the product home page. */
+a.auth-brand {
+  align-self: flex-start;
+  color: var(--on);
+  text-decoration: none;
+}
+a.auth-brand:hover {
+  color: var(--on);
+}
+.home-link {
+  margin-top: 4px;
+  color: var(--on-var);
+  font-size: 13px;
+  text-decoration: none;
+}
+.home-link:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+/* Account pop-up from the avatar. */
+.account-anchor {
+  position: relative;
+}
+.account-avatar[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px var(--pc);
+}
+dialog.account-menu {
+  position: absolute;
+  inset: calc(100% + 8px) 0 auto auto;
+  z-index: 60;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  max-height: none;
+  margin: 0;
+  padding: 16px;
+  overflow: visible;
+  border-radius: 28px;
+  background: var(--surf-hi);
+  color: var(--on);
+  box-shadow: var(--e3);
+}
+dialog.account-menu[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.account-menu-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0 4px;
+  text-align: center;
+}
+.account-menu-head #account-menu-email {
+  margin-top: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.account-avatar.large {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  font-size: 26px;
+}
+.account-menu .sign-out {
+  align-self: center;
+  color: var(--on);
+}
+.auth-card > button[type="submit"],
+.auth-card > .auth-passkey {
+  align-self: stretch;
+}

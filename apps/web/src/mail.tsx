@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { AccountMenu } from './account-menu.js';
 import { ActionStatus } from './action-status.js';
 import { startDraft } from './draft-api.js';
 import {
@@ -1033,16 +1034,7 @@ export function Mail({
           <div className="top-actions">
             <KeyboardTriage root={root} />
             <ThemeToggle />
-            <button
-              type="button"
-              className="account-avatar"
-              title={`${email} · sign out`}
-              disabled={busy}
-              onClick={onSignOut}
-            >
-              <span aria-hidden="true">{initials(email).slice(0, 1)}</span>
-              <span className="visually-hidden">Sign out</span>
-            </button>
+            <AccountMenu email={email} busy={busy} onSignOut={onSignOut} />
           </div>
         </header>
         {!configured && !inSettings && (

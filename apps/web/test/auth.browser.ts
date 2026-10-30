@@ -145,8 +145,18 @@ test('browser signup, verification, sessions, recovery and phone layout', {
     await page.getByLabel('Password', { exact: true }).fill(changed);
     await click('Sign in');
     await heading('You’re signed in');
+    // Sign out lives in the account pop-up opened from the avatar.
+    await page
+      .getByRole('button', { name: 'Account: browser@example.test' })
+      .click();
     await click('Sign out');
     await heading('Sign in');
+    assert.equal(
+      await page
+        .getByRole('link', { name: 'What is Spindle? Visit the home page' })
+        .getAttribute('href'),
+      '/landing/',
+    );
     await page.setViewportSize({ width: 375, height: 812 });
     await click('Create an account');
     await heading('Create your account');
