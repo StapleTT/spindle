@@ -1372,6 +1372,14 @@ label.avatar:has(:focus-visible) {
 .message-card-people .muted {
   font-size: 13px;
 }
+.message-header-details {
+  margin-top: 4px;
+}
+.message-header-details summary {
+  cursor: pointer;
+  color: var(--on-var);
+  font-size: 12px;
+}
 .message-details {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -1401,13 +1409,14 @@ label.avatar:has(:focus-visible) {
   font-size: 15px;
   line-height: 1.65;
 }
-/* Mail HTML keeps its own white canvas; its styles never reach the app. */
+/* The isolated document supplies a neutral canvas; sender styles stay inside it. */
 .message-frame {
   width: 100%;
   min-height: 60vh;
   border: none;
   border-radius: 12px;
-  background: white;
+  background: var(--surf-hi);
+  color-scheme: inherit;
 }
 .plain-message {
   max-width: 68ch;
@@ -1431,7 +1440,12 @@ label.avatar:has(:focus-visible) {
 .reader-images p {
   flex: 1;
 }
-.reader-images button {
+.reader-image-controls {
+  display: flex;
+  justify-content: flex-end;
+}
+.reader-images button,
+.reader-image-controls button {
   min-height: 32px;
   border-radius: 16px;
 }

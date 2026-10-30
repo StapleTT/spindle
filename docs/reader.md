@@ -1,6 +1,6 @@
 # Message reader
 
-Open any synchronized message to read its cached plain-text or formatted body. Previous/next follows the current account/folder view across list pages. **Back to message list** preserves that list's filters and page. Browser Back/Forward and message links use the URL fragment. Slow requests for a previously selected message cannot replace the current one.
+Open any synchronized message to read its cached body. Format selection is automatic: plain-only messages display escaped plain text; messages with HTML display their isolated sanitized formatting. There is no manual format switch. Previous/next follows the current account/folder view across list pages. **Back to message list** preserves that list's filters and page. Browser Back/Forward and message links use the URL fragment. Slow requests for a previously selected message cannot replace the current one.
 
 The reader remains read-only: fetching uses IMAP's non-mutating download and a read-only mailbox lock. Opening mail does not change its provider read flag. Attachments are listed and downloaded on demand (see below); threads and mail actions have separate implementation gates. Styles remain temporary pending Claude Design.
 
@@ -90,3 +90,10 @@ The [conversation timeline](conversations.md) connects owned messages across fol
 ## Saved image defaults — 2026-10-30
 
 **Settings › Security** now controls privacy proxying and default blocking per user. Both stay on by default. With blocking off, the reader's initial signed body grant enables images; manual Hide still generates a blocked grant instead of falling back to the automatic default. With proxying off, allowed remote HTTPS sources and CSS backgrounds go directly to approved public image origins under a body-specific CSP; inline images remain on owned content endpoints. Direct fetches expose the reader's IP and use browser networking. Defaults apply to newly opened views. Sandbox, scripts/forms/fonts restrictions, no-referrer and owner/session/cache grants remain enforced. See [behavior, direct-mode limits and upgrade](mail-preferences.md).
+
+
+## Automatic format and neutral canvas — 2026-10-30
+
+The MIME parser does not manufacture HTML from text-only mail, so cached HTML availability determines the reader's format. Missing content-host configuration still falls back to plain text. The isolated document defaults to a muted light canvas (`#f1f2f7`) rather than white; uncoloured HTML adopts a dark canvas (`#222222`) and light text in the app's dark theme. Sender-authored palettes retain their explicit colours, backgrounds and table layout, with a neutral light fallback to avoid mismatched inherited foreground/background colours.
+
+The app passes an enum-validated `theme=light|dark` appearance parameter to body/forward content requests. Theme changes renew the existing owned content grant with the current image choice; cached images are reused. Failed renewal keeps the existing readable frame. Theme input cannot change ownership, image permission, CSP isolation or resource validation. No scripts, same-origin sandbox permissions, cache/schema changes or new dependencies are added.

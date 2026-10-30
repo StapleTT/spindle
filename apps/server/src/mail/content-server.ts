@@ -87,8 +87,12 @@ export function forwardBodyUrl(
   return `${config.origin}/forward?token=${token}`;
 }
 
-function htmlDocument(html: string) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.55 system-ui,sans-serif;margin:0;color:#202124;background:#fff;overflow-wrap:anywhere}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
+function htmlDocument(html: string, theme: 'light' | 'dark' = 'light') {
+  // Keep sender-authored palettes paired; only uncoloured HTML adopts the app's dark fallback.
+  const authoredPalette =
+    /\b(?:color|background(?:-color)?)\s*:|\b(?:bgcolor|color)\s*=/i.test(html);
+  const dark = theme === 'dark' && !authoredPalette;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.55 system-ui,sans-serif;margin:0;color:${dark ? '#ececec' : '#202124'};background:${dark ? '#222222' : '#f1f2f7'};overflow-wrap:anywhere}a{color:${dark ? '#a9b5f5' : '#3e56c2'}}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
 }
 
 export function bodyUrl(
@@ -243,9 +247,10 @@ export function buildContentApp(
     properties: {
       token: { type: 'string', minLength: 1, maxLength: 2048 },
       index: { type: 'string', pattern: '^(?:[0-9]|1[0-9])$' },
+      theme: { type: 'string', enum: ['light', 'dark'] },
     },
   };
-  app.get<{ Querystring: { token: string } }>(
+  app.get<{ Querystring: { token: string; theme?: 'light' | 'dark' } }>(
     '/body',
     { schema: { querystring: query } },
     async (request, reply) => {
@@ -277,10 +282,10 @@ export function buildContentApp(
       return reply
         .header('content-security-policy', rendered.policy)
         .type('text/html; charset=utf-8')
-        .send(htmlDocument(rendered.html));
+        .send(htmlDocument(rendered.html, request.query.theme));
     },
   );
-  app.get<{ Querystring: { token: string } }>(
+  app.get<{ Querystring: { token: string; theme?: 'light' | 'dark' } }>(
     '/forward',
     { schema: { querystring: query } },
     async (request, reply) => {
@@ -309,7 +314,7 @@ export function buildContentApp(
       return reply
         .header('content-security-policy', rendered.policy)
         .type('text/html; charset=utf-8')
-        .send(htmlDocument(rendered.html));
+        .send(htmlDocument(rendered.html, request.query.theme));
     },
   );
   app.get<{ Querystring: { token: string; index?: string } }>(

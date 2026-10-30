@@ -27,6 +27,7 @@ import {
 } from './mail-api.js';
 import { useMailRevision } from './mail-events.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
+import { useThemedContentUrl } from './use-themed-content.js';
 
 type Person = { name: string; address: string };
 type Attachment = {
@@ -239,9 +240,19 @@ export function Reader({
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
-  const [view, setView] = useState<'html' | 'text'>('html');
   const [htmlUrl, setHtmlUrl] = useState<string | null>(null);
   const [images, setImages] = useState(false);
+  const themedHtmlUrl = useThemedContentUrl(
+    htmlUrl,
+    async (signal) =>
+      (
+        await mailApi<{ htmlUrl: string }>(`messages/${id}/images`, {
+          method: 'POST',
+          body: JSON.stringify({ show: images }),
+          signal,
+        })
+      ).htmlUrl,
+  );
   const [busy, setBusy] = useState(false);
   const [imageError, setImageError] = useState('');
   const [ownAction, setOwnAction] = useState('');
@@ -534,11 +545,6 @@ export function Reader({
     }
   }
 
-  async function showHtml() {
-    setView('html');
-    await displayImages(images);
-  }
-
   const sender = detail?.message.sender[0];
   const senderName = sender?.name || sender?.address || 'Unknown sender';
   return (
@@ -745,22 +751,28 @@ export function Reader({
                     <span className="muted">{sender.address}</span>
                   )}
                 </p>
-                <dl className="message-details">
-                  <dt>From</dt>
-                  <dd>{people(detail.message.sender) || 'Unknown sender'}</dd>
-                  <dt>To</dt>
-                  <dd>
-                    {people(detail.message.recipients.to) || 'No recipients'}
-                  </dd>
-                  {detail.message.recipients.cc.length > 0 && (
-                    <>
-                      <dt>Cc</dt>
-                      <dd>{people(detail.message.recipients.cc)}</dd>
-                    </>
-                  )}
-                  <dt>Account</dt>
-                  <dd>{detail.message.accountName}</dd>
-                </dl>
+                <details
+                  className="message-header-details"
+                  key={detail.message.id}
+                >
+                  <summary>Message details</summary>
+                  <dl className="message-details">
+                    <dt>From</dt>
+                    <dd>{people(detail.message.sender) || 'Unknown sender'}</dd>
+                    <dt>To</dt>
+                    <dd>
+                      {people(detail.message.recipients.to) || 'No recipients'}
+                    </dd>
+                    {detail.message.recipients.cc.length > 0 && (
+                      <>
+                        <dt>Cc</dt>
+                        <dd>{people(detail.message.recipients.cc)}</dd>
+                      </>
+                    )}
+                    <dt>Account</dt>
+                    <dd>{detail.message.accountName}</dd>
+                  </dl>
+                </details>
               </div>
               <time dateTime={detail.message.receivedAt}>
                 {new Date(detail.message.receivedAt).toLocaleString()}
@@ -792,68 +804,51 @@ export function Reader({
               </p>
             ) : (
               <div className="message-body">
-                {detail.content.hasHtml && (
-                  <fieldset className="segmented small">
-                    <legend className="visually-hidden">Body format</legend>
-                    <button
-                      type="button"
-                      aria-pressed={view === 'html'}
-                      disabled={busy || !detail.content.configured}
-                      onClick={() => void showHtml()}
-                    >
-                      Formatted message
-                    </button>
-                    <button
-                      type="button"
-                      aria-pressed={view === 'text'}
-                      onClick={() => setView('text')}
-                    >
-                      Plain text
-                    </button>
-                  </fieldset>
-                )}
                 {!detail.content.configured && detail.content.hasHtml && (
                   <p role="status" className="muted">
                     Formatted mail needs the isolated content server. Plain text
                     is available below.
                   </p>
                 )}
-                {view === 'html' &&
-                detail.content.hasHtml &&
-                detail.content.configured ? (
+                {detail.content.hasHtml && detail.content.configured ? (
                   <>
-                    {Boolean(detail.content.imageCount) && (
-                      <div className="reader-images">
-                        <Icon src={hideImage} />
-                        <p>
-                          {images
-                            ? detail.content.imageProxy === false
-                              ? 'Images load directly in your browser. Image hosts can see your IP address and may track opens.'
-                              : 'Images are enabled through Spindle’s privacy proxy.'
-                            : detail.content.imageProxy === false
-                              ? 'Remote images blocked. Displaying them loads them directly and exposes your IP address to image hosts.'
-                              : 'Remote images blocked. Loading them goes through Spindle’s image proxy and may notify the sender.'}
-                        </p>
-                        <button
-                          type="button"
-                          className="text-button"
-                          disabled={busy}
-                          onClick={() => void displayImages(!images)}
+                    {Boolean(detail.content.imageCount) &&
+                      !(images && detail.content.images) && (
+                        <div
+                          className={
+                            images ? 'reader-image-controls' : 'reader-images'
+                          }
                         >
-                          {busy
-                            ? 'Updating images…'
-                            : images
-                              ? 'Hide images'
-                              : 'Display images'}
-                        </button>
-                      </div>
-                    )}
+                          {!images && (
+                            <>
+                              <Icon src={hideImage} />
+                              <p>
+                                {detail.content.imageProxy === false
+                                  ? 'Remote images blocked. Displaying them loads them directly and exposes your IP address to image hosts.'
+                                  : 'Remote images blocked. Loading them goes through Spindle’s image proxy and may notify the sender.'}
+                              </p>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            className="text-button"
+                            disabled={busy}
+                            onClick={() => void displayImages(!images)}
+                          >
+                            {busy
+                              ? 'Updating images…'
+                              : images
+                                ? 'Hide images'
+                                : 'Display images'}
+                          </button>
+                        </div>
+                      )}
                     {imageError && <p role="alert">{imageError}</p>}
-                    {htmlUrl && (
+                    {themedHtmlUrl && (
                       <iframe
                         className="message-frame"
                         title="Message body"
-                        src={htmlUrl}
+                        src={themedHtmlUrl}
                         referrerPolicy="no-referrer"
                         sandbox="allow-popups allow-popups-to-escape-sandbox"
                       />

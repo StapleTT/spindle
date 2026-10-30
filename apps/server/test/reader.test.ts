@@ -122,6 +122,13 @@ test('content grants are scoped, short-lived, tamper resistant and expire', () =
 });
 
 test('MIME parser decodes charsets, alternatives and inline CIDs without retaining arbitrary attachments', async () => {
+  const plainOnly = await parseMessage(
+    Buffer.from(
+      'MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nOnly plain text <keep literal>',
+    ),
+  );
+  assert.equal(plainOnly.html, '');
+  assert.equal(plainOnly.plain, 'Only plain text <keep literal>');
   const raw = `From: sender@example.test\r\nTo: recipient@example.test\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=outer\r\n\r\n--outer\r\nContent-Type: multipart/alternative; boundary=inner\r\n\r\n--inner\r\nContent-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nCaf=E9 plain text\r\n--inner\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Hello HTML</p><img src="cid:picture@example.test"><script>alert(1)</script>\r\n--inner--\r\n--outer\r\nContent-Type: image/png\r\nContent-ID: <picture@example.test>\r\nContent-Transfer-Encoding: base64\r\n\r\n${tinyPng.toString('base64')}\r\n--outer\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=secret.bin\r\n\r\nNot retained\r\n--outer--\r\n`;
   const parsed = await parseMessage(Buffer.from(raw));
   assert.match(parsed.plain, /Café plain text/);

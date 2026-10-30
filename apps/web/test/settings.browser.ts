@@ -427,7 +427,7 @@ test('settings expose honest controls and a custom color picker that persists an
       },
     );
     await t.test(
-      'turning off image blocking really loads images automatically, while Hide still overrides the default',
+      'automatic images have no controls and header details start collapsed with keyboard access',
       async () => {
         await page
           .getByRole('button', { name: 'Security', exact: true })
@@ -454,9 +454,8 @@ test('settings expose honest controls and a custom color picker that persists an
         );
         assert.equal(imageCalls, 0);
         await page.goto(`${config.appUrl}/inbox#message=${id}`);
-        await page
-          .getByRole('button', { name: 'Hide images', exact: true })
-          .waitFor();
+        await page.locator('iframe[title="Message body"]').waitFor();
+        assert.equal(await page.locator('.reader-images').count(), 0);
         const frame = () => page.frameLocator('iframe[title="Message body"]');
         await frame().locator('img').waitFor();
         await frame()
@@ -472,13 +471,112 @@ test('settings expose honest controls and a custom color picker that persists an
               }),
           );
         assert.equal(imageCalls, 1);
+        assert.equal(
+          await page
+            .getByRole('button', { name: 'Formatted message', exact: true })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .getByRole('button', { name: 'Plain text', exact: true })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await frame()
+            .locator('body')
+            .evaluate((node) => getComputedStyle(node).backgroundColor),
+          'rgb(34, 34, 34)',
+        );
+        assert.equal(
+          await frame()
+            .locator('body')
+            .evaluate((node) => getComputedStyle(node).color),
+          'rgb(236, 236, 236)',
+        );
+        const source = await page
+          .locator('iframe[title="Message body"]')
+          .getAttribute('src');
+        await page.setViewportSize({ width: 1280, height: 900 });
         await page
-          .getByRole('button', { name: 'Hide images', exact: true })
+          .getByRole('button', {
+            name: 'Theme: dark. Switch to system',
+            exact: true,
+          })
           .click();
+        const documentFrame = page
+          .frames()
+          .find((item) => item.url().startsWith(contentConfig.origin));
+        assert.ok(documentFrame);
+        await documentFrame.waitForFunction(
+          () =>
+            getComputedStyle(document.body).backgroundColor ===
+            'rgb(241, 242, 247)',
+        );
+        const themedSource = await page
+          .locator('iframe[title="Message body"]')
+          .getAttribute('src');
+        assert.ok(source && themedSource);
+        assert.notEqual(
+          new URL(themedSource).searchParams.get('token'),
+          new URL(source).searchParams.get('token'),
+        );
+        assert.equal(new URL(themedSource).searchParams.get('theme'), 'light');
+        assert.equal(imageCalls, 1);
+        assert.equal(
+          await page
+            .getByRole('button', { name: 'Hide images', exact: true })
+            .count(),
+          0,
+        );
+        const headers = page.locator('.message-header-details');
+        assert.equal(await headers.locator('dl').isVisible(), false);
+        await headers.locator('summary').focus();
+        await headers.locator('summary').press('Enter');
+        assert.equal(await headers.locator('dl').isVisible(), true);
+        assert.equal(
+          await headers.getByText('From', { exact: true }).isVisible(),
+          true,
+        );
+        assert.equal(
+          await headers.getByText('Account', { exact: true }).isVisible(),
+          true,
+        );
+        await headers.locator('summary').press('Enter');
+        assert.equal(await headers.locator('dl').isVisible(), false);
+        assert.deepEqual(errors, []);
+      },
+    );
+    await t.test(
+      'plain-only content is selected automatically with no iframe or format control',
+      async () => {
+        await pool.query(
+          "UPDATE mail_content SET html='',plain_text=$2,resources='[]' WHERE message_id=$1",
+          [id, 'Only plain text <keep this literal>'],
+        );
+        await page.reload();
         await page
-          .getByRole('button', { name: 'Display images', exact: true })
+          .locator('.plain-message')
+          .getByText('Only plain text <keep this literal>', { exact: true })
           .waitFor();
-        assert.equal(await frame().locator('img').count(), 0);
+        assert.equal(
+          await page.locator('iframe[title="Message body"]').count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .getByRole('button', { name: 'Plain text', exact: true })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .getByRole('button', { name: 'Formatted message', exact: true })
+            .count(),
+          0,
+        );
+        assert.equal(await page.locator('.plain-message > *').count(), 0);
         assert.deepEqual(errors, []);
       },
     );

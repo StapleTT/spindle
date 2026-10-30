@@ -193,6 +193,12 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     assert.equal(await frame().locator('#preheader').isVisible(), false);
     const title = frame().locator('.newsletter-title');
     assert.equal(
+      await frame()
+        .locator('.newsletter')
+        .evaluate((node) => getComputedStyle(node).backgroundColor),
+      'rgb(255, 255, 255)',
+    );
+    assert.equal(
       await title.evaluate((element) => getComputedStyle(element).fontSize),
       '28px',
     );
@@ -272,8 +278,18 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page.getByRole('link', { name: 'Next message', exact: true }).click();
     await frame().getByText('Formatted body 49', { exact: true }).waitFor();
     assert.equal(await frame().locator('img').count(), 0);
-    await page.getByRole('button', { name: 'Plain text', exact: true }).click();
-    await page.getByText('Plain body 49', { exact: true }).waitFor();
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Plain text', exact: true })
+        .count(),
+      0,
+    );
+    assert.equal(
+      await page
+        .getByRole('button', { name: 'Formatted message', exact: true })
+        .count(),
+      0,
+    );
     await page.goBack();
     await frame().getByText('Formatted body 50', { exact: true }).waitFor();
     assert.equal(await frame().locator('img').count(), 0);
@@ -330,8 +346,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       .waitFor();
     releaseSlow();
     await page.unroute(pattern);
-    await page.getByRole('button', { name: 'Plain text', exact: true }).click();
-    await page.getByText('Plain body 49', { exact: true }).waitFor();
+    await frame().getByText('Formatted body 49', { exact: true }).waitFor();
     await page.setViewportSize({ width: 375, height: 812 });
     assert.ok(
       await page.evaluate(

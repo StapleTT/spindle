@@ -321,3 +321,16 @@ Status: explicitly requested by the user on 2026-10-30, superseding D029's fixed
 Provide real saved per-user toggles for loading images through the privacy proxy, blocking remote images by default, and Undo send. All start on. With proxying off, permitted remote HTTPS images load directly in the browser and can expose its IP/opens; automatic image loading is permitted when default blocking is off. Preserve sanitized CSS/HTML, separate content origin, opaque sandbox, no-referrer, strict per-body image CSP and owned live grants. Direct hosts must pass public-address validation; browser DNS/fetch behavior and unapproved redirects differ from the proxy. Per-view Display/Hide remains available. Defaults apply to new views.
 
 Undo send off removes the five-second grace period for future immediate enqueues and safe explicit retries. Existing queued times and scheduled UTC deadlines remain authoritative; MIME snapshots, claim/cancel ordering, access/scan/quota checks and uncertain-send protections are unchanged. Triage undo remains separate. Persist only these three owned booleans in an additive 0029 table, with existing accounts-topic invalidation and defaults for absent rows. Keep the migration on rollback. See [mail preferences](mail-preferences.md).
+
+User follow-up on 2026-10-30: show no warning/notice when remote images are enabled or loaded automatically. Reader and formatted original previews retain a quiet Hide images control; blocked-image notices and Settings descriptions remain.
+
+Further user follow-up on 2026-10-30: omit Hide images entirely for automatically loaded images in reader and original previews; retain manual Display/Hide for views that start blocked. Collapse From/To/Cc/Account header details by default behind a keyboard-accessible Message details disclosure, keeping the sender summary and timestamp visible.
+
+
+## D031 — automatic reader format and neutral HTML fallback
+
+Status: requested by the user on 2026-10-30.
+
+Remove the received-message formatted/plain-text selector. Use plain text when no HTML MIME body exists; otherwise display sanitized HTML on the isolated content origin, retaining the plain fallback when that service is unconfigured. Composer output-format choices remain separate.
+
+Replace the forced-white HTML canvas with a muted light fallback and a dark fallback for uncoloured HTML in the app's dark theme. Preserve explicit sender palettes, text/background pairing and newsletter layout rather than inverting or overwriting authored styles. A validated appearance-only theme parameter crosses the content boundary; theme changes renew grants with existing image consent and keep cached content readable during outages. Sandbox, CSP, content ownership and image preferences remain intact. This supersedes D027's always-white canvas choice.
