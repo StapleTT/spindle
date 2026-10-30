@@ -31,6 +31,7 @@ import { DraftList } from './drafts.js';
 import { KeyboardTriage } from './keyboard-triage.js';
 import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
+import { OpenNotifications } from './notifications.js';
 import { Outbox, OutboxFeedback, useOutbox } from './outbox.js';
 import { Reader } from './reader.js';
 import { SearchControls, type SearchCoverage } from './search-controls.js';
@@ -547,6 +548,7 @@ export function Mail({ userId }: { userId: string }) {
         </p>
       )}
       <KeyboardTriage root={root} />
+      <OpenNotifications user={userId} />
       <SearchControls
         query={q}
         account={account}

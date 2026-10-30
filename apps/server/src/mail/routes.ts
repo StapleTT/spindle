@@ -12,6 +12,7 @@ import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
 import { registerMailEvents } from './events.js';
 import { registerUploadRoutes } from './file-uploads.js';
+import { registerNotificationRoutes } from './notifications.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerProviderDraftRoutes } from './provider-draft-routes.js';
 import { registerReaderRoutes } from './reader-routes.js';
@@ -144,6 +145,7 @@ export async function registerMailRoutes(
   });
 
   registerMailEvents(app, pool, config);
+  registerNotificationRoutes(app, pool);
 
   app.get('/api/mail/accounts', async (request) => ({
     configured: keys.keys.has(keys.active),

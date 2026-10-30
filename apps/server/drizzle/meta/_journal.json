@@ -190,6 +190,13 @@
       "when": 1793430000000,
       "tag": "0026_contact_search",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793440000000,
+      "tag": "0027_open_app_notifications",
+      "breakpoints": true
     }
   ]
 }

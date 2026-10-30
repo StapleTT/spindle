@@ -275,3 +275,12 @@ Derive suggestions from owned synchronized From/To/Cc participants, excluding ac
 Use one accessible recipient combobox for To/Cc/Bcc. Replace only the cursor's recipient, quote display names safely, filter already-entered addresses, preserve arbitrary manual entry and existing autosave/recovery, and reject overflowing insertion. Guard stale/aborted requests and IME; use the existing mail/account invalidations and a separate owner lookup budget. Deletion follows eligible source mail/account/user deletion; a paginated private JSON endpoint exports the same derived set. Full user export UI and manual address-book features remain separate.
 
 Migration 0026 is additive and retained on rollback; no dependencies/environment/provider budget change. See [recipient behavior, privacy, bounds, export and proof](contacts.md). Final Claude Design and manual/large-mailbox/provider release acceptance stay open.
+
+
+## D026 — opt-in notifications while Spindle is open
+
+Status: open-app scope confirmed by the user on 2026-10-29; implementation choices by the agent.
+
+Provide opt-in native browser notifications only while Spindle is open, including runnable background tabs. Require a user gesture for permission, store enable/preview preferences per user in this browser, hide sender/subject by default and deduplicate tabs with browser locks/shared receipts. Reuse authenticated local reads and existing SSE/polling; keep provider I/O in the worker. Mark only post-history new inbox arrivals, suppress read/moved/deleted/muted/snoozed mail and never replay consumed arrivals on undo/wakeup. Unread title/summary counts use the existing unified-inbox predicate. Recheck session ownership on notification clicks and close page-owned alerts on lifecycle cleanup.
+
+Migration 0027 is additive and retained on rollback. Notifications are best effort with bounded arrival/receipt windows, supported secure browsers and OS permission; no delivery guarantee is implied. Notifications after closing the app are explicitly deferred: later Web Push/service-worker work must address subscription consent/revocation, privacy and session/device cleanup before it is advertised. See [behavior, upgrade and proof](notifications.md).
