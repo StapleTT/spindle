@@ -142,6 +142,17 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
       .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
     await page.getByText('Browser mail 50', { exact: true }).waitFor();
+    // Account folder lists collapse in the drawer and stay collapsed.
+    const archiveFolder = page.getByRole('button', { name: /^Archive \(/ });
+    await page
+      .getByRole('button', { name: 'Hide folders for Browser IMAP' })
+      .click();
+    await archiveFolder.waitFor({ state: 'hidden' });
+    await page.reload();
+    await page
+      .getByRole('button', { name: 'Show folders for Browser IMAP' })
+      .click();
+    await archiveFolder.waitFor();
     server.control.addMessage('INBOX', {
       raw: rawMail('Delivered while browser is open'),
       internaldate: new Date(Date.now() + 60000),

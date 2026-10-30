@@ -3012,3 +3012,31 @@ dialog.account-menu[open] {
 .auth-card > .auth-passkey {
   align-self: stretch;
 }
+
+/* Collapsible accounts in the drawer. */
+.account-heading {
+  display: flex;
+  align-items: center;
+}
+.folder-toggle.icon-button.small {
+  width: 28px;
+  height: 28px;
+  margin-left: 2px;
+  font-size: 18px;
+}
+.folder-toggle .icon {
+  transition: transform 0.15s var(--ease);
+}
+.folder-toggle[aria-expanded="true"] .icon {
+  transform: rotate(90deg);
+}
+.account-heading .nav-item.account {
+  flex: 1;
+  min-width: 0;
+  padding-left: 6px;
+}
+@media (min-width: 760px) and (max-width: 1179px) {
+  .folder-toggle {
+    display: none;
+  }
+}

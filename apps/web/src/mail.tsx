@@ -33,6 +33,7 @@ import { DraftList } from './drafts.js';
 import {
   archive,
   check,
+  chevronRight,
   close,
   doneAll,
   draft,
@@ -114,6 +115,33 @@ export function Mail({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [composeMinimized, setComposeMinimized] = useState(false);
+  // Accounts whose folder list is collapsed in the drawer (per browser).
+  const collapsedKey = `spindle:collapsed-accounts:${userId}`;
+  const [collapsed, setCollapsed] = useState<string[]>(() => {
+    try {
+      const value: unknown = JSON.parse(
+        localStorage.getItem(collapsedKey) ?? '[]',
+      );
+      return Array.isArray(value)
+        ? value.filter((id) => typeof id === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  });
+  function toggleFolders(accountId: string) {
+    setCollapsed((current) => {
+      const next = current.includes(accountId)
+        ? current.filter((id) => id !== accountId)
+        : [...current, accountId];
+      try {
+        localStorage.setItem(collapsedKey, JSON.stringify(next));
+      } catch {
+        /* The drawer still toggles for this visit. */
+      }
+      return next;
+    });
+  }
   const [density, setDensity] = useState<Density>(() => {
     try {
       return localStorage.getItem('spindle-density') === 'compact'
@@ -929,40 +957,64 @@ export function Mail({
               aria-label={item.name}
             >
               <h3 className="visually-hidden">{item.name}</h3>
-              <button
-                type="button"
-                className="nav-item account"
-                aria-pressed={account === item.id && !mailbox}
-                title={accountStatus(item)}
-                onClick={() =>
-                  navigateMail({
-                    account: item.id,
-                    mailbox: '',
-                    cursor: '',
-                    message: '',
-                  })
-                }
-              >
-                <span className="nav-icon">
-                  <span className="dot" aria-hidden="true" />
-                </span>
-                <span className="nav-label">{item.name}</span>
-                <span className="nav-short" aria-hidden="true">
-                  {initials(item.name)}
-                </span>
-                {item.status === 'error' ? (
-                  <span className="nav-count error-text" aria-hidden="true">
-                    Sync failed
+              <div className="account-heading">
+                <button
+                  type="button"
+                  className="icon-button small folder-toggle"
+                  aria-expanded={!collapsed.includes(item.id)}
+                  aria-controls={`folders-${item.id}`}
+                  title={
+                    collapsed.includes(item.id)
+                      ? 'Show folders'
+                      : 'Hide folders'
+                  }
+                  onClick={() => toggleFolders(item.id)}
+                >
+                  <Icon src={chevronRight} />
+                  <span className="visually-hidden">
+                    {collapsed.includes(item.id) ? 'Show' : 'Hide'} folders for{' '}
+                    {item.name}
                   </span>
-                ) : (
-                  count > 0 && (
-                    <span className="nav-count" aria-hidden="true">
-                      {count}
+                </button>
+                <button
+                  type="button"
+                  className="nav-item account"
+                  aria-pressed={account === item.id && !mailbox}
+                  title={accountStatus(item)}
+                  onClick={() =>
+                    navigateMail({
+                      account: item.id,
+                      mailbox: '',
+                      cursor: '',
+                      message: '',
+                    })
+                  }
+                >
+                  <span className="nav-icon">
+                    <span className="dot" aria-hidden="true" />
+                  </span>
+                  <span className="nav-label">{item.name}</span>
+                  <span className="nav-short" aria-hidden="true">
+                    {initials(item.name)}
+                  </span>
+                  {item.status === 'error' ? (
+                    <span className="nav-count error-text" aria-hidden="true">
+                      Sync failed
                     </span>
-                  )
-                )}
-              </button>
-              <ul className="folder-list">
+                  ) : (
+                    count > 0 && (
+                      <span className="nav-count" aria-hidden="true">
+                        {count}
+                      </span>
+                    )
+                  )}
+                </button>
+              </div>
+              <ul
+                className="folder-list"
+                id={`folders-${item.id}`}
+                hidden={collapsed.includes(item.id)}
+              >
                 {mailboxes
                   .filter((box) => box.accountId === item.id)
                   .map((box) => (

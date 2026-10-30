@@ -627,6 +627,8 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     server.control.updateUser('testuser', {
       password: 'provider-now-unavailable',
     });
+    // Cached newsletters keep their phone layout in a narrow reader.
+    await page.setViewportSize({ width: 375, height: 812 });
     await page.reload();
     await frame().getByText('Formatted body 49', { exact: true }).waitFor();
     assert.equal(
