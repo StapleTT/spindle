@@ -312,3 +312,12 @@ Status: custom styled picker and suggested colours requested by the user on 2026
 Persist one nullable six-digit hex colour per owned connected account. Use a custom modal with suggested token-based swatches, live preview, HSL sliders, hex input and explicit save/cancel/reset; no native browser colour picker. Apply it consistently across app identity markers, keep theme-aware readable text and propagate saves through existing local account reads/SSE. Cosmetic concurrent changes use last-writer-wins. The additive 0028 migration is retained on rollback; reconnect preserves the preference.
 
 The Settings Security switches were intentionally disabled under D027. Represent fixed image-proxy/default-image-blocking/send-delay protections as Always on labels and future 2FA as Coming soon. Only implemented preferences appear interactive; desktop notifications use a functional permission-aware switch. This change preserves per-message remote-image consent and the five-second send floor. See [design details and proof](design.md#settings-controls-and-account-colours--2026-10-30).
+
+
+## D030 — functional image privacy and Undo send preferences
+
+Status: explicitly requested by the user on 2026-10-30, superseding D029's fixed-switch choice.
+
+Provide real saved per-user toggles for loading images through the privacy proxy, blocking remote images by default, and Undo send. All start on. With proxying off, permitted remote HTTPS images load directly in the browser and can expose its IP/opens; automatic image loading is permitted when default blocking is off. Preserve sanitized CSS/HTML, separate content origin, opaque sandbox, no-referrer, strict per-body image CSP and owned live grants. Direct hosts must pass public-address validation; browser DNS/fetch behavior and unapproved redirects differ from the proxy. Per-view Display/Hide remains available. Defaults apply to new views.
+
+Undo send off removes the five-second grace period for future immediate enqueues and safe explicit retries. Existing queued times and scheduled UTC deadlines remain authoritative; MIME snapshots, claim/cancel ordering, access/scan/quota checks and uncertain-send protections are unchanged. Triage undo remains separate. Persist only these three owned booleans in an additive 0029 table, with existing accounts-topic invalidation and defaults for absent rows. Keep the migration on rollback. See [mail preferences](mail-preferences.md).

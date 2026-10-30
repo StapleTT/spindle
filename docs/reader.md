@@ -58,7 +58,7 @@ Five-minute signed grants bind a user, current session, message, cache version a
 
 Images are blocked by default, including inline CIDs. **Display images** explicitly enables supported inline and remote images for that message. Switching messages or reloading resets the choice. **Hide images** removes the current frame immediately and loads a blocked-image document. It cannot undo tracking requests already sent.
 
-Remote images go through an authenticated, bounded proxy; the browser never receives an automatic sender image URL as an image source. The proxy permits HTTP/HTTPS on their standard ports, validates every DNS answer against public-address rules, pins an approved IP, preserves TLS hostname/certificate checks and validates each of at most three redirects. It forwards no user cookies, authorization or referrer. Remote fetching can still notify a sender's tracking server, which the image control explains before opting in.
+By default, remote images go through an authenticated, bounded proxy after per-message consent. [Saved image preferences](mail-preferences.md) can instead allow automatic loading or direct browser HTTPS loading. The proxy permits HTTP/HTTPS on their standard ports, validates every DNS answer against public-address rules, pins an approved IP, preserves TLS hostname/certificate checks and validates each of at most three redirects. It forwards no user cookies, authorization or referrer. Remote fetching can still notify a sender's tracking server, which the image control explains before opting in.
 
 Only PNG, JPEG, GIF and WebP signatures are served with their matching image type. SVG and other formats fail closed. Remote responses are streamed with a 5 MiB cap and a shared 15-second network deadline across redirects. The content service allows eight active remote fetches with at most 32 distinct in-flight/queued image requests; duplicate requests share work and stored images are reused. Every image access is rate limited, and a session/cache check after a remote download prevents publishing data after revocation or deletion.
 
@@ -85,3 +85,8 @@ The reader accepts the active local search/account/folder scope. Previous/Next s
 ## Conversation context
 
 The [conversation timeline](conversations.md) connects owned messages across folders in one account. Select a member to use this same reader and its per-message image consent, attachment controls and action/reply paths. The original source anchors search/folder navigation; opening the timeline itself never fetches other bodies or marks mail read.
+
+
+## Saved image defaults — 2026-10-30
+
+**Settings › Security** now controls privacy proxying and default blocking per user. Both stay on by default. With blocking off, the reader's initial signed body grant enables images; manual Hide still generates a blocked grant instead of falling back to the automatic default. With proxying off, allowed remote HTTPS sources and CSS backgrounds go directly to approved public image origins under a body-specific CSP; inline images remain on owned content endpoints. Direct fetches expose the reader's IP and use browser networking. Defaults apply to newly opened views. Sandbox, scripts/forms/fonts restrictions, no-referrer and owner/session/cache grants remain enforced. See [behavior, direct-mode limits and upgrade](mail-preferences.md).

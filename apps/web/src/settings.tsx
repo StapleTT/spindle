@@ -5,7 +5,6 @@ import type { Signature } from './draft-api.js';
 import {
   businessCenter,
   dns,
-  hideImage,
   keyboard,
   lock,
   mail,
@@ -14,14 +13,13 @@ import {
   palette,
   passkey,
   pin,
-  shield,
   shieldLock,
   signature,
-  undo,
 } from './icons.js';
 import { commands } from './keyboard-triage.js';
 import { mailApi as api } from './mail-api.js';
 import { navigateMail } from './mail-navigation.js';
+import { MailPreferenceSettings } from './mail-preferences.js';
 import { SmtpSettings } from './smtp-settings.js';
 
 const SignatureSettings = lazy(() =>
@@ -68,31 +66,12 @@ const tabs = [
 ] as const;
 type Tab = (typeof tabs)[number][0];
 
-// Fixed protections are status labels, not inert preference controls.
 const protections = [
-  [
-    shield,
-    'Load images through the privacy proxy',
-    'Images are fetched by Spindle, so senders never see your IP address or cookies.',
-    true,
-  ],
-  [
-    hideImage,
-    'Block remote images by default',
-    'Images stay blocked until you display them for a message.',
-    true,
-  ],
   [
     pin,
     'Two-step verification',
     'Coming soon. Ask for an authenticator code on new devices.',
     false,
-  ],
-  [
-    undo,
-    'Undo send',
-    'Outgoing mail waits at least five seconds so you can cancel it.',
-    true,
   ],
 ] as const;
 
@@ -631,6 +610,7 @@ export function Settings({
         {tab === 'security' && (
           <>
             <h3>Security &amp; privacy</h3>
+            <MailPreferenceSettings />
             <ul className="settings-list">
               {protections.map(([icon, label, description, on]) => (
                 <li key={label} className="switch-row">

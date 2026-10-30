@@ -12,7 +12,9 @@ export function ForwardPreview({
   imageCount: number;
   origin?: 'provider' | undefined;
 }) {
-  const [images, setImages] = useState(false);
+  const [images, setImages] = useState<boolean | undefined>(undefined);
+  const [shownImages, setShownImages] = useState(false),
+    [imageProxy, setImageProxy] = useState(true);
   const [htmlUrl, setHtmlUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -21,13 +23,20 @@ export function ForwardPreview({
     const controller = new AbortController();
     setHtmlUrl(null);
     setError('');
-    void mailApi<{ htmlUrl: string }>(`drafts/${id}/forward-preview`, {
-      method: 'POST',
-      body: JSON.stringify({ images }),
-      signal: controller.signal,
-    })
+    void mailApi<{ htmlUrl: string; images: boolean; imageProxy: boolean }>(
+      `drafts/${id}/forward-preview`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ images }),
+        signal: controller.signal,
+      },
+    )
       .then((result) => {
-        if (!controller.signal.aborted) setHtmlUrl(result.htmlUrl);
+        if (!controller.signal.aborted) {
+          setHtmlUrl(result.htmlUrl);
+          setShownImages(result.images);
+          setImageProxy(result.imageProxy);
+        }
       })
       .catch((failure: unknown) => {
         if (!controller.signal.aborted)
@@ -58,18 +67,20 @@ export function ForwardPreview({
       {imageCount > 0 && (
         <div className="reader-images">
           <p>
-            {images
-              ? 'Images are enabled in this preview.'
+            {shownImages
+              ? imageProxy
+                ? 'Images are enabled through Spindle’s privacy proxy.'
+                : 'Images load directly in your browser and expose your IP address to image hosts.'
               : 'Images are blocked in this preview. Remote images may notify the sender when loaded.'}
           </p>
           <button
             type="button"
             onClick={() => {
               setHtmlUrl(null);
-              setImages(!images);
+              setImages(!shownImages);
             }}
           >
-            {images ? 'Hide images' : 'Display images'}
+            {shownImages ? 'Hide images' : 'Display images'}
           </button>
         </div>
       )}

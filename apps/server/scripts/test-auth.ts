@@ -50,6 +50,7 @@ try {
             'apps/server/test/events.integration.ts',
             'apps/server/test/notifications.integration.ts',
             'apps/server/test/account-colors.integration.ts',
+            'apps/server/test/mail-preferences.integration.ts',
             'apps/server/test/search.integration.ts',
             'apps/server/test/conversations.integration.ts',
             'apps/server/test/conversation-state.integration.ts',

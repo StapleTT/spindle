@@ -15,7 +15,10 @@ import {
   attachmentDisposition,
   MAX_IMAGE_BYTES,
   rasterType,
+  remoteImageUrl,
 } from './media.js';
+import { resolveMailHost } from './network.js';
+import { readMailPreferences } from './preferences.js';
 import {
   type ImageResource,
   renderMessage,
@@ -137,6 +140,62 @@ export function buildContentApp(
     ajv: { customOptions: { coerceTypes: false } },
   });
   const inFlight = new Map<string, Promise<{ type: string; data: Buffer }>>();
+  const contentPolicy = (origins: string[] = []) =>
+    `default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src ${[config.origin, ...origins].join(' ')}; font-src 'none'; media-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors ${config.appOrigin}; sandbox allow-popups allow-popups-to-escape-sandbox`;
+
+  async function renderBody(
+    html: string,
+    resources: ImageResource[],
+    grant: ContentGrant,
+    imagePath: 'image' | 'forward-image',
+  ) {
+    const preferences = await readMailPreferences(pool, grant.owner);
+    const direct = grant.images && !preferences.imageProxy;
+    const urls = direct
+      ? await Promise.all(
+          resources.slice(0, 20).map(async (resource) => {
+            if (resource.kind !== 'remote') return null;
+            const normalized = remoteImageUrl(resource.url);
+            if (!normalized) return null;
+            const url = new URL(normalized);
+            // Direct loads remain HTTPS-only and cannot target app/content cookies or private hosts.
+            if (
+              url.protocol !== 'https:' ||
+              [config.appOrigin, config.origin].includes(url.origin)
+            )
+              return null;
+            try {
+              await resolveMailHost(url.hostname.replace(/^\[|\]$/g, ''));
+              return normalized;
+            } catch {
+              return null;
+            }
+          }),
+        )
+      : [];
+    const token = grant.images
+      ? signContentGrant(
+          { ...grant, kind: imagePath === 'image' ? 'image' : 'forward-image' },
+          config.secret,
+        )
+      : null;
+    return {
+      direct,
+      policy: contentPolicy([
+        ...new Set(urls.flatMap((url) => (url ? [new URL(url).origin] : []))),
+      ]),
+      html: renderMessage(
+        html,
+        token
+          ? (index) =>
+              direct && resources[index]?.kind === 'remote'
+                ? (urls[index] ?? null)
+                : `${config.origin}/${imagePath}?token=${token}&index=${index}`
+          : null,
+        resources.length,
+      ),
+    };
+  }
   let active = 0;
   const waiting: (() => void)[] = [];
   function queueImage(load: () => Promise<{ type: string; data: Buffer }>) {
@@ -171,7 +230,7 @@ export function buildContentApp(
       'x-dns-prefetch-control': 'off',
       'permissions-policy':
         'camera=(), microphone=(), geolocation=(), payment=()',
-      'content-security-policy': `default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src ${config.origin}; font-src 'none'; media-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors ${config.appOrigin}; sandbox allow-popups allow-popups-to-escape-sandbox`,
+      'content-security-policy': contentPolicy(),
     });
   });
   app.setErrorHandler((_error, _request, reply) =>
@@ -204,18 +263,21 @@ export function buildContentApp(
           .send('Content is no longer available.');
       if (!(await consumeLimit(pool, grant.owner, 'content-body', 120)))
         return reply.code(429).send('Too many requests.');
-      const imageToken = grant.images
-        ? signContentGrant({ ...grant, kind: 'image' }, config.secret)
-        : null;
-      const html = renderMessage(
+      const rendered = await renderBody(
         content.html,
-        imageToken
-          ? (index) =>
-              `${config.origin}/image?token=${imageToken}&index=${index}`
-          : null,
-        content.resources.length,
+        content.resources,
+        grant,
+        'image',
       );
-      return reply.type('text/html; charset=utf-8').send(htmlDocument(html));
+      if (rendered.direct && !(await grantedContent(pool, grant)))
+        return reply
+          .code(404)
+          .type('text/plain')
+          .send('Content is no longer available.');
+      return reply
+        .header('content-security-policy', rendered.policy)
+        .type('text/html; charset=utf-8')
+        .send(htmlDocument(rendered.html));
     },
   );
   app.get<{ Querystring: { token: string } }>(
@@ -234,18 +296,20 @@ export function buildContentApp(
           .send('Forwarded original is no longer available.');
       if (!(await consumeLimit(pool, grant.owner, 'content-body', 120)))
         return reply.code(429).send('Too many requests.');
-      const imageToken = grant.images
-        ? signContentGrant({ ...grant, kind: 'forward-image' }, config.secret)
-        : null;
-      const html = renderMessage(
+      const rendered = await renderBody(
         content.html,
-        imageToken
-          ? (index) =>
-              `${config.origin}/forward-image?token=${imageToken}&index=${index}`
-          : null,
-        content.resources.length,
+        content.resources,
+        grant,
+        'forward-image',
       );
-      return reply.type('text/html; charset=utf-8').send(htmlDocument(html));
+      if (rendered.direct && !(await grantedForward(pool, grant)))
+        return reply
+          .code(404)
+          .send('Forwarded original is no longer available.');
+      return reply
+        .header('content-security-policy', rendered.policy)
+        .type('text/html; charset=utf-8')
+        .send(htmlDocument(rendered.html));
     },
   );
   app.get<{ Querystring: { token: string; index?: string } }>(

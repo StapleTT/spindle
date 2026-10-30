@@ -204,6 +204,13 @@
       "when": 1793520000000,
       "tag": "0028_account_colors",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793530000000,
+      "tag": "0029_mail_preferences",
+      "breakpoints": true
     }
   ]
 }

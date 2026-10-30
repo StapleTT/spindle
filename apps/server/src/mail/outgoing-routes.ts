@@ -11,6 +11,7 @@ import {
   outgoingStorage,
 } from './file-storage.js';
 import { composeOutgoing, outgoingMessage } from './outgoing-message.js';
+import { readMailPreferences } from './preferences.js';
 import {
   defaultSenderName,
   emailAddress,
@@ -239,6 +240,9 @@ export function registerOutgoingRoutes(
         operation = request.body.id;
       const result = await transaction(pool, async (db) => {
         await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
+        const undoSeconds = (await readMailPreferences(db, owner)).undoSend
+          ? 5
+          : 0;
         const previous = (
           await db.query(
             'SELECT id,state,source_draft_id,draft_revision,scheduled_at AS "scheduledAt" FROM mail_outbox WHERE user_id=$1 AND id=$2',
@@ -399,7 +403,7 @@ export function registerOutgoingRoutes(
         const inserted = (
           await db.query(
             `INSERT INTO mail_outbox(id,user_id,account_id,draft_id,source_draft_id,draft_revision,smtp_version,sender,recipients,subject,message_id,raw,save_sent_copy,mime_size,scheduled_at,next_attempt_at)
-        VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,GREATEST(clock_timestamp()+interval '5 seconds',COALESCE($14::timestamptz,clock_timestamp()))) ON CONFLICT DO NOTHING RETURNING id,state,scheduled_at AS "scheduledAt"`,
+        VALUES($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,GREATEST(clock_timestamp()+make_interval(secs=>$15),COALESCE($14::timestamptz,clock_timestamp()))) ON CONFLICT DO NOTHING RETURNING id,state,scheduled_at AS "scheduledAt"`,
             [
               operation,
               owner,
@@ -415,6 +419,7 @@ export function registerOutgoingRoutes(
               smtp.save_sent_copy,
               stream ? 1 : null,
               request.body.scheduledAt ?? null,
+              undoSeconds,
             ],
           )
         ).rows[0];
@@ -433,8 +438,8 @@ export function registerOutgoingRoutes(
             );
           }
           await db.query(
-            "UPDATE mail_outbox SET mime_size=$3,next_attempt_at=GREATEST(clock_timestamp()+interval '5 seconds',COALESCE(scheduled_at,clock_timestamp())) WHERE user_id=$1 AND id=$2",
-            [owner, inserted.id, bytes],
+            'UPDATE mail_outbox SET mime_size=$3,next_attempt_at=GREATEST(clock_timestamp()+make_interval(secs=>$4),COALESCE(scheduled_at,clock_timestamp())) WHERE user_id=$1 AND id=$2',
+            [owner, inserted.id, bytes, undoSeconds],
           );
         }
         if (
@@ -623,9 +628,12 @@ export function registerOutgoingRoutes(
             ).rowCount
           )
             return 'refused';
+          const undoSeconds = (await readMailPreferences(db, owner)).undoSend
+            ? 5
+            : 0;
           await db.query(
-            "UPDATE mail_outbox SET state='queued',attempts=0,error_code=NULL,completed_at=NULL,next_attempt_at=GREATEST(clock_timestamp()+interval '5 seconds',COALESCE(scheduled_at,clock_timestamp())) WHERE user_id=$1 AND id=$2 AND state='failed'",
-            [owner, row.id],
+            "UPDATE mail_outbox SET state='queued',attempts=0,error_code=NULL,completed_at=NULL,next_attempt_at=GREATEST(clock_timestamp()+make_interval(secs=>$3),COALESCE(scheduled_at,clock_timestamp())) WHERE user_id=$1 AND id=$2 AND state='failed'",
+            [owner, row.id, undoSeconds],
           );
           return 'queued';
         });

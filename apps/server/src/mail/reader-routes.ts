@@ -21,6 +21,7 @@ import {
   conversationQuery,
 } from './conversations.js';
 import type { AttachmentInfo } from './media.js';
+import { readMailPreferences } from './preferences.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import {
   SearchError,
@@ -170,6 +171,7 @@ export function registerReaderRoutes(
         )
       ).rows[0];
       const state = !cached?.fresh ? 'missing' : cached.state;
+      const preferences = await readMailPreferences(pool, owner);
       const fetched = new Map<number, string>();
       if (state === 'ready')
         for (const row of (
@@ -186,6 +188,9 @@ export function registerReaderRoutes(
         content: {
           state,
           configured: Boolean(config),
+          images: !preferences.blockRemoteImages,
+          imageProxy: preferences.imageProxy,
+          blockRemoteImages: preferences.blockRemoteImages,
           replyHeaders: cached?.reply_metadata
             ? 'ready'
             : cached?.reply_headers_pending
@@ -206,6 +211,7 @@ export function registerReaderRoutes(
                         request.mailSession ?? '',
                         id,
                         cached.version,
+                        !preferences.blockRemoteImages,
                       )
                     : null,
                 expiresAt: cached.expires_at,
@@ -605,9 +611,18 @@ export function registerReaderRoutes(
     },
   );
 
-  app.post<{ Params: { id: string } }>(
+  app.post<{ Params: { id: string }; Body: { show?: boolean } }>(
     '/api/mail/messages/:id/images',
-    { schema: { params } },
+    {
+      schema: {
+        params,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { show: { type: 'boolean' } },
+        },
+      },
+    },
     async (request, reply) => {
       if (!config)
         return reply.code(503).send({
@@ -624,14 +639,17 @@ export function registerReaderRoutes(
       ).rows[0];
       if (!content)
         return reply.code(404).send({ message: 'Cached message not found.' });
+      const preferences = await readMailPreferences(pool, owner);
       return {
+        images: request.body?.show ?? true,
+        imageProxy: preferences.imageProxy,
         htmlUrl: bodyUrl(
           config,
           owner,
           request.mailSession ?? '',
           id,
           content.version,
-          true,
+          request.body?.show ?? true,
         ),
       };
     },

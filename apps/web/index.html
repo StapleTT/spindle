@@ -126,7 +126,7 @@
           <article><span class="tile pc"><span class="icon" data-icon="bolt" aria-hidden="true"></span></span><h3>Instant, because it’s synced</h3><p>Message metadata is mirrored into Spindle in the background. Lists, conversations and search read local data, so you never wait on a provider.</p></article>
           <article><span class="tile a2"><span class="icon" data-icon="stacks" aria-hidden="true"></span></span><h3>One unified stream</h3><p>Every connected account merges into one paginated inbox. Filter to a single account or folder when you need to.</p></article>
           <article><span class="tile a3"><span class="icon" data-icon="undo" aria-hidden="true"></span></span><h3>Triage with a safety net</h3><p>Archive, trash, pin, mute, snooze and batch-select at full speed. Mail actions can be undone for five seconds.</p></article>
-          <article><span class="tile a4"><span class="icon" data-icon="edit_note" aria-hidden="true"></span></span><h3>Compose that does it right</h3><p>Rich text, drafts that sync to your provider, real reply threading, reply-all, formatted forwards, per-account signatures, Send later and a five-second cancel window.</p></article>
+          <article><span class="tile a4"><span class="icon" data-icon="edit_note" aria-hidden="true"></span></span><h3>Compose that does it right</h3><p>Rich text, drafts that sync to your provider, real reply threading, reply-all, formatted forwards, per-account signatures, Send later and an optional five-second cancel window.</p></article>
           <article><span class="tile a1"><span class="icon" data-icon="notifications_active" aria-hidden="true"></span></span><h3>Live updates</h3><p>IMAP IDLE watches your inbox between regular checks, and changes stream to every open tab as soon as they are synced.</p></article>
           <article><span class="tile sc"><span class="icon" data-icon="devices" aria-hidden="true"></span></span><h3>One app, every screen</h3><p>One responsive app with semantic controls, visible focus and keyboard access. There is no separate mobile site to fall behind.</p></article>
         </div>
@@ -163,7 +163,7 @@
           </div>
           <div class="security-grid">
             <div><span class="icon" data-icon="web_asset_off" aria-hidden="true"></span><h3>Isolated message rendering</h3><p>Email HTML is sanitized, then shown from a separate content origin that never receives your app cookies.</p></div>
-            <div><span class="icon" data-icon="shield" aria-hidden="true"></span><h3>Private image proxy</h3><p>Remote images are blocked by default. When you allow them, they load through Spindle’s proxy instead of from your browser.</p></div>
+            <div><span class="icon" data-icon="shield" aria-hidden="true"></span><h3>Private image proxy</h3><p>Remote images are blocked by default. Allowed images use Spindle’s privacy proxy by default. Settings let you choose automatic loading or direct browser loading.</p></div>
             <div><span class="icon" data-icon="key" aria-hidden="true"></span><h3>Encrypted mail credentials</h3><p>IMAP and SMTP passwords are encrypted at rest with a versioned key ring kept apart from the database.</p></div>
             <div><span class="icon" data-icon="lock" aria-hidden="true"></span><h3>TLS everywhere</h3><p>IMAP and SMTP must use implicit TLS or required STARTTLS. Spindle never sends a login in cleartext.</p></div>
             <div><span class="icon" data-icon="verified_user" aria-hidden="true"></span><h3>Private by design</h3><p>Every mailbox belongs to exactly one person. There are no shared inboxes, and admins get no access to your mail.</p></div>
@@ -237,7 +237,7 @@ npm run dev</code></pre>
         </details>
         <details name="faq">
           <summary>Can I undo an action?</summary>
-          <p>Read, archive, trash, move and restore actions show an Undo option for five seconds. Sending also waits five seconds, so you can cancel a message before it leaves.</p>
+          <p>Read, archive, trash, move and restore actions show an Undo option for five seconds. Undo send adds a five-second cancellation window when enabled. Turn it off in Settings to make immediate sends eligible without that delay.</p>
         </details>
         <details name="faq">
           <summary>What does self-hosting need?</summary>

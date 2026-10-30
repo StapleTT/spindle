@@ -7,6 +7,7 @@ import { forwardBodyUrl } from './content-server.js';
 import { AttachmentError, setDraftAttachments } from './file-storage.js';
 import { addForwardFiles } from './file-uploads.js';
 import { forwardContent } from './forward.js';
+import { readMailPreferences } from './preferences.js';
 import { draftSyncField } from './provider-draft-routes.js';
 import {
   type ReplyContext,
@@ -347,14 +348,20 @@ export function registerDraftRoutes(
           message:
             'Formatted preview needs the isolated content server. The original formatting will still be sent.',
         });
+      const preferences = await readMailPreferences(
+        pool,
+        request.mailUser ?? '',
+      );
       return {
         htmlUrl: forwardBodyUrl(
           config,
           request.mailUser ?? '',
           request.mailSession ?? '',
           request.params.id,
-          request.body.images ?? false,
+          request.body.images ?? !preferences.blockRemoteImages,
         ),
+        images: request.body.images ?? !preferences.blockRemoteImages,
+        imageProxy: preferences.imageProxy,
       };
     },
   );

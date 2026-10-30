@@ -8,12 +8,19 @@ import { Pool } from 'pg';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { migrateDatabase } from '../../server/src/db/migrate.js';
+import { readContentConfig } from '../../server/src/mail/content-config.js';
+import { buildContentApp } from '../../server/src/mail/content-server.js';
 import { readMailKeys } from '../../server/src/mail/credentials.js';
+import {
+  SANITIZER_VERSION,
+  sanitizeMessage,
+} from '../../server/src/mail/sanitize.js';
 import {
   createTestUser,
   testApp,
   testConfig,
 } from '../../server/test/auth-fixture.js';
+import { tinyPng } from '../../server/test/reader-fixture.js';
 
 test('settings expose honest controls and a custom color picker that persists and updates other tabs', {
   timeout: 90000,
@@ -34,6 +41,19 @@ test('settings expose honest controls and a custom color picker that persists an
   const port = address.port;
   const config = { ...testConfig, appUrl: `http://127.0.0.1:${port}` },
     pool = new Pool({ connectionString });
+  const contentSocket = createNetServer();
+  t.after(() => {
+    if (contentSocket.listening) contentSocket.close();
+  });
+  await new Promise<void>((resolve) =>
+    contentSocket.listen(0, '127.0.0.1', resolve),
+  );
+  const contentAddress = contentSocket.address();
+  assert.ok(contentAddress && typeof contentAddress !== 'string');
+  const contentConfig = readContentConfig(config, {
+    CONTENT_PORT: String(contentAddress.port),
+  });
+  assert.ok(contentConfig);
   await migrateDatabase(pool);
   const app = testApp(
     pool,
@@ -44,7 +64,14 @@ test('settings expose honest controls and a custom color picker that persists an
         v1: Buffer.alloc(32, 84).toString('base64'),
       }),
     }),
+    contentConfig,
   );
+  let imageCalls = 0;
+  const contentApp = buildContentApp(pool, contentConfig, async () => {
+    imageCalls++;
+    return { type: 'image/png', data: tinyPng };
+  });
+  contentApp.log.level = 'silent';
   const owner = await createTestUser(
     app,
     pool,
@@ -91,6 +118,22 @@ test('settings expose honest controls and a custom color picker that persists an
     [owner.id, account, box, id],
   );
   const api = await app.listen({ host: '127.0.0.1', port: 0 });
+  const safe = sanitizeMessage(
+    '<p>Saved preference image</p><img src="https://images.example.test/pixel.png">',
+  );
+  await pool.query(
+    "INSERT INTO mail_content(user_id,account_id,message_id,state,html,plain_text,resources,sanitizer_version) VALUES($1,$2,$3,'ready',$4,'Saved preference image',$5,$6)",
+    [
+      owner.id,
+      account,
+      id,
+      safe.html,
+      JSON.stringify(safe.resources),
+      SANITIZER_VERSION,
+    ],
+  );
+  await new Promise<void>((resolve) => contentSocket.close(() => resolve()));
+  await contentApp.listen({ host: '127.0.0.1', port: contentAddress.port });
   await new Promise<void>((resolve) => socket.close(() => resolve()));
   const vite = await createServer({
     configFile: false,
@@ -270,18 +313,93 @@ test('settings expose honest controls and a custom color picker that persists an
       },
     );
     await t.test(
-      'built-in protections are honest status labels, while theme/density and notification controls work',
+      'privacy/send switches persist across tabs and reloads, and failed writes do not lie about state',
       async () => {
         await page
           .getByRole('button', { name: 'Security', exact: true })
           .click();
-        assert.equal(
-          await page.getByText('Always on', { exact: true }).count(),
-          3,
+        const switches = [
+          'Load images through the privacy proxy',
+          'Block remote images by default',
+          'Undo send',
+        ];
+        for (const name of switches) {
+          const control = page.getByRole('switch', { name, exact: true });
+          await control.waitFor();
+          await page.waitForFunction(
+            (label) =>
+              !document.querySelector<HTMLButtonElement>(
+                `button[role="switch"][aria-label="${label}"]`,
+              )?.disabled,
+            name,
+          );
+          assert.equal(await control.getAttribute('aria-checked'), 'true');
+          await control.click();
+          await page.waitForFunction(
+            (label) =>
+              document
+                .querySelector(`button[role="switch"][aria-label="${label}"]`)
+                ?.getAttribute('aria-checked') === 'false',
+            name,
+          );
+        }
+        assert.deepEqual(
+          (
+            await pool.query(
+              'SELECT image_proxy,block_remote_images,undo_send FROM mail_preferences WHERE user_id=$1',
+              [owner.id],
+            )
+          ).rows[0],
+          { image_proxy: false, block_remote_images: false, undo_send: false },
         );
-        assert.equal(
-          await page.getByRole('switch', { name: 'Undo send' }).count(),
-          0,
+        await second.goto(`${config.appUrl}/inbox#view=settings`);
+        await second
+          .getByRole('button', { name: 'Security', exact: true })
+          .click();
+        for (const name of switches) {
+          await second.waitForFunction(
+            (label) =>
+              document
+                .querySelector(`button[role="switch"][aria-label="${label}"]`)
+                ?.getAttribute('aria-checked') === 'false',
+            name,
+          );
+        }
+        await page.reload();
+        const undo = page.getByRole('switch', {
+          name: 'Undo send',
+          exact: true,
+        });
+        await page.waitForFunction(
+          () =>
+            document
+              .querySelector('button[aria-label="Undo send"]')
+              ?.getAttribute('aria-checked') === 'false',
+        );
+        await page.route('**/api/mail/preferences', (route) =>
+          route.request().method() === 'PATCH'
+            ? route.fulfill({
+                status: 503,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                  message: 'Synthetic preference failure.',
+                }),
+              })
+            : route.continue(),
+        );
+        await undo.click();
+        await page
+          .getByRole('alert')
+          .filter({ hasText: 'Synthetic preference failure' })
+          .waitFor();
+        assert.equal(await undo.getAttribute('aria-checked'), 'false');
+        await page.unroute('**/api/mail/preferences');
+        await undo.click();
+        await page.waitForFunction(
+          () =>
+            document
+              .querySelector('button[aria-label="Undo send"]')
+              ?.getAttribute('aria-checked') === 'true',
         );
         assert.equal(
           await page
@@ -308,9 +426,66 @@ test('settings expose honest controls and a custom color picker that persists an
         assert.deepEqual(errors, []);
       },
     );
+    await t.test(
+      'turning off image blocking really loads images automatically, while Hide still overrides the default',
+      async () => {
+        await page
+          .getByRole('button', { name: 'Security', exact: true })
+          .click();
+        const proxy = page.getByRole('switch', {
+          name: 'Load images through the privacy proxy',
+          exact: true,
+        });
+        await page.waitForFunction(
+          () =>
+            !document.querySelector<HTMLButtonElement>(
+              'button[aria-label="Load images through the privacy proxy"]',
+            )?.disabled,
+        );
+        assert.equal(await proxy.getAttribute('aria-checked'), 'false');
+        await proxy.click();
+        await page.waitForFunction(
+          () =>
+            document
+              .querySelector(
+                'button[aria-label="Load images through the privacy proxy"]',
+              )
+              ?.getAttribute('aria-checked') === 'true',
+        );
+        assert.equal(imageCalls, 0);
+        await page.goto(`${config.appUrl}/inbox#message=${id}`);
+        await page
+          .getByRole('button', { name: 'Hide images', exact: true })
+          .waitFor();
+        const frame = () => page.frameLocator('iframe[title="Message body"]');
+        await frame().locator('img').waitFor();
+        await frame()
+          .locator('img')
+          .evaluate(
+            (node) =>
+              new Promise<void>((resolve) => {
+                if ((node as HTMLImageElement).complete) resolve();
+                else
+                  node.addEventListener('load', () => resolve(), {
+                    once: true,
+                  });
+              }),
+          );
+        assert.equal(imageCalls, 1);
+        await page
+          .getByRole('button', { name: 'Hide images', exact: true })
+          .click();
+        await page
+          .getByRole('button', { name: 'Display images', exact: true })
+          .waitFor();
+        assert.equal(await frame().locator('img').count(), 0);
+        assert.deepEqual(errors, []);
+      },
+    );
   } finally {
     await browser?.close();
     await vite.close();
+    await contentApp.close();
     await app.close();
   }
 });

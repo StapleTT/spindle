@@ -62,6 +62,8 @@ type Detail = {
     hasHtml?: boolean;
     imageCount?: number;
     htmlUrl?: string | null;
+    images?: boolean;
+    imageProxy?: boolean;
     message?: string;
     attachments?: Attachment[];
   };
@@ -286,6 +288,7 @@ export function Reader({
         });
         if (controller.signal.aborted) return;
         setDetail(current);
+        setImages(current.content.images ?? false);
         if (current.content.state === 'missing' && !requested) {
           await mailApi(`messages/${id}/content`, {
             method: 'POST',
@@ -332,17 +335,25 @@ export function Reader({
     setBusy(true);
     setImageError('');
     try {
-      const result = show
-        ? await mailApi<{ htmlUrl: string }>(`messages/${id}/images`, {
-            method: 'POST',
-            body: '{}',
-            signal: controller.signal,
-          })
-        : (await mailApi<Detail>(endpoint, { signal: controller.signal }))
-            .content;
+      const result = await mailApi<{ htmlUrl: string; imageProxy: boolean }>(
+        `messages/${id}/images`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ show }),
+          signal: controller.signal,
+        },
+      );
       if (controller.signal.aborted) return;
       setHtmlUrl(result.htmlUrl ?? null);
       setImages(show);
+      setDetail((current) =>
+        current
+          ? {
+              ...current,
+              content: { ...current.content, imageProxy: result.imageProxy },
+            }
+          : current,
+      );
     } catch (failure) {
       if (!controller.signal.aborted)
         setImageError(
@@ -816,8 +827,12 @@ export function Reader({
                         <Icon src={hideImage} />
                         <p>
                           {images
-                            ? 'Images are enabled for this message.'
-                            : 'Remote images blocked. Loading them goes through Spindle’s image proxy and may notify the sender.'}
+                            ? detail.content.imageProxy === false
+                              ? 'Images load directly in your browser. Image hosts can see your IP address and may track opens.'
+                              : 'Images are enabled through Spindle’s privacy proxy.'
+                            : detail.content.imageProxy === false
+                              ? 'Remote images blocked. Displaying them loads them directly and exposes your IP address to image hosts.'
+                              : 'Remote images blocked. Loading them goes through Spindle’s image proxy and may notify the sender.'}
                         </p>
                         <button
                           type="button"

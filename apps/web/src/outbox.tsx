@@ -143,9 +143,9 @@ export function Outbox({ data }: { data: ReturnType<typeof useOutbox> }) {
     <section aria-labelledby="outbox-heading">
       <h2 id="outbox-heading">Outbox</h2>
       <p>
-        Messages wait at least five seconds before dispatch. Cancel while
-        queued; sending messages cannot be recalled. SMTP acceptance does not
-        guarantee delivery to the recipient.
+        Undo send adds a five-second delay when enabled in Settings. Cancel
+        while queued; sending messages cannot be recalled. SMTP acceptance does
+        not guarantee delivery to the recipient.
       </p>
       {data.error && (
         <p role="status" className="error">
