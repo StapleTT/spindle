@@ -181,7 +181,12 @@ test('attachments survive autosave, reload and conflict copies; checks gate send
     };
     await page.goto(config.appUrl);
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
-    await page.getByLabel('Sending account').selectOption(account);
+    // A single account is preselected, so the From row stays hidden.
+    await page.getByLabel('To', { exact: true }).waitFor();
+    assert.equal(
+      await page.getByLabel('Sending account').inputValue(),
+      account,
+    );
     await page.getByLabel('To', { exact: true }).fill('friend@example.test');
     await page
       .getByLabel('Subject', { exact: true })
@@ -297,6 +302,7 @@ test('attachments survive autosave, reload and conflict copies; checks gate send
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     );
+    await page.setViewportSize({ width: 1280, height: 720 });
     await page.getByRole('button', { name: 'Send', exact: true }).click();
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     await apply();
@@ -306,7 +312,7 @@ test('attachments survive autosave, reload and conflict copies; checks gate send
     assert.equal(sent.attachments[0]?.filename, 'résumé.pdf');
     // Original file attachments appear in forwards and can be removed individually.
     await page
-      .getByRole('button', { name: 'Unified inbox', exact: true })
+      .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
     await page
       .getByRole('link', { name: 'Attachment mail', exact: true })

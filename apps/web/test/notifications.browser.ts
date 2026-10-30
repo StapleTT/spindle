@@ -179,12 +179,18 @@ test('opt-in open-app notifications handle privacy, tabs, permissions and page/s
       await response;
       await p.waitForTimeout(150);
     }
-    async function opened(p = page) {
-      await p.goto(config.appUrl);
+    // Notification settings live in Settings › Security.
+    async function openSettings(p = page) {
+      await p.getByRole('button', { name: 'Settings', exact: true }).click();
+      await p.getByRole('button', { name: 'Security', exact: true }).click();
       await settings(p)
         .getByText(/unread in inbox/)
         .waitFor();
       await settings(p).locator('summary').click();
+    }
+    async function opened(p = page) {
+      await p.goto(config.appUrl);
+      await openSettings(p);
     }
     await opened();
     await t.test(
@@ -293,6 +299,7 @@ test('opt-in open-app notifications handle privacy, tabs, permissions and page/s
         await page.waitForURL(
           (url) => new URLSearchParams(url.hash.slice(1)).get('message') === id,
         );
+        await openSettings();
         const beforeDisable = (await state()).alerts.length;
         await settings()
           .getByRole('button', { name: 'Disable notifications' })

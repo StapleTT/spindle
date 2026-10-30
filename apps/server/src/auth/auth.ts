@@ -8,7 +8,12 @@ import type { Pool } from 'pg';
 import * as schema from '../db/schema.js';
 import { logger } from '../logger.js';
 import type { AuthConfig } from './config.js';
-import { createMailer, sendAuthEmail } from './email.js';
+import {
+  createMailer,
+  passwordResetEmail,
+  sendAuthEmail,
+  verificationEmail,
+} from './email.js';
 
 export function createAuth(
   pool: Pool,
@@ -67,8 +72,7 @@ export function createAuth(
             mailer,
             config,
             user.email,
-            'Reset your Spindle password',
-            `Reset your password within one hour:\n\n${url}\n\nIf you did not request this, ignore this email.`,
+            passwordResetEmail(config, user.email, url),
           );
         } catch {
           // Recovery responses must not reveal whether an account exists during a relay outage.
@@ -85,8 +89,7 @@ export function createAuth(
           mailer,
           config,
           user.email,
-          'Verify your Spindle email',
-          `Verify your email within one hour:\n\n${url}\n\nOnly continue if you created this Spindle account. If you did not, ignore this email.`,
+          verificationEmail(config, user.email, url),
         );
       },
     },

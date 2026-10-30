@@ -192,6 +192,9 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
         assert.equal(await actionCount(), before);
         await search.fill('subject:Project');
         await page
+          .getByRole('button', { name: 'Search options', exact: true })
+          .click();
+        await page
           .getByLabel('Saved search name', { exact: true })
           .fill('Projects');
         await page
@@ -271,11 +274,8 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
       },
     );
     await t.test(
-      'split mode commands target the focused row rather than a different open message',
+      'side-by-side list and reader commands target the focused row rather than a different open message',
       async () => {
-        await page
-          .getByRole('button', { name: 'Split reader', exact: true })
-          .click();
         await row(alpha).locator('.message-open').click();
         await page
           .locator('#reader-title')
@@ -314,12 +314,6 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
         );
         await page.reload();
         await row(beta).waitFor();
-        assert.equal(
-          await page
-            .getByRole('button', { name: 'Split reader', exact: true })
-            .getAttribute('aria-pressed'),
-          'true',
-        );
         await page.locator('.reader [data-mail-command="back"]').click();
       },
     );
@@ -409,9 +403,6 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
     await t.test(
       'read and Trash shortcuts respect filtered results and keep undo available',
       async () => {
-        await page
-          .getByRole('button', { name: 'Split reader', exact: true })
-          .click();
         await find('subject:alpha -is:read');
         await row(alpha).locator('.message-open').focus();
         await page.keyboard.press('o');
@@ -497,6 +488,9 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
           true,
         );
         await page
+          .getByRole('button', { name: 'Open navigation', exact: true })
+          .click();
+        await page
           .getByRole('button', {
             name: 'Remove saved search Projects',
             exact: true,
@@ -505,6 +499,7 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
         await page
           .getByRole('button', { name: 'Projects', exact: true })
           .waitFor({ state: 'hidden' });
+        await page.setViewportSize({ width: 1280, height: 720 });
       },
     );
     await t.test(

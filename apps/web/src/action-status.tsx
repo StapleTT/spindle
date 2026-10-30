@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { Icon } from './brand.js';
+import { close } from './icons.js';
 import {
   type ActionFeedback,
   actionNotice,
@@ -12,6 +14,9 @@ type Page = { actions: ActionFeedback[]; nextCursor: string | null };
 type TimedAction = ActionFeedback & { until: number };
 
 // Owned by the mail shell, so outcomes continue arriving after reader navigation.
+// The snackbar stack shows the newest actions; older ones stay one click away.
+const visibleActions = 3;
+
 export function ActionStatus({
   fresh,
   onChange,
@@ -23,6 +28,7 @@ export function ActionStatus({
   const [actions, setActions] = useState<TimedAction[]>([]);
   const [pages, setPages] = useState(1);
   const [more, setMore] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const [revision, setRevision] = useState(0);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -131,7 +137,7 @@ export function ActionStatus({
   }
 
   return (
-    <section aria-label="Action status">
+    <section aria-label="Action status" className="snackbars-actions">
       {notice && <p role="status">{notice}</p>}
       {error && (
         <p role="status" className="error">
@@ -139,34 +145,37 @@ export function ActionStatus({
         </p>
       )}
       <ul
-        className="action-status"
+        className={`action-status${expanded ? ' expanded' : ''}`}
         aria-label="Recent actions"
         aria-live="polite"
         aria-relevant="additions text"
       >
         {actions.map((action) => (
           <li key={action.id}>
-            <strong>
+            <span className="snack-text">
+              <strong>
+                {action.state === 'applied'
+                  ? 'Completed'
+                  : action.state === 'conflict'
+                    ? 'Conflict'
+                    : action.state === 'failed'
+                      ? 'Failed'
+                      : 'Pending'}
+                :{' '}
+              </strong>
               {action.state === 'applied'
-                ? 'Completed'
-                : action.state === 'conflict'
-                  ? 'Conflict'
-                  : action.state === 'failed'
-                    ? 'Failed'
-                    : 'Pending'}
-              :{' '}
-            </strong>
-            {action.state === 'applied'
-              ? actionNotice(action)
-              : `${actionText[action.kind].pending} “${action.subject || '(No subject)'}”${action.target ? ` → ${action.target}` : ''}.`}{' '}
-            {action.state === 'pending' &&
-              'Waiting for provider confirmation. '}
-            {action.error && <span className="error">{action.error} </span>}
+                ? actionNotice(action)
+                : `${actionText[action.kind].pending} “${action.subject || '(No subject)'}”${action.target ? ` → ${action.target}` : ''}.`}{' '}
+              {action.state === 'pending' &&
+                'Waiting for provider confirmation. '}
+              {action.error && <span className="error">{action.error} </span>}
+            </span>
             {action.state === 'pending' && action.until > Date.now() && (
               <button
                 type="button"
                 disabled={busy !== null}
                 data-mail-command="undo"
+                className="snack-action"
                 aria-label={`Undo: ${actionNotice(action)}`}
                 onClick={() => void change(action, 'undo')}
               >
@@ -178,6 +187,7 @@ export function ActionStatus({
                 type="button"
                 disabled={busy !== null}
                 aria-label={`Retry: ${actionNotice(action)}`}
+                className="snack-action"
                 onClick={() => void change(action, 'retry')}
               >
                 Retry
@@ -188,15 +198,28 @@ export function ActionStatus({
                 type="button"
                 disabled={busy !== null}
                 aria-label={`Dismiss: ${actionNotice(action)}`}
+                className="icon-button small"
+                title="Dismiss"
                 onClick={() => void change(action, 'dismiss')}
               >
-                Dismiss
+                <Icon src={close} />
               </button>
             )}
           </li>
         ))}
       </ul>
-      {more && (
+      {(actions.length > visibleActions || expanded) && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded
+            ? 'Show fewer actions'
+            : `All recent actions (${actions.length})`}
+        </button>
+      )}
+      {expanded && more && (
         <button type="button" onClick={() => setPages((value) => value + 1)}>
           Show more actions
         </button>

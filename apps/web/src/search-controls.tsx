@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Icon } from './brand.js';
+import { bookmark, close, search, tune } from './icons.js';
 import { mailApi } from './mail-api.js';
 import { useMailRevision } from './mail-events.js';
 import { navigateMail } from './mail-navigation.js';
@@ -17,8 +20,7 @@ export function SearchControls({
   accounts,
   folders,
   coverage,
-  split,
-  onSplit,
+  savedSlot,
 }: {
   query: string;
   account: string;
@@ -31,9 +33,9 @@ export function SearchControls({
     role: string | null;
   }[];
   coverage: SearchCoverage | null;
-  split: boolean;
-  onSplit: () => void;
+  savedSlot: HTMLElement | null;
 }) {
+  const [options, setOptions] = useState(false);
   const liveRevision = useMailRevision(['searches']);
   const [text, setText] = useState(query),
     [accountId, setAccount] = useState(account),
@@ -117,16 +119,62 @@ export function SearchControls({
       setBusy(false);
     }
   }
+  const savedList = saved.length > 0 && (
+    <ul className="saved-searches" aria-label="Saved searches">
+      {saved.map((item) => (
+        <li key={item.id}>
+          <button
+            type="button"
+            className="nav-item"
+            aria-pressed={
+              query === item.query &&
+              account === (item.accountId ?? '') &&
+              mailbox === (item.mailboxId ?? '')
+            }
+            onClick={() =>
+              navigateMail({
+                q: item.query,
+                account: item.accountId ?? '',
+                mailbox: item.mailboxId ?? '',
+                cursor: '',
+                message: '',
+                draft: '',
+                view: '',
+              })
+            }
+          >
+            <Icon src={bookmark} />
+            <span className="nav-label">{item.name}</span>
+          </button>
+          <button
+            type="button"
+            className="icon-button small"
+            disabled={busy}
+            aria-label={`Remove saved search ${item.name}`}
+            title="Remove"
+            onClick={() => void remove(item.id)}
+          >
+            <Icon src={close} />
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
   return (
-    <section aria-label="Mail search">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          apply();
-        }}
-      >
-        <label>
-          Search mail
+    <section aria-label="Mail search" className="search">
+      <search>
+        <form
+          className="search-bar"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setOptions(false);
+            apply();
+          }}
+        >
+          <Icon src={search} />
+          <label className="visually-hidden" htmlFor="mail-search">
+            Search mail
+          </label>
           <input
             id="mail-search"
             data-mail-command="search"
@@ -134,167 +182,158 @@ export function SearchControls({
             maxLength={500}
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder={'Words, "exact phrase", from:person, is:unread'}
+            placeholder="Search all mail"
           />
-        </label>
-        <div className="search-filters">
-          <label>
-            Search account
-            <select
-              value={accountId}
-              onChange={(event) => {
-                setAccount(event.target.value);
-                setMailbox('');
+          {(text || query) && (
+            <button
+              type="button"
+              className="icon-button small"
+              title="Clear search"
+              onClick={() => {
+                setText('');
+                navigateMail({
+                  q: '',
+                  cursor: '',
+                  message: '',
+                  draft: '',
+                  view: '',
+                });
               }}
             >
-              <option value="">All accounts</option>
-              {accounts.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Search folder
-            <select
-              value={mailboxId}
-              onChange={(event) => setMailbox(event.target.value)}
-            >
-              <option value="">All searchable folders</option>
-              {folders
-                .filter(
-                  (folder) =>
-                    (!accountId || folder.accountId === accountId) &&
-                    folder.role !== '\\Drafts',
-                )
-                .map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {
-                      accounts.find((item) => item.id === folder.accountId)
-                        ?.name
-                    }{' '}
-                    / {folder.path}
+              <Icon src={close} />
+              <span className="visually-hidden">Clear search</span>
+            </button>
+          )}
+          <kbd className="search-hint">/</kbd>
+          <button
+            type="button"
+            className="icon-button small"
+            aria-expanded={options}
+            aria-controls="search-options"
+            title="Search options"
+            onClick={() => setOptions(!options)}
+          >
+            <Icon src={tune} />
+            <span className="visually-hidden">Search options</span>
+          </button>
+        </form>
+      </search>
+      {options && (
+        <div id="search-options" className="popover search-options">
+          <div className="search-filters">
+            <label>
+              Search account
+              <select
+                value={accountId}
+                onChange={(event) => {
+                  setAccount(event.target.value);
+                  setMailbox('');
+                }}
+              >
+                <option value="">All accounts</option>
+                {accounts.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
                   </option>
                 ))}
-            </select>
-          </label>
+              </select>
+            </label>
+            <label>
+              Search folder
+              <select
+                value={mailboxId}
+                onChange={(event) => setMailbox(event.target.value)}
+              >
+                <option value="">All searchable folders</option>
+                {folders
+                  .filter(
+                    (folder) =>
+                      (!accountId || folder.accountId === accountId) &&
+                      folder.role !== '\\Drafts',
+                  )
+                  .map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {
+                        accounts.find((item) => item.id === folder.accountId)
+                          ?.name
+                      }{' '}
+                      / {folder.path}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+          <div className="form-actions start">
+            <button type="button" onClick={() => apply()}>
+              Search
+            </button>
+            <button
+              type="button"
+              className="outlined"
+              onClick={() => apply(`${text} is:unread`.trim())}
+            >
+              Search unread
+            </button>
+          </div>
+          <p className="muted small">
+            Search uses synchronized headers and the first 100,000 characters of
+            indexed header text and cached bodies. Bodies and attachment filters
+            cover only currently cached content; opening mail fills the bounded
+            cache.
+          </p>
+          <details>
+            <summary>Search syntax</summary>
+            <p className="muted small">
+              Combine words or quoted phrases with from:, to:, subject:, body:,
+              is:read, is:unread, has:attachment, after:YYYY-MM-DD and
+              before:YYYY-MM-DD (UTC). Prefix a term with - to exclude it.
+              Search includes received folders, Sent and Archive; choose a
+              folder or use in:inbox/archive/sent/trash/spam/anywhere. Bcc
+              headers are not indexed.
+            </p>
+          </details>
+          <div className="save-search">
+            <label>
+              Saved search name
+              <input
+                value={name}
+                maxLength={80}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="outlined"
+              disabled={
+                busy ||
+                !query.trim() ||
+                !name.trim() ||
+                text.trim() !== query.trim() ||
+                accountId !== account ||
+                mailboxId !== mailbox
+              }
+              onClick={() => void save()}
+            >
+              Save current search
+            </button>
+          </div>
         </div>
-        <div className="account-actions">
-          <button type="submit">Search</button>
-          <button
-            type="button"
-            onClick={() => {
-              setText('');
-              navigateMail({
-                q: '',
-                cursor: '',
-                message: '',
-                draft: '',
-                view: '',
-              });
-            }}
-          >
-            Clear search
-          </button>
-          <button
-            type="button"
-            onClick={() => apply(`${text} is:unread`.trim())}
-          >
-            Search unread
-          </button>
-        </div>
-      </form>
-      <p className="account-status">
-        Search uses synchronized headers and the first 100,000 characters of
-        indexed header text and cached bodies. Bodies and attachment filters
-        cover only currently cached content; opening mail fills the bounded
-        cache.
-      </p>
+      )}
       {query && coverage && (
-        <p role="status">
+        <p role="status" className="visually-hidden">
           Body search coverage: {coverage.cachedBodies} of {coverage.messages}{' '}
           messages in this scope. Sync history limits still apply.
         </p>
       )}
-      <details>
-        <summary>Search syntax</summary>
-        <p>
-          Combine words or quoted phrases with from:, to:, subject:, body:,
-          is:read, is:unread, has:attachment, after:YYYY-MM-DD and
-          before:YYYY-MM-DD (UTC). Prefix a term with - to exclude it. Search
-          includes received folders, Sent and Archive; choose a folder or use
-          in:inbox/archive/sent/trash/spam/anywhere. Bcc headers are not
-          indexed.
-        </p>
-      </details>
-      <div className="account-actions">
-        <label>
-          Saved search name
-          <input
-            value={name}
-            maxLength={80}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={
-            busy ||
-            !query.trim() ||
-            !name.trim() ||
-            text.trim() !== query.trim() ||
-            accountId !== account ||
-            mailboxId !== mailbox
-          }
-          onClick={() => void save()}
-        >
-          Save current search
-        </button>
-        <button type="button" aria-pressed={split} onClick={onSplit}>
-          Split reader
-        </button>
-      </div>
       {error && (
-        <p role="alert">
+        <p role="alert" className="error">
           {error}{' '}
           <button type="button" onClick={() => setRevision((n) => n + 1)}>
             Reload saved searches
           </button>
         </p>
       )}
-      {saved.length > 0 && (
-        <ul className="saved-searches" aria-label="Saved searches">
-          {saved.map((item) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                onClick={() =>
-                  navigateMail({
-                    q: item.query,
-                    account: item.accountId ?? '',
-                    mailbox: item.mailboxId ?? '',
-                    cursor: '',
-                    message: '',
-                    draft: '',
-                    view: '',
-                  })
-                }
-              >
-                {item.name}
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                aria-label={`Remove saved search ${item.name}`}
-                onClick={() => void remove(item.id)}
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {savedSlot && savedList && createPortal(savedList, savedSlot)}
     </section>
   );
 }

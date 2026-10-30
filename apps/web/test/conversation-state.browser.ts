@@ -235,7 +235,7 @@ test('conversation controls persist, update private tabs, preserve focus and rec
           .getByRole('button', { name: 'Snoozed', exact: true })
           .click();
         await page
-          .getByRole('heading', { name: 'Snoozed mail', exact: true })
+          .getByRole('heading', { name: 'Snoozed', exact: true })
           .waitFor();
         await page
           .locator(`[data-message-row="${root}"] .message-open`)
@@ -291,7 +291,7 @@ test('conversation controls persist, update private tabs, preserve focus and rec
         await wakeSnoozedConversations(pool);
         await second.locator(`[data-message-row="${root}"]`).waitFor();
         await page
-          .getByRole('button', { name: 'Unified inbox', exact: true })
+          .getByRole('button', { name: 'All inboxes', exact: true })
           .click();
         await page
           .locator(`[data-message-row="${root}"] .message-open`)

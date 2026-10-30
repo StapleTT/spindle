@@ -1,7 +1,11 @@
 import { type FormEvent, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { authClient } from './auth-client.js';
+import { Icon, SpindleLogo, ThemeToggle } from './brand.js';
+import { passkey } from './icons.js';
 import { Mail } from './mail.js';
+import '@fontsource-variable/plus-jakarta-sans';
+import '@fontsource-variable/jetbrains-mono';
 import './style.css';
 
 type View = 'login' | 'signup' | 'forgot' | 'reset';
@@ -204,152 +208,211 @@ function App() {
     forgot: 'Reset your password',
     reset: 'Choose a new password',
   }[view];
-  return (
-    <main className={session ? 'signed-in' : undefined}>
-      <header>
-        <h1>Spindle</h1>
-        <p>Your private mailboxes, together.</p>
-      </header>
-      {message && (
-        <p
-          ref={feedback}
-          tabIndex={-1}
-          role={error ? 'alert' : 'status'}
-          className={error ? 'error' : 'notice'}
-        >
-          {message}
-        </p>
-      )}
-      {isPending ? (
-        <p role="status">Loading your session…</p>
-      ) : session ? (
-        <section aria-labelledby="signed-in-title">
-          <h2 id="signed-in-title">You’re signed in</h2>
-          <p>{session.user.email}</p>
-          <button type="button" disabled={busy} onClick={() => void signOut()}>
-            Sign out
-          </button>
-          {session.user.emailVerified ? (
-            <Mail key={session.user.id} userId={session.user.id} />
-          ) : (
-            <p>Verify your email to access your mail.</p>
-          )}
-        </section>
-      ) : (
-        <section aria-labelledby="auth-title">
-          <h2 id="auth-title">{title}</h2>
-          {view === 'signup' && (
-            <p>
-              {registrationMode === 'invite'
-                ? 'The beta is invite-only. Use the email address that received your invitation.'
-                : 'Create an account and verify your email to get started.'}
-            </p>
-          )}
-          <form onSubmit={(event) => void submit(event)} aria-busy={busy}>
-            {view !== 'reset' && (
-              <label htmlFor="email">
-                Email address
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  maxLength={254}
-                  required
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </label>
-            )}
-            {view !== 'forgot' && (
-              <label htmlFor="password">
-                Password
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete={
-                    view === 'login' ? 'current-password' : 'new-password'
-                  }
-                  minLength={view === 'login' ? 1 : 15}
-                  maxLength={128}
-                  required
-                  aria-describedby={
-                    view === 'login' ? undefined : 'password-hint'
-                  }
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </label>
-            )}
-            {(view === 'signup' || view === 'reset') && (
-              <>
-                <p id="password-hint">
-                  Use 15–128 characters. A password manager is recommended.
-                </p>
-                <label htmlFor="confirmation">
-                  Confirm password
-                  <input
-                    id="confirmation"
-                    name="confirmation"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    maxLength={128}
-                    value={confirmation}
-                    onChange={(event) => setConfirmation(event.target.value)}
-                  />
-                </label>
-              </>
-            )}
-            <button type="submit" disabled={busy}>
-              {busy
-                ? 'Please wait…'
-                : view === 'forgot'
-                  ? 'Send reset link'
-                  : view === 'reset'
-                    ? 'Update password'
-                    : title}
-            </button>
-          </form>
-          <nav aria-label="Account access">
-            {view !== 'login' && (
+  const subtitle = {
+    login: 'One login for every mailbox you own.',
+    signup:
+      registrationMode === 'invite'
+        ? 'The beta is invite-only. Use the email address that received your invitation.'
+        : 'Create an account and verify your email to get started.',
+    forgot: 'We’ll email you a link to choose a new password.',
+    reset: 'Use 15–128 characters. A password manager is recommended.',
+  }[view];
+  const feedbackText = message && (
+    <p
+      ref={feedback}
+      tabIndex={-1}
+      role={error ? 'alert' : 'status'}
+      className={error ? 'error' : 'notice'}
+    >
+      {message}
+    </p>
+  );
+  if (session)
+    return (
+      <>
+        <h1 className="visually-hidden">Spindle</h1>
+        <h2 className="visually-hidden">You’re signed in</h2>
+        {feedbackText}
+        {session.user.emailVerified ? (
+          <Mail
+            key={session.user.id}
+            userId={session.user.id}
+            email={session.user.email}
+            busy={busy}
+            onSignOut={() => void signOut()}
+          />
+        ) : (
+          <main className="auth">
+            <ThemeToggle />
+            <section className="auth-card">
+              <div className="auth-brand">
+                <SpindleLogo size={38} />
+                Spindle
+              </div>
+              <p>Verify your email to access your mail.</p>
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => navigate('login')}
+                onClick={() => void signOut()}
               >
-                Back to sign in
+                Sign out
               </button>
-            )}
-            {view === 'login' && (
+            </section>
+          </main>
+        )}
+      </>
+    );
+  return (
+    <main className="auth">
+      <ThemeToggle />
+      {isPending ? (
+        <p role="status">Loading your session…</p>
+      ) : (
+        <form
+          className="auth-card"
+          onSubmit={(event) => void submit(event)}
+          aria-busy={busy}
+          aria-labelledby="auth-title"
+        >
+          <div className="auth-brand">
+            <SpindleLogo size={38} />
+            Spindle
+          </div>
+          <div className="auth-heading">
+            <h1 id="auth-title">{title}</h1>
+            <p id={view === 'reset' ? 'password-hint' : undefined}>
+              {subtitle}
+            </p>
+          </div>
+          {feedbackText}
+          {view === 'login' && (
+            <>
+              <button type="button" className="auth-passkey" disabled>
+                <Icon src={passkey} />
+                Continue with a passkey
+                <span className="soon">Coming soon</span>
+              </button>
+              <div className="auth-or">or</div>
+            </>
+          )}
+          {view !== 'reset' && (
+            <label htmlFor="email">
+              <span>Email</span>
+              <input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                maxLength={254}
+                required
+                placeholder="you@example.com"
+                aria-label="Email address"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </label>
+          )}
+          {view !== 'forgot' && (
+            <div className="field">
+              <span className="label-row">
+                <label htmlFor="password">Password</label>
+                {view === 'login' && (
+                  <button
+                    type="button"
+                    className="text-link"
+                    aria-label="Forgot password?"
+                    disabled={busy}
+                    onClick={() => navigate('forgot')}
+                  >
+                    Forgot?
+                  </button>
+                )}
+              </span>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete={
+                  view === 'login' ? 'current-password' : 'new-password'
+                }
+                minLength={view === 'login' ? 1 : 15}
+                maxLength={128}
+                required
+                placeholder="••••••••••"
+                aria-describedby={
+                  view === 'login' ? undefined : 'password-hint'
+                }
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </div>
+          )}
+          {view === 'signup' && (
+            <p id="password-hint" className="field-hint">
+              Use 15–128 characters. A password manager is recommended.
+            </p>
+          )}
+          {(view === 'signup' || view === 'reset') && (
+            <label htmlFor="confirmation">
+              <span>Confirm password</span>
+              <input
+                id="confirmation"
+                name="confirmation"
+                type="password"
+                autoComplete="new-password"
+                required
+                maxLength={128}
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+              />
+            </label>
+          )}
+          <button type="submit" disabled={busy}>
+            {busy
+              ? 'Please wait…'
+              : view === 'forgot'
+                ? 'Send reset link'
+                : view === 'reset'
+                  ? 'Update password'
+                  : title}
+          </button>
+          <nav className="auth-links" aria-label="Account access">
+            {view === 'login' ? (
               <>
+                <span>
+                  New here?{' '}
+                  <button
+                    type="button"
+                    className="text-link"
+                    disabled={busy}
+                    onClick={() => navigate('signup')}
+                  >
+                    Create an account
+                  </button>
+                </span>
                 <button
                   type="button"
-                  disabled={busy}
-                  onClick={() => navigate('signup')}
-                >
-                  Create an account
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => navigate('forgot')}
-                >
-                  Forgot password?
-                </button>
-                <button
-                  type="button"
+                  className="text-link"
                   disabled={busy}
                   onClick={() => void resend()}
                 >
                   Resend verification email
                 </button>
               </>
+            ) : (
+              <button
+                type="button"
+                className="text-link"
+                disabled={busy}
+                onClick={() => navigate('login')}
+              >
+                Back to sign in
+              </button>
             )}
             {view === 'reset' && (
               <button
                 type="button"
+                className="text-link"
                 disabled={busy}
                 onClick={() => navigate('forgot')}
               >
@@ -357,7 +420,7 @@ function App() {
               </button>
             )}
           </nav>
-        </section>
+        </form>
       )}
     </main>
   );

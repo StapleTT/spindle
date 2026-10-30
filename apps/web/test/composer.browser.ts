@@ -105,7 +105,7 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
     });
     await page.goto(config.appUrl);
     await page
-      .getByRole('heading', { name: 'Unified inbox', exact: true })
+      .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();
     assert.equal(
       await page
@@ -144,6 +144,12 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
     await page
       .getByLabel('To', { exact: true })
       .fill('Recipient <recipient@example.test>, unfinished');
+    await page
+      .getByRole('button', { name: 'Add Cc recipients', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Add Bcc recipients', exact: true })
+      .click();
     await page.getByLabel('Cc', { exact: true }).fill('copy@example.test');
     await page.getByLabel('Bcc', { exact: true }).fill('private@example.test');
     await page
@@ -156,7 +162,13 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
     await rich.click();
     await page.keyboard.type('Rich body');
     await rich.press('ControlOrMeta+a');
+    await page
+      .getByRole('button', { name: 'Formatting options', exact: true })
+      .click();
     await page.getByRole('button', { name: 'Bold', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Insert link', exact: true })
+      .click();
     await page.getByLabel('Link URL').fill('javascript:alert(1)');
     await page
       .getByRole('button', { name: 'Apply link to selected text' })
@@ -212,6 +224,9 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
       (await stored()).content.html,
       /img|script|tracker|onerror/,
     );
+    await page
+      .getByRole('button', { name: 'More options', exact: true })
+      .click();
     await page.getByLabel('Message format').selectOption('plain');
     const plain = page.getByRole('textbox', {
       name: 'Message body',
@@ -229,11 +244,9 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
       .getByLabel('Subject', { exact: true })
       .fill('Draft after navigation');
     await page
-      .getByRole('button', { name: 'Unified inbox', exact: true })
+      .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
-    await page
-      .getByRole('button', { name: 'Local drafts', exact: true })
-      .click();
+    await page.getByRole('button', { name: 'Drafts', exact: true }).click();
     await page
       .getByRole('link', { name: 'Draft after navigation', exact: true })
       .click();
@@ -405,12 +418,17 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
     await otherTab
       .getByRole('button', { name: 'Confirm discard draft', exact: true })
       .click();
+    // Drafts stay visible behind the composer sheet; wait for it to close.
+    await otherTab.locator('.composer').waitFor({ state: 'detached' });
     await otherTab
       .getByRole('heading', { name: 'Local drafts', exact: true })
       .waitFor();
     assert.equal(await stored(copyId), undefined);
 
     await page.setViewportSize({ width: 390, height: 844 });
+    await page
+      .getByRole('button', { name: 'More options', exact: true })
+      .click();
     await page.getByLabel('Message format').selectOption('rich');
     await rich.waitFor();
     await page.getByText('Saved to Spindle.', { exact: true }).waitFor();

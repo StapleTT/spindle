@@ -104,8 +104,9 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();
     await page
-      .getByRole('heading', { name: 'Unified inbox', exact: true })
+      .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page
       .getByRole('button', { name: 'Connect IMAP account', exact: true })
       .click();
@@ -118,6 +119,9 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
       .fill(imapPassword);
     await page
       .getByRole('button', { name: 'Save and sync', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
     await page.getByText('Browser mail 50', { exact: true }).waitFor();
     assert.equal(await page.locator('.message-list > li').count(), 50);
@@ -135,7 +139,7 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
     await page.getByRole('button', { name: /^Archive \(/ }).click();
     await page.getByText('Browser archived mail', { exact: true }).waitFor();
     await page
-      .getByRole('button', { name: 'Unified inbox', exact: true })
+      .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
     await page.getByText('Browser mail 50', { exact: true }).waitFor();
     server.control.addMessage('INBOX', {
@@ -143,7 +147,11 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
       internaldate: new Date(Date.now() + 60000),
       flags: [],
     });
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: 'Sync now', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'All inboxes', exact: true })
+      .click();
     await page
       .getByText('Delivered while browser is open', { exact: true })
       .waitFor();
@@ -153,6 +161,10 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     );
+    await page
+      .getByRole('button', { name: 'Open navigation', exact: true })
+      .click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page.getByRole('button', { name: 'Disconnect', exact: true }).click();
     await page
       .getByLabel('Confirm your Spindle password', { exact: true })

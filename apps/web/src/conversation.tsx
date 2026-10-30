@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { initials, shortTime } from './brand.js';
 import {
   ConversationControls,
   type ConversationState,
@@ -31,7 +33,11 @@ export function Conversation({
   query,
   revision,
   onChange,
+  tools,
+  thread,
 }: {
+  tools: HTMLElement | null;
+  thread: HTMLElement | null;
   anchor: string;
   selected: string;
   account: string;
@@ -106,25 +112,12 @@ export function Conversation({
       clearTimeout(timer);
     };
   }, [endpoint, pages, revision, retry, liveRevision]);
+  // Controls join the reader toolbar; the thread sits under the subject.
   return (
-    <section className="conversation" aria-label="Conversation">
-      <h2>Conversation{data ? ` (${data.total} messages)` : ''}</h2>
-      <p className="account-status">
-        Related messages in this account, including Sent and mail outside this
-        search or folder. Read, move and delete actions affect only the open
-        message.
-      </p>
-      {error && (
-        <p role="status">
-          {error} {data && 'Showing the last known conversation.'}{' '}
-          <button type="button" onClick={() => setRetry((n) => n + 1)}>
-            Reload conversation
-          </button>
-        </p>
-      )}
-      {!data && !error && <p role="status">Loading conversation…</p>}
-      {data && (
-        <>
+    <>
+      {tools &&
+        data &&
+        createPortal(
           <ConversationControls
             anchor={anchor}
             state={data.state}
@@ -133,44 +126,97 @@ export function Conversation({
               onChange();
             }}
             onReload={() => setRetry((n) => n + 1)}
-          />
-          {data.messages.some((item) => item.headersPending) && (
-            <p className="account-status">
-              Some reply headers have not synchronized yet. More related
-              messages may appear after background sync.
+          />,
+          tools,
+        )}
+      {thread &&
+        createPortal(
+          <section className="conversation" aria-label="Conversation">
+            <h3 className="visually-hidden">
+              Conversation{data ? ` (${data.total} messages)` : ''}
+            </h3>
+            <p className="visually-hidden">
+              Related messages in this account, including Sent and mail outside
+              this search or folder. Read, move and delete actions affect only
+              the open message.
             </p>
-          )}
-          <ol aria-label="Conversation messages">
-            {[...data.messages].reverse().map((item) => (
-              <li key={item.id} className={item.unread ? 'unread' : ''}>
-                <a
-                  href={mailHref({ message: item.id, conversation: anchor })}
-                  aria-current={item.id === selected ? 'true' : undefined}
-                >
-                  {item.subject || '(No subject)'}
-                </a>{' '}
-                <span>
-                  {item.sender
-                    .map((person) => person.name || person.address)
-                    .join(', ') || 'Unknown sender'}{' '}
-                  ·{' '}
-                  <time dateTime={item.receivedAt}>
-                    {new Date(item.receivedAt).toLocaleString()}
-                  </time>{' '}
-                  · {item.folders.map((folder) => folder.path).join(', ')}
-                  {item.unread ? ' · Unread' : ''}
-                  {!item.matchesView ? ' · Outside current view' : ''}
-                </span>
-              </li>
-            ))}
-          </ol>
-          {data.nextCursor && (
-            <button type="button" onClick={() => setPages((n) => n + 1)}>
-              Show earlier conversation messages
-            </button>
-          )}
-        </>
-      )}
-    </section>
+            {error && (
+              <p role="status" className="notice">
+                {error} {data && 'Showing the last known conversation.'}{' '}
+                <button type="button" onClick={() => setRetry((n) => n + 1)}>
+                  Reload conversation
+                </button>
+              </p>
+            )}
+            {!data && !error && (
+              <p role="status" className="visually-hidden">
+                Loading conversation…
+              </p>
+            )}
+            {data && (
+              <>
+                {data.messages.some((item) => item.headersPending) && (
+                  <p className="muted small">
+                    Some reply headers have not synchronized yet. More related
+                    messages may appear after background sync.
+                  </p>
+                )}
+                {data.nextCursor && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    onClick={() => setPages((n) => n + 1)}
+                  >
+                    Show earlier conversation messages
+                  </button>
+                )}
+                <ol aria-label="Conversation messages">
+                  {[...data.messages].reverse().map((item) => {
+                    const from =
+                      item.sender
+                        .map((person) => person.name || person.address)
+                        .join(', ') || 'Unknown sender';
+                    return (
+                      <li
+                        key={item.id}
+                        className={`thread-card${item.unread ? ' unread' : ''}${item.id === selected ? ' current' : ''}`}
+                      >
+                        <span className="avatar" aria-hidden="true">
+                          {initials(from)}
+                        </span>
+                        <span className="thread-text">
+                          <span className="thread-from">{from}</span>
+                          <a
+                            href={mailHref({
+                              message: item.id,
+                              conversation: anchor,
+                            })}
+                            aria-current={
+                              item.id === selected ? 'true' : undefined
+                            }
+                          >
+                            {item.subject || '(No subject)'}
+                          </a>
+                          <span className="thread-meta">
+                            {item.folders
+                              .map((folder) => folder.path)
+                              .join(', ')}
+                            {item.unread ? ' · Unread' : ''}
+                            {!item.matchesView ? ' · Outside current view' : ''}
+                          </span>
+                        </span>
+                        <time dateTime={item.receivedAt}>
+                          {shortTime(item.receivedAt)}
+                        </time>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </>
+            )}
+          </section>,
+          thread,
+        )}
+    </>
   );
 }

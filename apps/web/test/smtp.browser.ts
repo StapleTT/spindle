@@ -110,8 +110,9 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
     };
     await page.goto(config.appUrl);
     await page
-      .getByRole('heading', { name: 'Unified inbox', exact: true })
+      .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
     await page
       .getByRole('button', { name: 'Outgoing SMTP for Browser send account' })
       .click();
@@ -165,7 +166,13 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
       await page
         .getByLabel('To', { exact: true })
         .fill('recipient@example.test');
+      await page
+        .getByRole('button', { name: 'Add Bcc recipients', exact: true })
+        .click();
       await page.getByLabel('Bcc', { exact: true }).fill('hidden@example.test');
+      await page
+        .getByRole('button', { name: 'More options', exact: true })
+        .click();
       await page.getByLabel('Message format').selectOption('plain');
       await page
         .getByRole('textbox', { name: 'Message body', exact: true })

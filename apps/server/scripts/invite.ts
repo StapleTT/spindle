@@ -2,7 +2,11 @@ import { and, eq, gt } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { readAuthConfig } from '../src/auth/config.js';
-import { createMailer, sendAuthEmail } from '../src/auth/email.js';
+import {
+  createMailer,
+  invitationEmail,
+  sendAuthEmail,
+} from '../src/auth/email.js';
 import { readConfig } from '../src/config.js';
 import { invites, user } from '../src/db/schema.js';
 
@@ -24,6 +28,7 @@ const pool = new Pool({
 });
 const db = drizzle(pool);
 const mailer = createMailer(config);
+const expiresAt = new Date(Date.now() + 7 * 24 * 3600000);
 try {
   await db.transaction(async (tx) => {
     // Serializes explicit admin designation; it is never granted by registration order.
@@ -44,7 +49,7 @@ try {
     const values = {
       email,
       role: flag === '--admin' ? ('admin' as const) : ('user' as const),
-      expiresAt: new Date(Date.now() + 7 * 24 * 3600000),
+      expiresAt,
     };
     await tx
       .insert(invites)
@@ -58,8 +63,7 @@ try {
     mailer,
     config,
     email,
-    'You are invited to Spindle',
-    `You are invited to Spindle. Create your account within seven days using this email address:\n\n${link}\n\nYou will need to verify your email before signing in.`,
+    invitationEmail(config, email, link.href, expiresAt),
   );
   console.log(
     'Invitation issued. Check the recipient inbox (Mailpit during local development).',

@@ -1,0 +1,174 @@
+/* Spindle design tokens from the Claude Design export. See docs/design.md before
+   changing values; every colour in the app and landing page comes from here. */
+:root {
+  --bg: oklch(96.5% 0.008 265);
+  --surface: oklch(99.3% 0.003 265);
+  --surf-hi: oklch(94.2% 0.012 265);
+  --surf-hst: oklch(91.5% 0.015 265);
+  --on: oklch(23% 0.015 265);
+  --on-var: oklch(46% 0.02 265);
+  --outline: oklch(64% 0.02 265);
+  --outline-var: oklch(88.5% 0.012 265);
+  --primary: oklch(50% 0.16 265);
+  --on-primary: oklch(99% 0.004 265);
+  --pc: oklch(91% 0.045 265);
+  --on-pc: oklch(30% 0.11 265);
+  --sc: oklch(92.5% 0.022 265);
+  --on-sc: oklch(30% 0.04 265);
+  --inv: oklch(30% 0.015 265);
+  --on-inv: oklch(95% 0.008 265);
+  --on-inv-var: oklch(80% 0.015 265);
+  --inv-primary: oklch(82% 0.09 265);
+  --hover: oklch(50% 0.05 265 / 0.07);
+  --sel: oklch(93% 0.035 265);
+  --scrim: oklch(15% 0.02 265 / 0.38);
+  --error: oklch(50% 0.17 25);
+  --error-c: oklch(93% 0.04 25);
+  --on-error-c: oklch(35% 0.12 25);
+  --e1:
+    0 1px 2px oklch(20% 0.02 265 / 0.14),
+    0 1px 3px 1px oklch(20% 0.02 265 / 0.07);
+  --e3:
+    0 4px 8px 3px oklch(20% 0.02 265 / 0.1),
+    0 1px 3px oklch(20% 0.02 265 / 0.16);
+  /* Account accents: solid dot, soft container, text on soft container. */
+  --a1: oklch(57% 0.15 32);
+  --a1s: oklch(92.5% 0.035 32);
+  --a1t: oklch(36% 0.1 32);
+  --a2: oklch(57% 0.15 250);
+  --a2s: oklch(92.5% 0.035 250);
+  --a2t: oklch(36% 0.1 250);
+  --a3: oklch(57% 0.15 155);
+  --a3s: oklch(92.5% 0.035 155);
+  --a3t: oklch(36% 0.1 155);
+  --a4: oklch(57% 0.15 320);
+  --a4s: oklch(92.5% 0.035 320);
+  --a4t: oklch(36% 0.1 320);
+  --font: "Plus Jakarta Sans Variable", system-ui, sans-serif;
+  --mono: "JetBrains Mono Variable", ui-monospace, monospace;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: oklch(16.5% 0 0);
+  --surface: oklch(20.5% 0 0);
+  --surf-hi: oklch(25% 0 0);
+  --surf-hst: oklch(29% 0 0);
+  --on: oklch(93% 0 0);
+  --on-var: oklch(75% 0 0);
+  --outline: oklch(58% 0 0);
+  --outline-var: oklch(32% 0 0);
+  --primary: oklch(80% 0.1 265);
+  --on-primary: oklch(27% 0.1 265);
+  --pc: oklch(36% 0.11 265);
+  --on-pc: oklch(91% 0.045 265);
+  --sc: oklch(31% 0 0);
+  --on-sc: oklch(90% 0 0);
+  --inv: oklch(92% 0 0);
+  --on-inv: oklch(25% 0 0);
+  --on-inv-var: oklch(40% 0 0);
+  --inv-primary: oklch(50% 0.16 265);
+  --hover: oklch(90% 0 0 / 0.07);
+  --sel: oklch(29% 0 0);
+  --scrim: oklch(5% 0 0 / 0.55);
+  --error: oklch(78% 0.12 25);
+  --error-c: oklch(32% 0.08 25);
+  --on-error-c: oklch(90% 0.05 25);
+  --e1: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px 1px rgb(0 0 0 / 0.2);
+  --e3: 0 4px 8px 3px rgb(0 0 0 / 0.3), 0 1px 3px rgb(0 0 0 / 0.4);
+  --a1: oklch(74% 0.12 32);
+  --a1s: oklch(32% 0.06 32);
+  --a1t: oklch(88% 0.06 32);
+  --a2: oklch(74% 0.12 250);
+  --a2s: oklch(32% 0.06 250);
+  --a2t: oklch(88% 0.06 250);
+  --a3: oklch(74% 0.12 155);
+  --a3s: oklch(32% 0.06 155);
+  --a3t: oklch(88% 0.06 155);
+  --a4: oklch(74% 0.12 320);
+  --a4s: oklch(32% 0.06 320);
+  --a4t: oklch(88% 0.06 320);
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--on);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+a {
+  color: var(--primary);
+}
+a:hover {
+  color: var(--on-pc);
+}
+::selection {
+  background: var(--pc);
+  color: var(--on-pc);
+}
+:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+.spindle-logo {
+  display: block;
+  flex: none;
+  color: var(--primary);
+}
+.icon {
+  display: inline-block;
+  flex: none;
+  width: 1.25em;
+  height: 1.25em;
+  background: currentColor;
+  mask: var(--icon) center / contain no-repeat;
+}
+kbd {
+  font-family: var(--mono);
+  font-size: 0.8em;
+  border: 1px solid var(--outline-var);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 1px 7px;
+  background: var(--surface);
+  color: var(--on);
+}
+[hidden] {
+  /* biome-ignore lint/complexity/noImportantStyles: the hidden attribute must beat component display rules */
+  display: none !important;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over component motion */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over component motion */
+    transition-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must win over component motion */
+    scroll-behavior: auto !important;
+  }
+}

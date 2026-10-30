@@ -90,7 +90,7 @@ Status: selected by the agent on 2026-10-27 to implement the agreed scope; a tec
 
 Dependencies are added with their owning features. Authentication now adds Better Auth, its transaction-context package, Drizzle ORM and Nodemailer, with versioned SQL migrations. Mail adapters, storage, query caching and final design components remain future work. The API's compiled entry point currently serves API routes only; production frontend hosting is still pending.
 
-Claude Design will supply the design system later; its export format and framework requirements are not yet known. Native temporary styling avoids committing to a competing design system.
+Claude Design will supply the design system later; its export format and framework requirements are not yet known. Native temporary styling avoided committing to a competing design system until the export arrived (see D027).
 
 ## D006 — authentication implementation
 
@@ -284,3 +284,13 @@ Status: open-app scope confirmed by the user on 2026-10-29; implementation choic
 Provide opt-in native browser notifications only while Spindle is open, including runnable background tabs. Require a user gesture for permission, store enable/preview preferences per user in this browser, hide sender/subject by default and deduplicate tabs with browser locks/shared receipts. Reuse authenticated local reads and existing SSE/polling; keep provider I/O in the worker. Mark only post-history new inbox arrivals, suppress read/moved/deleted/muted/snoozed mail and never replay consumed arrivals on undo/wakeup. Unread title/summary counts use the existing unified-inbox predicate. Recheck session ownership on notification clicks and close page-owned alerts on lifecycle cleanup.
 
 Migration 0027 is additive and retained on rollback. Notifications are best effort with bounded arrival/receipt windows, supported secure browsers and OS permission; no delivery guarantee is implied. Notifications after closing the app are explicitly deferred: later Web Push/service-worker work must address subscription consent/revocation, privacy and session/device cleanup before it is advertised. See [behavior, upgrade and proof](notifications.md).
+
+## D027 — Claude Design integration, first pass
+
+Status: implemented 2026-10-29 from the user-supplied Claude Design export; visual acceptance (F10) pending.
+
+Map the export's OKLCH tokens once into `apps/web/src/tokens.css` and skin existing semantic components instead of adopting the prototype runtime or its inline-style markup. Self-host Plus Jakarta Sans, JetBrains Mono and Material Symbols Rounded SVGs (new web dependencies: two `@fontsource-variable` packages and `@material-symbols/svg-400`); no CDN or tracker. Theme preference is a per-browser `spindle-theme` value with system default and pre-paint application. The landing page is a second Vite entry at `/landing/`; its final hosting origin stays open with production frontend hosting. Auth emails gain HTML templates with unchanged subjects and plain-text parts.
+
+Follow-up the same day (user request): the signed-in app was rebuilt to the prototype's structure rather than skinned. Existing feature components keep their logic and are moved or portalled into the drawer, top bar, panes, Settings, compose sheet and snackbars. The user chose design visuals with true copy, and **disabled "Coming soon" controls** for prototype features that do not exist (Gmail/Microsoft accounts, passkeys, two-step verification, Needs reply, Newsletters). Browser tests were updated where names or navigation changed (All inboxes, Drafts, Settings tabs, Search options).
+
+Shipped copy describes current capabilities: claims in the export about Gmail/Microsoft, passkeys, SQLite, KMS, audit logs, Docker packages, unavailable shortcuts and fabricated email details were rewritten. Mail HTML keeps its isolated white canvas in both themes. See [design](design.md) for tokens, rules, deviations, remaining layout work and proof.

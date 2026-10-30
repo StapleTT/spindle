@@ -1,6 +1,6 @@
 # Send later
 
-Compose a message, complete its recipients and attachments, choose a checked sending account, then select **Send later**. Choose **Send at**, review the local timezone/offset and UTC preview, and choose **Schedule send**. The composer flushes autosave before submitting. Existing recipient, provider-draft conflict, clean-attachment, MIME/storage and enqueue limits still apply.
+Compose a message, complete its recipients and attachments, choose a checked sending account, then open **Send later** (the arrow beside Send). Pick Tomorrow morning, Tomorrow afternoon or Monday morning to schedule at that local time immediately, or choose **Send at**, check the local timezone, and choose **Schedule send**. The composer flushes autosave before submitting. Existing recipient, provider-draft conflict, clean-attachment, MIME/storage and enqueue limits still apply.
 
 The time must be at least five seconds ahead and within 366 days. Nonexistent daylight-saving times are rejected. For an ambiguous repeated hour, the browser chooses its first occurrence and previews the actual offset and UTC instant. The server accepts an explicit offset-bearing timestamp and stores an absolute UTC deadline. Changing browser timezone or crossing a daylight-saving boundary afterwards changes the displayed local time, not the saved deadline.
 

@@ -338,6 +338,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     );
+    await page.setViewportSize({ width: 1280, height: 720 });
     const attached = (
       await pool.query(
         `SELECT m.id,b.id AS mailbox FROM mail_messages m JOIN mail_memberships mm ON mm.message_id=m.id
@@ -437,7 +438,10 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page
       .getByRole('heading', { name: 'Reader message 47', exact: true })
       .waitFor();
-    await page.getByRole('button', { name: 'Archive', exact: true }).click();
+    await page
+      .locator('.reader')
+      .getByRole('button', { name: 'Archive', exact: true })
+      .click();
     await page
       .getByRole('heading', { name: 'Reader message 46', exact: true })
       .waitFor();
@@ -492,7 +496,10 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page
       .getByRole('heading', { name: 'Reader message 43', exact: true })
       .waitFor();
-    await page.getByRole('button', { name: 'Archive', exact: true }).click();
+    await page
+      .locator('.reader')
+      .getByRole('button', { name: 'Archive', exact: true })
+      .click();
     await page
       .getByRole('heading', { name: 'Reader message 42', exact: true })
       .waitFor();

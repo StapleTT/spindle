@@ -8,6 +8,16 @@ export default defineConfig(({ mode }) => {
   ]);
   return {
     plugins: [react()],
+    build: {
+      rollupOptions: {
+        input: {
+          app: fileURLToPath(new URL('index.html', import.meta.url)),
+          landing: fileURLToPath(
+            new URL('landing/index.html', import.meta.url),
+          ),
+        },
+      },
+    },
     server: {
       host: '127.0.0.1',
       port: 5173,

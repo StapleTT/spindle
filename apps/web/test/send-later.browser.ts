@@ -154,6 +154,9 @@ test('Send later recovers lost responses, persists schedules, supports edit/canc
     await page
       .getByLabel('Subject', { exact: true })
       .fill('Browser send later');
+    await page
+      .getByRole('button', { name: 'More options', exact: true })
+      .click();
     await page.getByLabel('Message format').selectOption('plain');
     await page
       .getByRole('textbox', { name: 'Message body', exact: true })

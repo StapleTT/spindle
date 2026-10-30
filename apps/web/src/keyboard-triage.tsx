@@ -1,10 +1,12 @@
 import { type RefObject, useEffect, useRef, useState } from 'react';
+import { Icon } from './brand.js';
+import { bolt } from './icons.js';
 export const typingTarget = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   !!target.closest(
     'input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"]',
   );
-const commands = [
+export const commands = [
   ['search', 'Search mail', '/'],
   ['compose', 'Compose', 'c'],
   ['open', 'Open focused message', 'o'],
@@ -21,8 +23,8 @@ const commands = [
   ['select', 'Toggle selected row', 'x'],
   ['older', 'Older list page', 'n'],
   ['newest', 'Newest list page', 'p'],
-  ['inbox', 'Unified inbox', ''],
-  ['drafts', 'Local drafts', ''],
+  ['inbox', 'All inboxes', ''],
+  ['drafts', 'Drafts', ''],
   ['outbox', 'Outbox', ''],
 ] as const;
 export function KeyboardTriage({
@@ -184,8 +186,15 @@ export function KeyboardTriage({
   );
   return (
     <>
-      <button type="button" onClick={show}>
-        Commands and keyboard shortcuts
+      <button
+        type="button"
+        className="commands-button"
+        aria-label="Commands and keyboard shortcuts"
+        onClick={show}
+      >
+        <Icon src={bolt} />
+        Commands
+        <kbd>⌘K</kbd>
       </button>
       <dialog
         ref={dialog}
@@ -212,25 +221,35 @@ export function KeyboardTriage({
           ]?.focus();
         }}
       >
-        <h2 id="commands-title">Commands and keyboard shortcuts</h2>
-        <p>
+        <h2 id="commands-title" className="visually-hidden">
+          Commands and keyboard shortcuts
+        </h2>
+        <div className="palette-search">
+          <Icon src={bolt} />
+          <label className="visually-hidden" htmlFor="command-filter">
+            Find a command
+          </label>
+          <input
+            id="command-filter"
+            value={filter}
+            placeholder="Type a command"
+            aria-describedby="commands-help"
+            onChange={(event) => setFilter(event.target.value)}
+          />
+          <kbd>esc</kbd>
+        </div>
+        <p id="commands-help" className="visually-hidden">
           Shortcuts pause in inputs, editors and while composing with an IME.
           j/k select rows on the current page; n/p change list pages. Opening
           mail does not mark it read.
         </p>
-        <label>
-          Find a command
-          <input
-            value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-          />
-        </label>
-        <ul>
+        <ul className="palette-list">
           {filtered.map(([command, label, key]) => (
             <li key={command}>
               <button
                 type="button"
                 data-command-option
+                aria-label={`${label}${key ? ` — ${key}` : ''}`}
                 disabled={
                   (!['next', 'previous'].includes(command) &&
                     !element(command)) ||
@@ -241,13 +260,16 @@ export function KeyboardTriage({
                   perform(command);
                 }}
               >
-                {label}
-                {key ? ` — ${key}` : ''}
+                <span>{label}</span>
+                {key && <kbd>{key.toUpperCase()}</kbd>}
               </button>
             </li>
           ))}
+          {!filtered.length && (
+            <li className="palette-empty">No matching commands</li>
+          )}
         </ul>
-        <button type="button" onClick={close}>
+        <button type="button" className="visually-hidden" onClick={close}>
           Close commands
         </button>
       </dialog>

@@ -130,8 +130,10 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
     watch(page);
     await page.goto(config.appUrl);
     await page
-      .getByRole('heading', { name: 'Unified inbox', exact: true })
+      .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Signatures', exact: true }).click();
     await page
       .getByRole('button', {
         name: 'Email signature for Composer account',
@@ -189,6 +191,9 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
       async () => !!(await stored())?.content.text.includes('New note'),
     );
     assert.equal((await stored()).content.text.split('Ada café').length - 1, 1);
+    await page
+      .getByRole('button', { name: 'More options', exact: true })
+      .click();
     await page.getByLabel('Message format').selectOption('plain');
     await body.fill('New note\nAda edited');
     await waitFor(
@@ -236,6 +241,12 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
         (await stored()).content.text === 'Offline edits\nAda offline',
     );
     await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
+    // Keep the draft open but out of the way while editing settings.
+    await page
+      .getByRole('button', { name: 'Minimize composer', exact: true })
+      .click();
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Signatures', exact: true }).click();
     await page
       .getByRole('button', {
         name: 'Email signature for Composer account',
@@ -259,6 +270,9 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
     await settings
       .getByRole('button', { name: 'Close signature settings', exact: true })
       .click();
+    await page
+      .getByRole('button', { name: 'Expand composer', exact: true })
+      .click();
     assert.equal(await body.inputValue(), 'Offline edits\nAda offline');
     await page.getByLabel('Sending account').selectOption(second);
     assert.equal(await body.inputValue(), 'Offline edits\nAda offline');
@@ -269,7 +283,7 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
     await body.waitFor();
     assert.equal(await body.inputValue(), 'Offline edits\nAda offline');
     await page
-      .getByRole('button', { name: 'Unified inbox', exact: true })
+      .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     await body.waitFor();
@@ -284,6 +298,9 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     await body.waitFor();
     assert.match((await body.textContent()) ?? '', /Second account signature/);
+    await page
+      .getByRole('button', { name: 'More options', exact: true })
+      .click();
     await page.getByLabel('Message format').selectOption('plain');
     assert.match(await body.inputValue(), /Second account signature/);
     assert.deepEqual(errors, []);

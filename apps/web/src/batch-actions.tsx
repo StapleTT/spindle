@@ -1,4 +1,13 @@
+import type { ReactNode } from 'react';
 import { useState } from 'react';
+import { Icon } from './brand.js';
+import {
+  archive,
+  close,
+  markEmailRead,
+  markEmailUnread,
+  trash,
+} from './icons.js';
 import { type MailAction, mailApi } from './mail-api.js';
 
 type Batch = {
@@ -10,7 +19,11 @@ export function BatchActions({
   user,
   selected,
   onComplete,
+  onClear,
+  children,
 }: {
+  onClear: () => void;
+  children: ReactNode;
   user: string;
   selected: { id: string; subject: string }[];
   onComplete: () => void;
@@ -81,34 +94,61 @@ export function BatchActions({
         subject: item.subject,
       })),
     });
+  const icons = {
+    read: markEmailRead,
+    unread: markEmailUnread,
+    archive,
+    trash,
+  };
   return (
-    <section aria-label="Selected message actions">
-      <p>
-        {selected.length} selected on this page. Actions apply only to these
-        selected messages (up to 50).
-      </p>
-      <div className="account-actions">
-        {(['read', 'unread', 'archive', 'trash'] as const).map((kind) => (
+    <section aria-label="Selected message actions" className="batch">
+      {selected.length > 0 && (
+        <div className="batch-bar">
           <button
             type="button"
-            key={kind}
-            disabled={
-              busy || !!pending || selected.length === 0 || selected.length > 50
-            }
-            onClick={() => queue(kind)}
+            className="icon-button"
+            title="Clear selection"
+            onClick={onClear}
           >
-            {kind === 'read'
-              ? 'Mark selected read'
-              : kind === 'unread'
-                ? 'Mark selected unread'
-                : kind === 'archive'
-                  ? 'Archive selected'
-                  : 'Trash selected'}
+            <Icon src={close} />
+            <span className="visually-hidden">Clear selection</span>
           </button>
-        ))}
-      </div>
+          {children}
+          <p className="batch-count">
+            {selected.length} selected
+            <span className="visually-hidden">
+              {' '}
+              on this page. Actions apply only to these selected messages (up to
+              50).
+            </span>
+          </p>
+          {(['read', 'unread', 'archive', 'trash'] as const).map((kind) => {
+            const label =
+              kind === 'read'
+                ? 'Mark selected read'
+                : kind === 'unread'
+                  ? 'Mark selected unread'
+                  : kind === 'archive'
+                    ? 'Archive selected'
+                    : 'Trash selected';
+            return (
+              <button
+                type="button"
+                key={kind}
+                className="icon-button"
+                title={label}
+                disabled={busy || !!pending || selected.length > 50}
+                onClick={() => queue(kind)}
+              >
+                <Icon src={icons[kind]} />
+                <span className="visually-hidden">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       {pending && (
-        <p role="status">
+        <p role="status" className="notice">
           {pending.items.length}-message {pending.kind} request is unconfirmed.{' '}
           <button
             type="button"
@@ -119,9 +159,13 @@ export function BatchActions({
           </button>
         </p>
       )}
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
       {results.length > 0 && (
-        <details open>
+        <details open className="batch-results">
           <summary>
             {results.filter((item) => item.action).length} queued or already
             recorded; {results.filter((item) => item.error).length} refused.

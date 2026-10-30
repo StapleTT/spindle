@@ -1,4 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Icon } from './brand.js';
+import { attachFile } from './icons.js';
 import { mailApi } from './mail-api.js';
 import { mailPollDelay, useMailRevision } from './mail-events.js';
 
@@ -26,7 +29,10 @@ export function DraftAttachments({
   onChange,
   onReady,
   disabled,
+  pickerSlot,
 }: {
+  // Composer toolbar target for the paperclip; without it the picker renders inline.
+  pickerSlot?: HTMLElement | null;
   ids: string[];
   onChange: (ids: string[]) => void;
   onReady: (ready: boolean) => void;
@@ -169,26 +175,43 @@ export function DraftAttachments({
       if (alive.current) setUploading(false);
     }
   }
+  const limits =
+    'Up to 10 files, 10 MiB each and 20 MiB total. Files must pass a security check before sending. Keep this draft open until uploads finish.';
+  const picker = (
+    <label
+      className={pickerSlot ? 'icon-button attach-picker' : undefined}
+      title={pickerSlot ? `Attach files. ${limits}` : undefined}
+    >
+      {pickerSlot ? (
+        <>
+          <Icon src={attachFile} />
+          <span className="visually-hidden">Add files</span>
+        </>
+      ) : (
+        'Add files'
+      )}
+      <input
+        type="file"
+        multiple
+        className={pickerSlot ? 'visually-hidden' : undefined}
+        disabled={disabled || uploading}
+        onChange={(event) => {
+          const selected = Array.from(event.target.files ?? []);
+          event.target.value = '';
+          void upload(selected);
+        }}
+      />
+    </label>
+  );
+  if (pickerSlot && !ids.length && !uploading && !error)
+    return createPortal(picker, pickerSlot);
   return (
     <section aria-label="Attachments" className="attachments">
-      <h3>Attachments</h3>
-      <label>
-        Add files
-        <input
-          type="file"
-          multiple
-          disabled={disabled || uploading}
-          onChange={(event) => {
-            const selected = Array.from(event.target.files ?? []);
-            event.target.value = '';
-            void upload(selected);
-          }}
-        />
-      </label>
-      <p>
-        Up to 10 files, 10 MiB each and 20 MiB total. Files must pass a security
-        check before sending. Keep this draft open until uploads finish.
-      </p>
+      <h3 className={pickerSlot ? 'visually-hidden' : undefined}>
+        Attachments
+      </h3>
+      {pickerSlot ? createPortal(picker, pickerSlot) : picker}
+      <p className={pickerSlot ? 'visually-hidden' : undefined}>{limits}</p>
       {ids.length > 0 && (
         <ul>
           {ids.map((id) => {

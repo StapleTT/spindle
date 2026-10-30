@@ -196,7 +196,7 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
     page.on('pageerror', (error) => errors.push(error.message));
     const openOriginal = async () => {
       await page
-        .getByRole('button', { name: 'Unified inbox', exact: true })
+        .getByRole('button', { name: 'All inboxes', exact: true })
         .click();
       await page
         .getByRole('link', { name: 'Project question', exact: true })
@@ -214,7 +214,7 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
     };
     await page.goto(config.appUrl);
     await page
-      .getByRole('heading', { name: 'Unified inbox', exact: true })
+      .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();
     await openOriginal();
     // Lost create acknowledgement is recovered with the same ID even after reload.
@@ -408,7 +408,7 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
     // The rich original stays outside the editor through edits, autosave and reload.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page
-      .getByRole('button', { name: 'Unified inbox', exact: true })
+      .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
     await page
       .getByRole('link', { name: 'Styled original', exact: true })
@@ -472,6 +472,9 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
         () => document.documentElement.scrollWidth <= window.innerWidth,
       ),
     );
+    await page
+      .getByRole('button', { name: 'More options', exact: true })
+      .click();
     await page.getByLabel('Message format').selectOption('plain');
     assert.match(
       (await page
@@ -483,6 +486,9 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
       await page.locator('iframe[title="Forwarded message body"]').count(),
       0,
     );
+    await page
+      .getByRole('button', { name: 'More options', exact: true })
+      .click();
     await page.getByLabel('Message format').selectOption('rich');
     await forwarded
       .getByRole('heading', { name: 'Business newsletter', exact: true })

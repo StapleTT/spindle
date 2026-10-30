@@ -355,7 +355,7 @@ test('SSE updates private tabs, preserves edits and focus, and recovers API rest
           true,
         );
         await page
-          .getByRole('button', { name: 'Unified inbox', exact: true })
+          .getByRole('button', { name: 'All inboxes', exact: true })
           .click();
         await page
           .getByRole('link', { name: 'Live original', exact: true })

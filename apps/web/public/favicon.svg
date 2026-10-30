@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <title>Spindle</title>
+  <style>svg{color:#3e56c2}@media (prefers-color-scheme:dark){svg{color:#a9b5f5}}</style>
+  <defs>
+    <mask id="sp" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff"/><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="#000" stroke="#000" stroke-width="3.4" stroke-linejoin="round"/><rect x="0" y="17" width="48" height="14" fill="#fff"/></g></mask>
+    <mask id="mid" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff"/><path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" stroke="#000" stroke-width="8" stroke-linecap="round"/></mask>
+  </defs>
+  <g mask="url(#sp)"><path d="M33 16.5C34 13.5 32.5 10.5 29.5 9.3C27.8 8.6 26 8.4 24 8.4C18.5 8.4 15 11.3 15 15.5C15 19.9 19.4 21.6 24.2 23.4C29.6 25.4 34.8 27.6 34.8 33C34.8 37 30.8 39.6 25 39.6C20 39.6 14.6 39.2 10 37.8" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" stroke="currentColor" stroke-width="4.6" stroke-linecap="round"/></g>
+  <g mask="url(#mid)"><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round"/><path d="M15.6 43.5L27 45.3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></g></g>
+  <path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" stroke="currentColor" stroke-width="4.6" stroke-linecap="butt"/>
+</svg>

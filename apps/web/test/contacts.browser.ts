@@ -147,6 +147,12 @@ test('recipient suggestions select only the active address, preserve autosave an
     page.on('dialog', (dialog) => void dialog.accept());
     await page.goto(config.appUrl);
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
+    await page
+      .getByRole('button', { name: 'Add Cc recipients', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: 'Add Bcc recipients', exact: true })
+      .click();
     const to = page.getByRole('combobox', { name: 'To', exact: true }),
       cc = page.getByRole('combobox', { name: 'Cc', exact: true }),
       bcc = page.getByRole('combobox', { name: 'Bcc', exact: true });

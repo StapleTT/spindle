@@ -152,7 +152,7 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     watch(page);
     await page.goto(config.appUrl);
     await page
-      .getByRole('heading', { name: 'Unified inbox', exact: true })
+      .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();
     await page.getByRole('button', { name: /^Drafts / }).click();
     await page
@@ -188,6 +188,7 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
       /Subject: Edited provider draft in composer/,
     );
     await page
+      .locator('.composer')
       .getByText('Saved to provider Drafts.', { exact: true })
       .waitFor();
     await page
@@ -204,14 +205,12 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     );
     await syncProviderDrafts(pool, keys, owner.id, account);
     assert.equal(imap.server.control.listMessages('Drafts').length, 0);
-    await page
-      .getByRole('button', { name: 'Local drafts', exact: true })
-      .click();
+    await page.getByRole('button', { name: 'Drafts', exact: true }).click();
     await page
       .getByRole('link', { name: 'Unassigned local draft', exact: true })
       .waitFor();
     await page
-      .getByRole('button', { name: 'Unified inbox', exact: true })
+      .getByRole('button', { name: 'All inboxes', exact: true })
       .click();
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     await page
@@ -261,6 +260,7 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
     await sync();
     await page
+      .locator('.composer')
       .getByText('Saved to provider Drafts.', { exact: true })
       .waitFor();
     // A provider-added header must not make this tab's next autosave stale.
@@ -364,6 +364,7 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     await native('Other client conflicting work');
     await sync();
     await page
+      .locator('.composer')
       .getByText(
         'Provider draft conflict. Both versions are preserved for review.',
         { exact: true },
@@ -391,6 +392,7 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     );
     await sync();
     await page
+      .locator('.composer')
       .getByText('Saved to provider Drafts.', { exact: true })
       .waitFor();
     assert.equal(imap.server.control.listMessages('Drafts').length, 2);
@@ -422,6 +424,7 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
     );
     await sync();
     await page
+      .locator('.composer')
       .getByText('Saved to provider Drafts.', { exact: true })
       .waitFor();
     assert.equal(imap.server.control.listMessages('Drafts').length, 2);

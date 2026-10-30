@@ -1,5 +1,4 @@
 import {
-  type FormEvent,
   lazy,
   Suspense,
   useCallback,
@@ -8,26 +7,54 @@ import {
   useState,
 } from 'react';
 import { ActionStatus } from './action-status.js';
-import { type Signature, startDraft } from './draft-api.js';
+import { startDraft } from './draft-api.js';
 import {
   mailPollDelay,
   subscribeMailChanges,
   useMailEvents,
 } from './mail-events.js';
 
-const SignatureSettings = lazy(() =>
-  import('./signature-settings.js').then((module) => ({
-    default: module.SignatureSettings,
-  })),
-);
-
 const Composer = lazy(() =>
   import('./composer.js').then((module) => ({ default: module.Composer })),
 );
 
 import { BatchActions } from './batch-actions.js';
+import {
+  accent,
+  Icon,
+  initials,
+  SpindleLogo,
+  shortTime,
+  ThemeToggle,
+} from './brand.js';
 import { Conversation } from './conversation.js';
 import { DraftList } from './drafts.js';
+import {
+  archive,
+  check,
+  close,
+  doneAll,
+  draft,
+  edit,
+  inbox,
+  keep,
+  keepFill,
+  mail,
+  markEmailRead,
+  markEmailUnread,
+  menu,
+  newspaper,
+  notificationsOff,
+  outbox,
+  reply,
+  schedule,
+  searchOff,
+  send,
+  settings,
+  sync,
+  trash,
+  unarchive,
+} from './icons.js';
 import { KeyboardTriage } from './keyboard-triage.js';
 import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
@@ -35,24 +62,13 @@ import { OpenNotifications } from './notifications.js';
 import { Outbox, OutboxFeedback, useOutbox } from './outbox.js';
 import { Reader } from './reader.js';
 import { SearchControls, type SearchCoverage } from './search-controls.js';
-import { SmtpSettings } from './smtp-settings.js';
+import {
+  type Account,
+  accountStatus,
+  type Density,
+  Settings,
+} from './settings.js';
 
-type Account = {
-  id: string;
-  name: string;
-  host: string;
-  port: number;
-  transport: 'tls' | 'starttls';
-  username: string;
-  status: string;
-  lastSyncedAt: string | null;
-  foldersRemaining: number;
-  historySince: string | null;
-  smtpState: string | null;
-  sender: string | null;
-  senderName: string | null;
-  signature: Signature | null;
-};
 type Mailbox = {
   id: string;
   accountId: string;
@@ -81,26 +97,44 @@ type Page = {
   coverage?: SearchCoverage | null;
 };
 
-export function Mail({ userId }: { userId: string }) {
+export function Mail({
+  userId,
+  email,
+  busy,
+  onSignOut,
+}: {
+  userId: string;
+  email: string;
+  busy: boolean;
+  onSignOut: () => void;
+}) {
   const root = useRef<HTMLElement>(null);
   const live = useMailEvents(userId);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [split, setSplit] = useState(() => {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [composeMinimized, setComposeMinimized] = useState(false);
+  const [density, setDensity] = useState<Density>(() => {
     try {
-      return localStorage.getItem(`spindle:split:${userId}`) === 'true';
+      return localStorage.getItem('spindle-density') === 'compact'
+        ? 'compact'
+        : 'comfortable';
     } catch {
-      return false;
+      return 'comfortable';
     }
   });
+  // Portal targets: conversation controls/thread inside the reader, saved
+  // searches in the drawer and notification settings in Settings.
+  const [toolsEl, setToolsEl] = useState<HTMLElement | null>(null);
+  const [threadEl, setThreadEl] = useState<HTMLElement | null>(null);
+  const [savedEl, setSavedEl] = useState<HTMLElement | null>(null);
+  const [notificationsEl, setNotificationsEl] = useState<HTMLElement | null>(
+    null,
+  );
   const focusNext = useRef<string | null>(null);
   const previousMessage = useRef('');
   const currentQuery = useRef('');
   const generation = useRef(0);
   const outgoing = useOutbox();
-  const [signatureAccount, setSignatureAccount] = useState<Account | null>(
-    null,
-  );
-  const [smtpAccount, setSmtpAccount] = useState<Account | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [accountsReady, setAccountsReady] = useState(false);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
@@ -119,10 +153,6 @@ export function Mail({ userId }: { userId: string }) {
   const [loading, setLoading] = useState(true);
   const [failure, setFailure] = useState('');
   const [notice, setNotice] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState<Account | null>(null);
-  const [showConnect, setShowConnect] = useState(false);
-  const [disconnect, setDisconnect] = useState<Account | null>(null);
   const [refresh, setRefresh] = useState(0);
   const feedback = useRef<HTMLParagraphElement>(null);
 
@@ -160,6 +190,8 @@ export function Mail({ userId }: { userId: string }) {
     },
     [queryString],
   );
+
+  const refreshAll = useCallback(() => setRefresh((value) => value + 1), []);
 
   // Refreshes counts and rows in place, without the loading state of a new view.
   const reload = useCallback(() => {
@@ -294,443 +326,640 @@ export function Mail({ userId }: { userId: string }) {
     if (notice) feedback.current?.focus();
   }, [notice]);
 
-  async function connect(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = new FormData(form);
-    setBusy(true);
-    setNotice('');
-    try {
-      await api('accounts', {
-        method: 'POST',
-        body: JSON.stringify({
-          name: values.get('name'),
-          host: values.get('host'),
-          port: Number(values.get('port')),
-          transport: values.get('transport'),
-          username: values.get('username'),
-          password: values.get('password'),
-          history: values.get('history'),
-        }),
-      });
-      form.reset();
-      setShowConnect(false);
-      setEditing(null);
+  // Close the phone drawer after any navigation.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: navigation is the trigger.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [q, account, mailbox, view, messageId]);
+
+  function compose() {
+    const selectedId =
+      account || selected?.accountId || accounts[0]?.id || null;
+    if (
+      !startDraft(
+        userId,
+        selectedId,
+        undefined,
+        accounts.find((item) => item.id === selectedId)?.signature,
+      )
+    )
       setNotice(
-        'Account saved. Connection and mail sync run in the background; this view updates automatically.',
+        'Unable to keep draft recovery text in this browser. Enable browser storage or free some space before composing.',
       );
-      setRefresh((value) => value + 1);
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'Unable to connect.');
-    } finally {
-      setBusy(false);
-    }
   }
 
-  async function sync(id: string) {
-    setBusy(true);
+  async function syncAll() {
     try {
-      await api(`accounts/${id}/sync`, { method: 'POST', body: '{}' });
+      await Promise.all(
+        accounts.map((item) =>
+          api(`accounts/${item.id}/sync`, { method: 'POST', body: '{}' }),
+        ),
+      );
       setNotice(
-        'Sync requested. Your stored mail stays available while the worker checks for updates.',
+        accounts.length
+          ? 'Sync requested for every account. Stored mail stays available while the worker checks for updates.'
+          : 'Connect an account to start syncing.',
       );
     } catch (error) {
       setNotice(
         error instanceof Error ? error.message : 'Unable to request sync.',
       );
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!disconnect) return;
-    const form = event.currentTarget;
-    const password = new FormData(form).get('password');
-    setBusy(true);
-    try {
-      await api(`accounts/${disconnect.id}`, {
-        method: 'DELETE',
-        body: JSON.stringify({ password }),
-      });
-      form.reset();
-      setDisconnect(null);
-      navigateMail({ account: '', mailbox: '', cursor: '', message: '' });
-      setNotice(
-        'Disconnected. Only the local mirror was removed. Your provider mail is unchanged.',
-      );
-      setRefresh((value) => value + 1);
-    } catch (error) {
-      setNotice(
-        error instanceof Error ? error.message : 'Unable to disconnect.',
-      );
-    } finally {
-      setBusy(false);
     }
   }
 
   const selected = mailboxes.find((box) => box.id === mailbox);
-  const mailList = (
-    <section aria-label="Message list">
-      <h2>
-        {['in:pinned', 'in:muted', 'in:snoozed'].includes(q)
-          ? `${q.slice(3, 4).toUpperCase()}${q.slice(4)} mail`
-          : q
-            ? 'Search results'
-            : (selected?.path ??
-              (account
-                ? `${accounts.find((item) => item.id === account)?.name ?? 'Account'} inbox`
-                : 'Unified inbox'))}
-      </h2>
-      <p className="account-status">
-        Mail from local storage. Open a message to read it. Sync continues in
-        the background.
-      </p>
-      {loading ? (
-        <p role="status">Loading mail…</p>
-      ) : page.messages.length === 0 ? (
-        <p>
-          {accounts.length
-            ? 'No synchronized mail in this view yet. If you just connected an account, wait for the worker to finish its first check.'
-            : 'Connect an IMAP account to see your mail here.'}
-        </p>
-      ) : (
-        <>
-          <label>
-            <input
-              data-mail-command="select-page"
-              type="checkbox"
-              checked={
-                page.messages.length > 0 &&
-                selectedIds.length === page.messages.length
-              }
-              onChange={(event) =>
-                setSelectedIds(
-                  event.target.checked
-                    ? page.messages.map((item) => item.id)
-                    : [],
-                )
-              }
-            />
-            Select all messages on this page
-          </label>
-          <ul className="message-list" aria-label="Messages">
-            {page.messages.map((message) => (
-              <li
-                key={message.id}
-                data-message-row={message.id}
-                className={message.unread ? 'unread' : ''}
-              >
-                <label>
-                  <input
-                    data-mail-command="select"
-                    type="checkbox"
-                    checked={selectedIds.includes(message.id)}
-                    onChange={(event) =>
-                      setSelectedIds((ids) =>
-                        event.target.checked
-                          ? [...ids, message.id]
-                          : ids.filter((id) => id !== message.id),
-                      )
-                    }
-                  />
-                  Select {message.subject || '(No subject)'}
-                </label>
-                <div className="message-heading">
-                  <span>
-                    {message.sender
-                      .map((sender) => sender.name || sender.address)
-                      .join(', ') || 'Unknown sender'}
-                  </span>
-                  <time dateTime={message.receivedAt}>
-                    {new Date(message.receivedAt).toLocaleString()}
-                  </time>
-                </div>
-                <a
-                  className="message-subject message-open"
-                  href={mailHref({ message: message.id })}
-                >
-                  {message.subject || '(No subject)'}
-                </a>
-                <div className="account-status">
-                  {message.accountName}
-                  {message.pinned ? ' · Pinned' : ''}
-                  {message.muted ? ' · Muted' : ''}
-                  {message.snoozedUntil
-                    ? ` · Snoozed until ${new Date(message.snoozedUntil).toLocaleString()}`
-                    : ''}
-                  {message.unread ? ' · Unread' : ''}{' '}
-                  <button
-                    type="button"
-                    aria-label={`Mark “${message.subject || '(No subject)'}” as ${message.unread ? 'read' : 'unread'}`}
-                    data-mail-command="toggle"
-                    onClick={() => void toggleRead(message)}
-                  >
-                    {message.unread ? 'Mark read' : 'Mark unread'}
-                  </button>{' '}
-                  {canMove(message, '\\Archive') && (
-                    <button
-                      type="button"
-                      aria-label={`Archive “${message.subject || '(No subject)'}”`}
-                      data-mail-command="archive"
-                      onClick={() => void moveMessage(message, 'archive')}
-                    >
-                      Archive
-                    </button>
-                  )}{' '}
-                  {['\\Archive', '\\Trash'].includes(selected?.role ?? '') && (
-                    <button
-                      type="button"
-                      aria-label={`Restore “${message.subject || '(No subject)'}”`}
-                      onClick={() => void moveMessage(message, 'restore')}
-                    >
-                      Restore
-                    </button>
-                  )}{' '}
-                  {canMove(message, '\\Trash') && (
-                    <button
-                      type="button"
-                      aria-label={`Move “${message.subject || '(No subject)'}” to trash`}
-                      data-mail-command="trash"
-                      onClick={() => void moveMessage(message, 'trash')}
-                    >
-                      Trash
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
-      <div className="account-actions">
-        {cursor && (
-          <button
-            type="button"
-            data-mail-command="newest"
-            onClick={() => {
-              focusNext.current = 'first';
-              navigateMail({ cursor: '', message: '' });
-            }}
-          >
-            Newest messages
-          </button>
-        )}
-        {page.nextCursor && (
-          <button
-            type="button"
-            data-mail-command="older"
-            onClick={() => {
-              focusNext.current = 'first';
-              navigateMail({
-                cursor: page.nextCursor ?? '',
-                message: '',
-              });
-            }}
-          >
-            Older messages
-          </button>
-        )}
-      </div>
-    </section>
+  const accentOf = (accountId: string) =>
+    accent(
+      Math.max(
+        0,
+        accounts.findIndex((item) => item.id === accountId),
+      ),
+    );
+  const isInbox = (box: Mailbox) =>
+    box.role === '\\Inbox' || box.path.toUpperCase() === 'INBOX';
+  const inboxUnread = (accountId?: string) =>
+    mailboxes
+      .filter(
+        (box) => isInbox(box) && (!accountId || box.accountId === accountId),
+      )
+      .reduce((sum, box) => sum + box.unread, 0);
+  const inSettings = view === 'settings';
+  const scope =
+    view === 'drafts' || view === 'outbox'
+      ? view
+      : !q && !mailbox
+        ? 'all'
+        : (Object.entries(scopeQueries).find(
+            ([, value]) => value === q && !mailbox,
+          )?.[0] ?? '');
+  const accountName = accounts.find((item) => item.id === account)?.name;
+  const title = selected
+    ? selected.path
+    : scope === 'all' && accountName
+      ? `${accountName} inbox`
+      : scope && scope in scopeTitles
+        ? scopeTitles[scope as keyof typeof scopeTitles]
+        : q
+          ? 'Search results'
+          : 'All inboxes';
+  const scopedBoxes = selected
+    ? [selected]
+    : !q
+      ? mailboxes.filter(
+          (box) => isInbox(box) && (!account || box.accountId === account),
+        )
+      : [];
+  const total = scopedBoxes.length
+    ? scopedBoxes.reduce((sum, box) => sum + box.total, 0)
+    : null;
+  const unread = scopedBoxes.length
+    ? scopedBoxes.reduce((sum, box) => sum + box.unread, 0)
+    : page.messages.filter((item) => item.unread).length;
+  const subtitle = [
+    total === null
+      ? `${page.messages.length}${page.nextCursor ? '+' : ''} messages`
+      : `${total} messages`,
+    unread ? `${unread} unread` : '',
+    selected && accountName ? accountName : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const syncing = accounts.some((item) =>
+    ['syncing', 'pending'].includes(item.status),
   );
-  return (
-    <section ref={root} className="mail" aria-label="Your mail">
-      {notice && (
-        <p ref={feedback} tabIndex={-1} role="status" className="notice">
-          {notice}
-        </p>
+  const empty = !accounts.length
+    ? ([
+        inbox,
+        'No accounts yet',
+        'Connect an IMAP account to see your mail here.',
+      ] as const)
+    : syncing
+      ? ([
+          sync,
+          'Syncing your mail',
+          'No synchronized mail in this view yet. New mail appears here as soon as the first check finishes.',
+        ] as const)
+      : q && !scope
+        ? ([
+            searchOff,
+            'No results',
+            'Try a different word, or search all accounts.',
+          ] as const)
+        : (emptyStates[scope as keyof typeof emptyStates] ?? [
+            inbox,
+            'Nothing here',
+            'Conversations will show up here.',
+          ]);
+  const clearSelection = () => setSelectedIds([]);
+
+  const navItem = (
+    id: string,
+    label: string,
+    short: string,
+    icon: string,
+    {
+      count = 0,
+      onClick,
+      command,
+      disabled,
+      hideOnRail,
+    }: {
+      count?: number;
+      onClick?: () => void;
+      command?: string;
+      disabled?: boolean;
+      hideOnRail?: boolean;
+    },
+  ) => (
+    <button
+      key={id}
+      type="button"
+      className={`nav-item${hideOnRail ? ' rail-hidden' : ''}`}
+      aria-describedby={disabled || count > 0 ? `nav-${id}-note` : undefined}
+      data-mail-command={command}
+      aria-pressed={!inSettings && scope === id}
+      disabled={disabled}
+      title={disabled ? `${label} · Coming soon` : undefined}
+      onClick={onClick}
+    >
+      <span className="nav-icon">
+        <Icon src={icon} />
+        {count > 0 && (
+          <span className="rail-count" aria-hidden="true">
+            {count}
+          </span>
+        )}
+      </span>
+      <span className="nav-label">{label}</span>
+      <span className="nav-short" aria-hidden="true">
+        {short}
+      </span>
+      {disabled ? (
+        <span className="soon" aria-hidden="true">
+          Soon
+        </span>
+      ) : (
+        count > 0 && (
+          <span className="nav-count" aria-hidden="true">
+            {count}
+          </span>
+        )
       )}
-      {!live && (
-        <p role="status">
-          Live updates are reconnecting. Automatic refresh continues.
-        </p>
-      )}
-      <KeyboardTriage root={root} />
-      <OpenNotifications user={userId} />
-      <SearchControls
-        query={q}
-        account={account}
-        mailbox={mailbox}
-        accounts={accounts}
-        folders={mailboxes}
-        coverage={page.coverage ?? null}
-        split={split}
-        onSplit={() => {
-          setSplit((value) => {
-            try {
-              localStorage.setItem(`spindle:split:${userId}`, String(!value));
-            } catch {
-              /* Layout remains usable without storage. */
-            }
-            return !value;
-          });
-        }}
-      />
+      <span id={`nav-${id}-note`} hidden>
+        {disabled ? 'Coming soon' : count > 0 ? `${count} unread` : ''}
+      </span>
+    </button>
+  );
+  const goScope = (key: keyof typeof scopeQueries) => () =>
+    navigateMail({
+      q: scopeQueries[key],
+      account: '',
+      mailbox: '',
+      cursor: '',
+      message: '',
+    });
+
+  const rows = (
+    <ul
+      className={`message-list ${density}`}
+      aria-label="Messages"
+      aria-busy={loading}
+    >
+      {page.messages.map((message) => {
+        const from =
+          message.sender
+            .map((sender) => sender.name || sender.address)
+            .join(', ') || 'Unknown sender';
+        const checked = selectedIds.includes(message.id);
+        const subject = message.subject || '(No subject)';
+        const tone = accentOf(message.accountId);
+        return (
+          <li
+            key={message.id}
+            data-message-row={message.id}
+            className={`row${message.unread ? ' unread' : ''}${message.id === messageId ? ' selected' : ''}${checked ? ' checked' : ''}`}
+          >
+            <label className={`avatar a${tone}`} title="Select">
+              <input
+                data-mail-command="select"
+                type="checkbox"
+                checked={checked}
+                onChange={(event) =>
+                  setSelectedIds((ids) =>
+                    event.target.checked
+                      ? [...ids, message.id]
+                      : ids.filter((id) => id !== message.id),
+                  )
+                }
+              />
+              <span aria-hidden="true">
+                {checked ? <Icon src={check} /> : initials(from)}
+              </span>
+              <span className="visually-hidden">Select {subject}</span>
+            </label>
+            <div className="row-text">
+              <p className="row-top">
+                <span className="row-from">{from}</span>
+                {message.pinned && (
+                  <span className="row-flag" title="Pinned">
+                    <Icon src={keepFill} />
+                  </span>
+                )}
+                <time dateTime={message.receivedAt}>
+                  {shortTime(message.receivedAt)}
+                </time>
+              </p>
+              <a
+                className="message-subject message-open"
+                href={mailHref({ message: message.id })}
+              >
+                {subject}
+              </a>
+              <p className="row-meta">
+                <span className={`dot a${tone}`} aria-hidden="true" />
+                {message.accountName}
+                {message.muted ? ' · Muted' : ''}
+                {message.snoozedUntil
+                  ? ` · Snoozed until ${new Date(message.snoozedUntil).toLocaleString()}`
+                  : ''}
+                {message.unread ? (
+                  <span className="visually-hidden"> · Unread</span>
+                ) : (
+                  ''
+                )}
+              </p>
+            </div>
+            <div className="row-actions">
+              {canMove(message, '\\Archive') && (
+                <button
+                  type="button"
+                  className="icon-button small"
+                  title="Archive (E)"
+                  aria-label={`Archive “${subject}”`}
+                  data-mail-command="archive"
+                  onClick={() => void moveMessage(message, 'archive')}
+                >
+                  <Icon src={archive} />
+                </button>
+              )}
+              <button
+                type="button"
+                className="icon-button small"
+                title={message.unread ? 'Mark read (M)' : 'Mark unread (M)'}
+                aria-label={`Mark “${subject}” as ${message.unread ? 'read' : 'unread'}`}
+                data-mail-command="toggle"
+                onClick={() => void toggleRead(message)}
+              >
+                <Icon src={message.unread ? markEmailRead : markEmailUnread} />
+              </button>
+              {['\\Archive', '\\Trash'].includes(selected?.role ?? '') && (
+                <button
+                  type="button"
+                  className="icon-button small"
+                  title="Restore"
+                  aria-label={`Restore “${subject}”`}
+                  onClick={() => void moveMessage(message, 'restore')}
+                >
+                  <Icon src={unarchive} />
+                </button>
+              )}
+              {canMove(message, '\\Trash') && (
+                <button
+                  type="button"
+                  className="icon-button small"
+                  title="Delete (#)"
+                  aria-label={`Move “${subject}” to trash`}
+                  data-mail-command="trash"
+                  onClick={() => void moveMessage(message, 'trash')}
+                >
+                  <Icon src={trash} />
+                </button>
+              )}
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  const mailList = (
+    <section className="pane list-pane" aria-labelledby="list-title">
       <BatchActions
         key={userId}
         user={userId}
         selected={page.messages.filter((message) =>
           selectedIds.includes(message.id),
         )}
+        onClear={clearSelection}
         onComplete={() => {
-          setSelectedIds([]);
+          clearSelection();
           refreshActions();
         }}
-      />
-      <ActionStatus fresh={latestAction} onChange={refreshActions} />
-      <OutboxFeedback messages={outgoing.messages} />
-      {failure && (
-        <p role="alert" className="error">
-          {failure}{' '}
-          <button
-            type="button"
-            onClick={() => setRefresh((value) => value + 1)}
-          >
-            Try again
-          </button>
-        </p>
-      )}
-      {!configured && (
-        <p role="alert">
-          The operator needs to configure mail encryption before you can connect
-          accounts.
-        </p>
-      )}
-      <div className="mail-layout">
-        <aside aria-label="Mail accounts and folders">
-          <h2>Mailboxes</h2>
-          <button
-            data-mail-command="compose"
-            type="button"
-            disabled={!accountsReady}
-            onClick={() => {
-              const selectedId =
-                account || selected?.accountId || accounts[0]?.id || null;
-              if (
-                !startDraft(
-                  userId,
-                  selectedId,
-                  undefined,
-                  accounts.find((item) => item.id === selectedId)?.signature,
-                )
+      >
+        <label className="select-page" title="Select all on this page">
+          <input
+            data-mail-command="select-page"
+            type="checkbox"
+            checked={
+              page.messages.length > 0 &&
+              selectedIds.length === page.messages.length
+            }
+            onChange={(event) =>
+              setSelectedIds(
+                event.target.checked
+                  ? page.messages.map((item) => item.id)
+                  : [],
               )
-                setNotice(
-                  'Unable to keep draft recovery text in this browser. Enable browser storage or free some space before composing.',
-                );
-            }}
-          >
-            Compose
-          </button>
+            }
+          />
+          <span className="visually-hidden">
+            Select all messages on this page
+          </span>
+        </label>
+      </BatchActions>
+      <div className={`list-head${selectedIds.length ? ' hidden' : ''}`}>
+        <div className="list-title">
+          <h2 id="list-title">{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+        <button
+          type="button"
+          className={`live-pill${live ? '' : ' offline'}`}
+          title={
+            live
+              ? 'Live updates connected. Sync all accounts now'
+              : 'Live updates are reconnecting. Automatic refresh continues.'
+          }
+          onClick={() => void syncAll()}
+        >
+          <span className="dot" aria-hidden="true" />
+          {live ? 'Live sync' : 'Reconnecting'}
+        </button>
+      </div>
+      {accounts.length > 1 && (
+        <fieldset className="account-chips">
+          <legend className="visually-hidden">Filter by account</legend>
           <button
             type="button"
-            data-mail-command="drafts"
-            aria-pressed={view === 'drafts'}
+            aria-pressed={!account}
             onClick={() =>
               navigateMail({
                 account: '',
                 mailbox: '',
                 cursor: '',
-                draft: '',
-                view: 'drafts',
                 message: '',
               })
             }
           >
-            Local drafts
+            {!account && <Icon src={check} />}
+            All accounts
           </button>
-          <button
-            data-mail-command="inbox"
-            type="button"
-            aria-pressed={
-              !account &&
-              !mailbox &&
-              !q &&
-              view !== 'drafts' &&
-              view !== 'outbox'
-            }
-            onClick={() => {
-              navigateMail({
-                q: '',
-                account: '',
-                mailbox: '',
-                cursor: '',
-                message: '',
-              });
-            }}
-          >
-            Unified inbox
-          </button>
-          {['pinned', 'muted', 'snoozed'].map((scope) => (
+          {accounts.map((item, index) => (
             <button
-              key={scope}
+              key={item.id}
               type="button"
-              aria-pressed={q === `in:${scope}`}
+              className={`a${accent(index)}`}
+              aria-pressed={account === item.id && !mailbox}
               onClick={() =>
                 navigateMail({
-                  q: `in:${scope}`,
-                  account: '',
+                  account: account === item.id ? '' : item.id,
                   mailbox: '',
                   cursor: '',
                   message: '',
                 })
               }
             >
-              {scope[0]?.toUpperCase()}
-              {scope.slice(1)}
+              {account === item.id && !mailbox ? (
+                <Icon src={check} />
+              ) : (
+                <span className="dot" aria-hidden="true" />
+              )}
+              {item.name}
             </button>
           ))}
-          <button
-            type="button"
-            data-mail-command="outbox"
-            aria-pressed={view === 'outbox'}
-            onClick={() =>
-              navigateMail({ view: 'outbox', draft: '', message: '' })
-            }
-          >
-            Outbox
-          </button>
-          {accounts.map((item) => (
-            <section
-              className="mail-account"
-              key={item.id}
-              aria-label={item.name}
+        </fieldset>
+      )}
+      <div className="list-scroll">
+        {failure && (
+          <p role="alert" className="error">
+            {failure}{' '}
+            <button
+              type="button"
+              onClick={() => setRefresh((value) => value + 1)}
             >
-              <h3>{item.name}</h3>
-              <p className="account-status">
-                {item.status === 'error'
-                  ? 'Sync failed. Check your server settings and app password, then reconnect. Automatic retries continue.'
-                  : item.status === 'syncing'
-                    ? `Syncing mail${item.foldersRemaining ? ` · ${item.foldersRemaining} folders remaining` : ''}…`
-                    : item.status === 'pending'
-                      ? 'Waiting for the sync worker…'
-                      : 'Up to date at last check.'}
-              </p>
-              {item.lastSyncedAt && (
-                <p className="account-status">
-                  Last checked: {new Date(item.lastSyncedAt).toLocaleString()}
-                </p>
-              )}
-              <p className="account-status">
-                History:{' '}
-                {item.historySince
-                  ? `since ${new Date(item.historySince).toLocaleDateString()}`
-                  : 'all available mail'}
-              </p>
+              Try again
+            </button>
+          </p>
+        )}
+        {loading ? (
+          <p role="status" className="list-loading">
+            Loading mail…
+          </p>
+        ) : page.messages.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon">
+              <Icon src={empty[0]} />
+            </span>
+            <p className="empty-title">{empty[1]}</p>
+            <p>{empty[2]}</p>
+            {!accounts.length && (
               <button
                 type="button"
+                className="filled"
+                onClick={() => navigateMail({ view: 'settings', message: '' })}
+              >
+                Connect an account
+              </button>
+            )}
+          </div>
+        ) : (
+          rows
+        )}
+        <div className="pager">
+          {cursor && (
+            <button
+              type="button"
+              className="text-button"
+              data-mail-command="newest"
+              onClick={() => {
+                focusNext.current = 'first';
+                navigateMail({ cursor: '', message: '' });
+              }}
+            >
+              Newest messages
+            </button>
+          )}
+          {page.nextCursor && (
+            <button
+              type="button"
+              className="text-button"
+              data-mail-command="older"
+              onClick={() => {
+                focusNext.current = 'first';
+                navigateMail({
+                  cursor: page.nextCursor ?? '',
+                  message: '',
+                });
+              }}
+            >
+              Older messages
+            </button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+
+  const placeholder = (
+    <section className="pane reader-pane empty-reader" aria-label="Reader">
+      <span className="empty-icon large">
+        <Icon src={mail} />
+      </span>
+      <p className="empty-title">No conversation selected</p>
+      <p className="hints">
+        <span>
+          <kbd>J</kbd>
+          <kbd>K</kbd>move
+        </span>
+        <span>
+          <kbd>E</kbd>archive
+        </span>
+        <span>
+          <kbd>⌘K</kbd>commands
+        </span>
+      </p>
+    </section>
+  );
+
+  const showingReader = Boolean(messageId) && !inSettings && !view;
+  return (
+    <section
+      ref={root}
+      className={`app${showingReader ? ' reading' : ''}${drawerOpen ? ' drawer-open' : ''}`}
+      aria-label="Your mail"
+    >
+      <OpenNotifications user={userId} container={notificationsEl} />
+      {drawerOpen && (
+        <button
+          type="button"
+          className="scrim"
+          aria-label="Close navigation"
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+      <nav className="drawer" aria-label="Mail accounts and folders">
+        <div className="drawer-brand">
+          <SpindleLogo size={34} />
+          <span>Spindle</span>
+        </div>
+        <h2 className="visually-hidden">Mailboxes</h2>
+        <button
+          data-mail-command="compose"
+          type="button"
+          className="fab"
+          title="Compose (C)"
+          disabled={!accountsReady}
+          onClick={compose}
+        >
+          <Icon src={edit} />
+          <span className="fab-label">Compose</span>
+          <span className="fab-hint" aria-hidden="true">
+            C
+          </span>
+        </button>
+        {navItem('all', 'All inboxes', 'Inbox', inbox, {
+          count: inboxUnread(),
+          command: 'inbox',
+          onClick: () =>
+            navigateMail({
+              q: '',
+              account: '',
+              mailbox: '',
+              cursor: '',
+              message: '',
+            }),
+        })}
+        {navItem('needs', 'Needs reply', 'Reply', reply, { disabled: true })}
+        {navItem('news', 'Newsletters', 'News', newspaper, { disabled: true })}
+        {navItem('pinned', 'Pinned', 'Pinned', keep, {
+          onClick: goScope('pinned'),
+        })}
+        {navItem('snoozed', 'Snoozed', 'Snoozed', schedule, {
+          onClick: goScope('snoozed'),
+        })}
+        {navItem('muted', 'Muted', 'Muted', notificationsOff, {
+          onClick: goScope('muted'),
+          hideOnRail: true,
+        })}
+        {navItem('sent', 'Sent', 'Sent', send, { onClick: goScope('sent') })}
+        {navItem('drafts', 'Drafts', 'Drafts', draft, {
+          command: 'drafts',
+          hideOnRail: true,
+          onClick: () =>
+            navigateMail({
+              account: '',
+              mailbox: '',
+              cursor: '',
+              draft: '',
+              view: 'drafts',
+              message: '',
+            }),
+        })}
+        {navItem('outbox', 'Outbox', 'Outbox', outbox, {
+          command: 'outbox',
+          hideOnRail: true,
+          onClick: () =>
+            navigateMail({ view: 'outbox', draft: '', message: '' }),
+        })}
+        {navItem('archive', 'Archive', 'Archive', archive, {
+          onClick: goScope('archive'),
+        })}
+        {navItem('trash', 'Trash', 'Trash', trash, {
+          onClick: goScope('trash'),
+          hideOnRail: true,
+        })}
+        {accounts.length > 0 && <p className="drawer-section">Accounts</p>}
+        {accounts.map((item, index) => {
+          const count = inboxUnread(item.id);
+          return (
+            <section
+              key={item.id}
+              className={`drawer-account a${accent(index)}`}
+              aria-label={item.name}
+            >
+              <h3 className="visually-hidden">{item.name}</h3>
+              <button
+                type="button"
+                className="nav-item account"
                 aria-pressed={account === item.id && !mailbox}
-                onClick={() => {
+                title={accountStatus(item)}
+                onClick={() =>
                   navigateMail({
                     account: item.id,
                     mailbox: '',
                     cursor: '',
                     message: '',
-                  });
-                }}
+                  })
+                }
               >
-                Inbox
+                <span className="nav-icon">
+                  <span className="dot" aria-hidden="true" />
+                </span>
+                <span className="nav-label">{item.name}</span>
+                <span className="nav-short" aria-hidden="true">
+                  {initials(item.name)}
+                </span>
+                {item.status === 'error' ? (
+                  <span className="nav-count error-text" aria-hidden="true">
+                    Sync failed
+                  </span>
+                ) : (
+                  count > 0 && (
+                    <span className="nav-count" aria-hidden="true">
+                      {count}
+                    </span>
+                  )
+                )}
               </button>
               <ul className="folder-list">
                 {mailboxes
@@ -739,7 +968,9 @@ export function Mail({ userId }: { userId: string }) {
                     <li key={box.id}>
                       <button
                         type="button"
+                        className="nav-item folder"
                         aria-pressed={mailbox === box.id}
+                        aria-label={`${box.path} (${box.unread} unread / ${box.total})`}
                         onClick={() => {
                           navigateMail({
                             account: item.id,
@@ -751,284 +982,125 @@ export function Mail({ userId }: { userId: string }) {
                           });
                         }}
                       >
-                        {box.path}{' '}
-                        <span>
-                          ({box.unread} unread / {box.total})
-                        </span>
+                        <span className="nav-label">{box.path}</span>
+                        {box.unread > 0 && (
+                          <span className="nav-count" aria-hidden="true">
+                            {box.unread}
+                          </span>
+                        )}
                       </button>
                     </li>
                   ))}
               </ul>
-              <button
-                type="button"
-                aria-label={`Email signature for ${item.name}`}
-                onClick={() => setSignatureAccount(item)}
-              >
-                Email signature
-              </button>
-              <button
-                type="button"
-                aria-label={`Outgoing SMTP for ${item.name}`}
-                onClick={() => setSmtpAccount(item)}
-              >
-                Outgoing SMTP
-              </button>
-              <div className="account-actions">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void sync(item.id)}
-                >
-                  Sync now
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setEditing(item);
-                    setShowConnect(true);
-                    setDisconnect(null);
-                  }}
-                >
-                  Reconnect
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setDisconnect(item);
-                    setShowConnect(false);
-                  }}
-                >
-                  Disconnect
-                </button>
-              </div>
             </section>
-          ))}
+          );
+        })}
+        <div className="drawer-saved" ref={setSavedEl} />
+        <span className="drawer-spacer" />
+        <button
+          type="button"
+          className="nav-item"
+          aria-pressed={inSettings}
+          onClick={() => navigateMail({ view: 'settings', message: '' })}
+        >
+          <span className="nav-icon">
+            <Icon src={settings} />
+          </span>
+          <span className="nav-label">Settings</span>
+        </button>
+      </nav>
+      <main className="main">
+        <header className="top-bar">
           <button
             type="button"
-            disabled={!configured || busy}
-            onClick={() => {
-              setEditing(null);
-              setShowConnect(true);
-              setDisconnect(null);
-            }}
+            className="icon-button menu-button"
+            aria-label="Open navigation"
+            aria-expanded={drawerOpen}
+            onClick={() => setDrawerOpen(true)}
           >
-            Connect IMAP account
+            <Icon src={menu} />
           </button>
-        </aside>
-        <div className="mail-content">
-          {smtpAccount && (
-            <SmtpSettings
-              key={smtpAccount.id}
-              account={smtpAccount}
-              onClose={() => setSmtpAccount(null)}
-              onChange={reload}
-            />
-          )}
-          {showConnect && (
-            <section aria-labelledby="connect-title">
-              <h2 id="connect-title">
-                {editing ? 'Reconnect IMAP account' : 'Connect IMAP account'}
-              </h2>
-              <p>
-                Use your provider’s IMAP settings and app password where
-                required. Only encrypted connections with valid certificates are
-                accepted.
-              </p>
-              <form
-                key={editing?.id ?? 'new'}
-                onSubmit={(event) => void connect(event)}
-                aria-busy={busy}
-              >
-                <label>
-                  Account name
-                  <input
-                    name="name"
-                    required
-                    maxLength={100}
-                    defaultValue={editing?.name ?? ''}
-                  />
-                </label>
-                <label>
-                  IMAP server
-                  <input
-                    name="host"
-                    required
-                    maxLength={253}
-                    autoCapitalize="none"
-                    readOnly={Boolean(editing)}
-                    defaultValue={editing?.host ?? ''}
-                    placeholder="imap.example.com"
-                  />
-                </label>
-                <label>
-                  Port
-                  <input
-                    name="port"
-                    type="number"
-                    required
-                    min={1}
-                    max={65535}
-                    readOnly={Boolean(editing)}
-                    defaultValue={editing?.port ?? 993}
-                  />
-                </label>
-                <label>
-                  Encryption
-                  <select
-                    name="transport"
-                    defaultValue={editing?.transport ?? 'tls'}
-                  >
-                    <option value="tls">TLS (usually port 993)</option>
-                    <option value="starttls">
-                      Required STARTTLS (usually port 143)
-                    </option>
-                  </select>
-                </label>
-                <label>
-                  IMAP username
-                  <input
-                    name="username"
-                    required
-                    maxLength={320}
-                    autoComplete="username"
-                    autoCapitalize="none"
-                    readOnly={Boolean(editing)}
-                    defaultValue={editing?.username ?? ''}
-                  />
-                </label>
-                <label>
-                  IMAP password or app password
-                  <input
-                    name="password"
-                    type="password"
-                    required
-                    maxLength={1024}
-                    autoComplete="new-password"
-                  />
-                </label>
-                <label>
-                  Mail history
-                  <select
-                    name="history"
-                    defaultValue={
-                      editing?.historySince === null ? 'all' : '90d'
-                    }
-                    disabled={Boolean(editing)}
-                  >
-                    <option value="90d">Last 90 days, then new mail</option>
-                    <option value="all">All available mail</option>
-                  </select>
-                </label>
-                {editing && (
-                  <input
-                    type="hidden"
-                    name="history"
-                    value={editing.historySince ? '90d' : 'all'}
-                  />
-                )}
-                <p>
-                  Stores mail headers and flags locally. Message bodies are
-                  cached when opened. Up to five accounts.
-                </p>
-                <button type="submit" disabled={busy}>
-                  {busy ? 'Saving…' : 'Save and sync'}
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setShowConnect(false);
-                    setEditing(null);
-                  }}
-                >
-                  Cancel
-                </button>
-              </form>
-            </section>
-          )}
-          {disconnect && (
-            <section aria-labelledby="disconnect-title">
-              <h2 id="disconnect-title">Disconnect {disconnect.name}</h2>
-              <p>
-                This removes the account, saved credentials and synchronized
-                mail from Spindle. Mail at your provider stays intact. Local
-                drafts are kept without a selected account.
-              </p>
-              <form onSubmit={(event) => void remove(event)}>
-                <label>
-                  Confirm your Spindle password
-                  <input
-                    name="password"
-                    type="password"
-                    autoComplete="current-password"
-                    maxLength={128}
-                    required
-                  />
-                </label>
-                <button type="submit" disabled={busy}>
-                  Confirm disconnect
-                </button>
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => setDisconnect(null)}
-                >
-                  Cancel
-                </button>
-              </form>
-            </section>
-          )}
-          {signatureAccount && (
-            <Suspense
-              fallback={<p role="status">Loading signature settings…</p>}
+          <SearchControls
+            query={q}
+            account={account}
+            mailbox={mailbox}
+            accounts={accounts}
+            folders={mailboxes}
+            coverage={page.coverage ?? null}
+            savedSlot={savedEl}
+          />
+          <span className="toolbar-spacer" />
+          <div className="top-actions">
+            <KeyboardTriage root={root} />
+            <ThemeToggle />
+            <button
+              type="button"
+              className="account-avatar"
+              title={`${email} · sign out`}
+              disabled={busy}
+              onClick={onSignOut}
             >
-              <SignatureSettings
-                key={signatureAccount.id}
-                account={signatureAccount}
-                onClose={() => setSignatureAccount(null)}
-                onChange={(signature) =>
-                  setAccounts((current) =>
-                    current.map((item) =>
-                      item.id === signatureAccount.id
-                        ? { ...item, signature }
-                        : item,
-                    ),
-                  )
+              <span aria-hidden="true">{initials(email).slice(0, 1)}</span>
+              <span className="visually-hidden">Sign out</span>
+            </button>
+          </div>
+        </header>
+        {!configured && !inSettings && (
+          <p role="alert" className="error">
+            The operator needs to configure mail encryption before you can
+            connect accounts.
+          </p>
+        )}
+        <div className="panes">
+          {inSettings ? (
+            <Settings
+              accounts={accounts}
+              configured={configured}
+              density={density}
+              onDensity={(value) => {
+                setDensity(value);
+                try {
+                  localStorage.setItem('spindle-density', value);
+                } catch {
+                  /* Density still applies for this visit. */
                 }
-              />
-            </Suspense>
-          )}
-          {draftId ? (
-            <Suspense fallback={<p role="status">Loading composer…</p>}>
-              <Composer
-                key={draftId}
-                id={draftId}
-                user={userId}
-                accounts={accounts}
-              />
-            </Suspense>
+              }}
+              onNotify={setNotice}
+              onRefresh={refreshAll}
+              onReload={reload}
+              onSignature={(accountId, signature) =>
+                setAccounts((current) =>
+                  current.map((item) =>
+                    item.id === accountId ? { ...item, signature } : item,
+                  ),
+                )
+              }
+              notificationsSlot={setNotificationsEl}
+            />
           ) : view === 'drafts' ||
             (!messageId && selected?.role === '\\Drafts') ? (
-            <DraftList user={userId} accountId={account} />
+            <>
+              <section className="pane list-pane">
+                <div className="list-scroll">
+                  <DraftList user={userId} accountId={account} />
+                </div>
+              </section>
+              {placeholder}
+            </>
           ) : view === 'outbox' ? (
-            <Outbox data={outgoing} />
+            <>
+              <section className="pane list-pane">
+                <div className="list-scroll">
+                  <Outbox data={outgoing} />
+                </div>
+              </section>
+              {placeholder}
+            </>
           ) : (
-            <div className={split && messageId ? 'split-mail' : ''}>
-              {(!messageId || split) && mailList}
-              {messageId && (
-                <div>
-                  <Conversation
-                    key={`${conversation || messageId}:${account}:${mailbox}:${q}`}
-                    anchor={conversation || messageId}
-                    selected={messageId}
-                    account={account}
-                    mailbox={mailbox}
-                    query={q}
-                    revision={`${actionRevision}:${latestAction?.id ?? ''}`}
-                    onChange={reload}
-                  />
+            <>
+              {mailList}
+              {messageId ? (
+                <div className="pane reader-pane">
                   <Reader
                     key={`${messageId}:${account}:${mailbox}:${q}:${conversation}`}
                     id={messageId}
@@ -1040,17 +1112,112 @@ export function Mail({ userId }: { userId: string }) {
                     onChange={reload}
                     actionRevision={actionRevision}
                     userId={userId}
+                    accentOf={accentOf}
+                    toolsRef={setToolsEl}
+                    threadRef={setThreadEl}
                     onAction={(action) => {
                       track(action);
                       reload();
                     }}
                   />
+                  <Conversation
+                    key={`${conversation || messageId}:${account}:${mailbox}:${q}`}
+                    anchor={conversation || messageId}
+                    selected={messageId}
+                    account={account}
+                    mailbox={mailbox}
+                    query={q}
+                    revision={`${actionRevision}:${latestAction?.id ?? ''}`}
+                    onChange={reload}
+                    tools={toolsEl}
+                    thread={threadEl}
+                  />
                 </div>
+              ) : (
+                placeholder
               )}
-            </div>
+            </>
           )}
         </div>
+      </main>
+      {!draftId && !showingReader && !inSettings && (
+        <button
+          type="button"
+          className="fab mobile-fab"
+          disabled={!accountsReady}
+          onClick={compose}
+        >
+          <Icon src={edit} />
+          Compose
+        </button>
+      )}
+      {draftId && (
+        <div className={`compose-sheet${composeMinimized ? ' minimized' : ''}`}>
+          <Suspense fallback={<p role="status">Loading composer…</p>}>
+            <Composer
+              key={draftId}
+              id={draftId}
+              user={userId}
+              accounts={accounts}
+              minimized={composeMinimized}
+              onMinimize={() => setComposeMinimized((value) => !value)}
+            />
+          </Suspense>
+        </div>
+      )}
+      <div className="snackbars">
+        {!live && (
+          <p role="status">
+            Live updates are reconnecting. Automatic refresh continues.
+          </p>
+        )}
+        {notice && (
+          <div className="snack">
+            <p ref={feedback} tabIndex={-1} role="status">
+              {notice}
+            </p>
+            <button
+              type="button"
+              className="icon-button small"
+              title="Dismiss"
+              onClick={() => setNotice('')}
+            >
+              <Icon src={close} />
+              <span className="visually-hidden">Dismiss notice</span>
+            </button>
+          </div>
+        )}
+        <OutboxFeedback messages={outgoing.messages} />
+        <ActionStatus fresh={latestAction} onChange={refreshActions} />
       </div>
     </section>
   );
 }
+
+const scopeQueries = {
+  pinned: 'in:pinned',
+  snoozed: 'in:snoozed',
+  muted: 'in:muted',
+  sent: 'in:sent',
+  archive: 'in:archive',
+  trash: 'in:trash',
+};
+const scopeTitles = {
+  all: 'All inboxes',
+  pinned: 'Pinned',
+  snoozed: 'Snoozed',
+  muted: 'Muted',
+  sent: 'Sent',
+  archive: 'Archive',
+  trash: 'Trash',
+};
+const emptyStates = {
+  all: [doneAll, 'Inbox zero', 'Everything across your accounts is handled.'],
+  pinned: [keep, 'Nothing pinned', 'Pin a conversation to keep it on top.'],
+  snoozed: [
+    schedule,
+    'Nothing snoozed',
+    'Snoozed mail comes back when you asked it to.',
+  ],
+  trash: [trash, 'Trash is empty', 'Mail you move to Trash shows up here.'],
+} as const;

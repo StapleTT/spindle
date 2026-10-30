@@ -20,7 +20,9 @@ export function DateTimeInput({
   label,
   value,
   onChange,
+  compact = false,
 }: {
+  compact?: boolean;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -40,7 +42,7 @@ export function DateTimeInput({
       </label>
       <p className="account-status">
         Timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}.{' '}
-        {valid && (
+        {valid && !compact && (
           <>
             {date.toLocaleString(undefined, { timeZoneName: 'short' })} (
             {date.toISOString()}).

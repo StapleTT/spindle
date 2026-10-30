@@ -1,4 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
+import { Icon, initials } from './brand.js';
+import {
+  archive,
+  arrowBack,
+  attachFile,
+  chevronLeft,
+  chevronRight,
+  download,
+  driveFileMove,
+  forward,
+  hideImage,
+  markEmailRead,
+  markEmailUnread,
+  reply,
+  replyAll,
+  trash,
+  unarchive,
+} from './icons.js';
 import {
   actionText,
   type MailAction,
@@ -140,15 +158,24 @@ function AttachmentItem({
   }, []);
 
   return (
-    <li>
-      <span className="attachment-name">{attachment.filename}</span>{' '}
-      <span className="attachment-meta">
-        {attachment.contentType}, {formatSize(attachment.size)}
+    <li className="attachment-tile">
+      <span className="attachment-icon" aria-hidden="true">
+        <Icon src={attachFile} />
+      </span>
+      <span className="attachment-text">
+        <span className="attachment-name">{attachment.filename}</span>{' '}
+        <span className="attachment-meta">
+          {attachment.contentType}, {formatSize(attachment.size)}
+        </span>
       </span>{' '}
       {!configured ? (
-        <span>Unavailable: downloads need the isolated content server.</span>
+        <span className="muted small">
+          Unavailable: downloads need the isolated content server.
+        </span>
       ) : state === 'pending' ? (
-        <span role="status">Fetching attachment…</span>
+        <span role="status" className="muted small">
+          Fetching attachment…
+        </span>
       ) : state === 'failed' || state === 'error' ? (
         <>
           <span role="alert" className="error">
@@ -156,6 +183,7 @@ function AttachmentItem({
           </span>{' '}
           <button
             type="button"
+            className="text-button"
             onClick={() => void fetchFile(state === 'failed', true)}
           >
             Retry download
@@ -164,10 +192,12 @@ function AttachmentItem({
       ) : (
         <button
           type="button"
+          className="icon-button"
           aria-label={`Download ${attachment.filename}`}
+          title="Download"
           onClick={() => void fetchFile(false, true)}
         >
-          Download
+          <Icon src={download} />
         </button>
       )}
     </li>
@@ -185,7 +215,13 @@ export function Reader({
   onAction,
   actionRevision,
   userId,
+  accentOf = () => 1,
+  toolsRef,
+  threadRef,
 }: {
+  accentOf?: (accountId: string) => number;
+  toolsRef: (element: HTMLElement | null) => void;
+  threadRef: (element: HTMLElement | null) => void;
   id: string;
   query?: string;
   conversation?: string;
@@ -492,199 +528,346 @@ export function Reader({
     await displayImages(images);
   }
 
+  const sender = detail?.message.sender[0];
+  const accent = detail ? accentOf(detail.message.accountId) : 1;
+  const senderName = sender?.name || sender?.address || 'Unknown sender';
   return (
     <section className="reader" aria-labelledby="reader-title">
-      <nav className="reader-navigation" aria-label="Message navigation">
-        <a data-mail-command="back" href={mailHref({ message: '' })}>
-          Back to message list
-        </a>
-        {detail?.previous ? (
+      <div className="reader-toolbar">
+        <nav className="reader-back" aria-label="Message navigation">
           <a
-            data-mail-command="previous"
-            href={mailHref({ message: detail.previous })}
+            data-mail-command="back"
+            className="icon-button"
+            href={mailHref({ message: '' })}
+            title="Back (U)"
           >
-            Previous message
+            <Icon src={arrowBack} />
+            <span className="visually-hidden">Back to message list</span>
           </a>
-        ) : (
-          <button type="button" disabled>
-            Previous message
-          </button>
-        )}
-        {detail?.next ? (
-          <a data-mail-command="next" href={mailHref({ message: detail.next })}>
-            Next message
-          </a>
-        ) : (
-          <button type="button" disabled>
-            Next message
-          </button>
-        )}
-      </nav>
-      <h2 id="reader-title" ref={heading} tabIndex={-1}>
-        {detail?.message.subject ||
-          (detail ? '(No subject)' : 'Loading message…')}
-      </h2>
-      {detail && (
-        <div className="account-actions">
-          <button
-            type="button"
-            disabled={responseBusy || detail.content.state !== 'ready'}
-            data-mail-command="reply"
-            onClick={() => void respond('reply')}
-          >
-            Reply
-          </button>
-          <button
-            type="button"
-            disabled={responseBusy || detail.content.state !== 'ready'}
-            data-mail-command="reply-all"
-            onClick={() => void respond('replyAll')}
-          >
-            Reply all
-          </button>
-          <button
-            type="button"
-            disabled={responseBusy || detail.content.state !== 'ready'}
-            data-mail-command="forward"
-            onClick={() => void respond('forward')}
-          >
-            Forward
-          </button>
-          {responseBusy && <span role="status">Preparing response…</span>}
-          <button
-            type="button"
-            disabled={pendingAction}
-            data-mail-command="toggle"
-            onClick={() => void mark(detail.message.unread ? 'read' : 'unread')}
-          >
-            {detail.message.unread ? 'Mark as read' : 'Mark as unread'}
-          </button>
-          <button
-            type="button"
-            disabled={pendingAction || !detail.message.canMove?.archive}
-            data-mail-command="archive"
-            onClick={() => void mark('archive')}
-          >
-            Archive
-          </button>
-          <button
-            type="button"
-            disabled={pendingAction || !detail.message.canMove?.trash}
-            data-mail-command="trash"
-            onClick={() => void mark('trash')}
-          >
-            Move to trash
-          </button>
-          {detail.message.restoreTo && (
+        </nav>
+        {detail && (
+          <>
             <button
               type="button"
-              disabled={pendingAction}
-              onClick={() => void mark('restore')}
+              className="icon-button"
+              title="Archive (E)"
+              disabled={pendingAction || !detail.message.canMove?.archive}
+              data-mail-command="archive"
+              onClick={() => void mark('archive')}
             >
-              Restore to {detail.message.restoreTo.path}
+              <Icon src={archive} />
+              <span className="visually-hidden">Archive</span>
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              title="Delete (#)"
+              disabled={pendingAction || !detail.message.canMove?.trash}
+              data-mail-command="trash"
+              onClick={() => void mark('trash')}
+            >
+              <Icon src={trash} />
+              <span className="visually-hidden">Move to trash</span>
+            </button>
+            <div className="reader-conversation-tools" ref={toolsRef} />
+            <button
+              type="button"
+              className="icon-button"
+              title={
+                detail.message.unread ? 'Mark read (M)' : 'Mark unread (M)'
+              }
+              disabled={pendingAction}
+              data-mail-command="toggle"
+              onClick={() =>
+                void mark(detail.message.unread ? 'read' : 'unread')
+              }
+            >
+              <Icon
+                src={detail.message.unread ? markEmailRead : markEmailUnread}
+              />
+              <span className="visually-hidden">
+                {detail.message.unread ? 'Mark as read' : 'Mark as unread'}
+              </span>
+            </button>
+            {detail.message.restoreTo && (
+              <button
+                type="button"
+                className="icon-button"
+                title={`Restore to ${detail.message.restoreTo.path}`}
+                disabled={pendingAction}
+                onClick={() => void mark('restore')}
+              >
+                <Icon src={unarchive} />
+                <span className="visually-hidden">
+                  Restore to {detail.message.restoreTo.path}
+                </span>
+              </button>
+            )}
+            <label className="move-select" title="Move to folder">
+              <Icon src={driveFileMove} />
+              <span className="visually-hidden">Move to folder</span>
+              <select
+                value={destination}
+                onChange={(event) => setDestination(event.target.value)}
+              >
+                <option value="">Move to…</option>
+                {folders
+                  .filter(
+                    (folder) =>
+                      folder.accountId === detail.message.accountId &&
+                      folder.id !== detail.message.folderId,
+                  )
+                  .map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.path}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            {destination && (
+              <button
+                type="button"
+                className="text-button"
+                disabled={pendingAction}
+                onClick={() => void mark('move', destination)}
+              >
+                Move
+              </button>
+            )}
+          </>
+        )}
+        <span className="toolbar-spacer" />
+        <nav className="reader-pager" aria-label="Adjacent messages">
+          {detail?.previous ? (
+            <a
+              data-mail-command="previous"
+              className="icon-button"
+              title="Previous (K)"
+              href={mailHref({ message: detail.previous })}
+            >
+              <Icon src={chevronLeft} />
+              <span className="visually-hidden">Previous message</span>
+            </a>
+          ) : (
+            <button type="button" className="icon-button" disabled>
+              <Icon src={chevronLeft} />
+              <span className="visually-hidden">Previous message</span>
             </button>
           )}
-          <label>
-            Move to folder{' '}
-            <select
-              value={destination}
-              onChange={(event) => setDestination(event.target.value)}
+          {detail?.next ? (
+            <a
+              data-mail-command="next"
+              className="icon-button"
+              title="Next (J)"
+              href={mailHref({ message: detail.next })}
             >
-              <option value="">Choose a folder</option>
-              {folders
-                .filter(
-                  (folder) =>
-                    folder.accountId === detail.message.accountId &&
-                    folder.id !== detail.message.folderId,
-                )
-                .map((folder) => (
-                  <option key={folder.id} value={folder.id}>
-                    {folder.path}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            disabled={pendingAction || !destination}
-            onClick={() => void mark('move', destination)}
-          >
-            Move
-          </button>
-          <span role="status">
-            {lastAction?.state === 'pending'
-              ? `${actionText[lastAction.kind].pending}… saving to your provider.`
-              : lastAction?.id !== ownAction
-                ? ''
-                : lastAction.state === 'applied'
-                  ? `${actionText[lastAction.kind].done}.`
-                  : lastAction.state === 'cancelled'
-                    ? 'Undone.'
-                    : ''}
-          </span>
-          {(lastAction?.state === 'failed' ||
-            lastAction?.state === 'conflict') && (
-            <span role="alert" className="error">
-              {lastAction.error ?? 'The provider did not confirm this action.'}{' '}
-              See Recent actions for its status and available controls.
+              <Icon src={chevronRight} />
+              <span className="visually-hidden">Next message</span>
+            </a>
+          ) : (
+            <button type="button" className="icon-button" disabled>
+              <Icon src={chevronRight} />
+              <span className="visually-hidden">Next message</span>
+            </button>
+          )}
+        </nav>
+      </div>
+      <div className="reader-scroll">
+        <h2 id="reader-title" ref={heading} tabIndex={-1}>
+          {detail?.message.subject ||
+            (detail ? '(No subject)' : 'Loading message…')}
+        </h2>
+        {detail && (
+          <div className="reader-chips">
+            <span className={`chip account a${accent}`}>
+              <span className="dot" aria-hidden="true" />
+              {detail.message.accountName}
             </span>
-          )}
-          {actionError && (
-            <span role="alert" className="error">
-              {actionError}
+            {detail.message.unread && <span className="chip">Unread</span>}
+          </div>
+        )}
+        {detail && (
+          <div className="reader-status">
+            <span role="status">
+              {lastAction?.state === 'pending'
+                ? `${actionText[lastAction.kind].pending}… saving to your provider.`
+                : lastAction?.id !== ownAction
+                  ? ''
+                  : lastAction.state === 'applied'
+                    ? `${actionText[lastAction.kind].done}.`
+                    : lastAction.state === 'cancelled'
+                      ? 'Undone.'
+                      : ''}
             </span>
-          )}
-        </div>
-      )}
-      {detail && (
-        <dl className="message-details">
-          <dt>From</dt>
-          <dd>{people(detail.message.sender) || 'Unknown sender'}</dd>
-          <dt>To</dt>
-          <dd>{people(detail.message.recipients.to)}</dd>
-          {detail.message.recipients.cc.length > 0 && (
-            <>
-              <dt>Cc</dt>
-              <dd>{people(detail.message.recipients.cc)}</dd>
-            </>
-          )}
-          <dt>Account</dt>
-          <dd>{detail.message.accountName}</dd>
-          <dt>Received</dt>
-          <dd>
-            <time dateTime={detail.message.receivedAt}>
-              {new Date(detail.message.receivedAt).toLocaleString()}
-            </time>
-          </dd>
-        </dl>
-      )}
-      {error ? (
-        <p role="alert" className="error">
-          {error}{' '}
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-          >
-            Retry loading
-          </button>
-        </p>
-      ) : !detail || ['pending', 'missing'].includes(detail.content.state) ? (
-        <p role="status">Fetching message content…</p>
-      ) : detail.content.state === 'failed' ? (
-        <p role="alert" className="error">
-          {detail.content.message}
-          <button
-            type="button"
-            onClick={() => setAttempt((value) => value + 1)}
-          >
-            Retry loading
-          </button>
-        </p>
-      ) : (
-        <>
-          {Boolean(detail.content.attachments?.length) && (
+            {(lastAction?.state === 'failed' ||
+              lastAction?.state === 'conflict') && (
+              <span role="alert" className="error">
+                {lastAction.error ??
+                  'The provider did not confirm this action.'}{' '}
+                See Recent actions for its status and available controls.
+              </span>
+            )}
+            {actionError && (
+              <span role="alert" className="error">
+                {actionError}
+              </span>
+            )}
+          </div>
+        )}
+        <div ref={threadRef} />
+        {detail && (
+          <article className="message-card" aria-label="Message">
+            <header className="message-card-head">
+              <span className={`avatar a${accent}`} aria-hidden="true">
+                {initials(senderName)}
+              </span>
+              <div className="message-card-people">
+                <p>
+                  <strong>{senderName}</strong>{' '}
+                  {sender?.name && sender.address && (
+                    <span className="muted">{sender.address}</span>
+                  )}
+                </p>
+                <dl className="message-details">
+                  <dt>From</dt>
+                  <dd>{people(detail.message.sender) || 'Unknown sender'}</dd>
+                  <dt>To</dt>
+                  <dd>
+                    {people(detail.message.recipients.to) || 'No recipients'}
+                  </dd>
+                  {detail.message.recipients.cc.length > 0 && (
+                    <>
+                      <dt>Cc</dt>
+                      <dd>{people(detail.message.recipients.cc)}</dd>
+                    </>
+                  )}
+                  <dt>Account</dt>
+                  <dd>{detail.message.accountName}</dd>
+                </dl>
+              </div>
+              <time dateTime={detail.message.receivedAt}>
+                {new Date(detail.message.receivedAt).toLocaleString()}
+              </time>
+            </header>
+            {error ? (
+              <p role="alert" className="error">
+                {error}{' '}
+                <button
+                  type="button"
+                  onClick={() => setAttempt((value) => value + 1)}
+                >
+                  Retry loading
+                </button>
+              </p>
+            ) : ['pending', 'missing'].includes(detail.content.state) ? (
+              <p role="status" className="muted">
+                Fetching message content…
+              </p>
+            ) : detail.content.state === 'failed' ? (
+              <p role="alert" className="error">
+                {detail.content.message}
+                <button
+                  type="button"
+                  onClick={() => setAttempt((value) => value + 1)}
+                >
+                  Retry loading
+                </button>
+              </p>
+            ) : (
+              <div className="message-body">
+                {detail.content.hasHtml && (
+                  <fieldset className="segmented small">
+                    <legend className="visually-hidden">Body format</legend>
+                    <button
+                      type="button"
+                      aria-pressed={view === 'html'}
+                      disabled={busy || !detail.content.configured}
+                      onClick={() => void showHtml()}
+                    >
+                      Formatted message
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={view === 'text'}
+                      onClick={() => setView('text')}
+                    >
+                      Plain text
+                    </button>
+                  </fieldset>
+                )}
+                {!detail.content.configured && detail.content.hasHtml && (
+                  <p role="status" className="muted">
+                    Formatted mail needs the isolated content server. Plain text
+                    is available below.
+                  </p>
+                )}
+                {view === 'html' &&
+                detail.content.hasHtml &&
+                detail.content.configured ? (
+                  <>
+                    {Boolean(detail.content.imageCount) && (
+                      <div className="reader-images">
+                        <Icon src={hideImage} />
+                        <p>
+                          {images
+                            ? 'Images are enabled for this message.'
+                            : 'Remote images blocked. Loading them goes through Spindle’s image proxy and may notify the sender.'}
+                        </p>
+                        <button
+                          type="button"
+                          className="text-button"
+                          disabled={busy}
+                          onClick={() => void displayImages(!images)}
+                        >
+                          {busy
+                            ? 'Updating images…'
+                            : images
+                              ? 'Hide images'
+                              : 'Display images'}
+                        </button>
+                      </div>
+                    )}
+                    {imageError && <p role="alert">{imageError}</p>}
+                    {htmlUrl && (
+                      <iframe
+                        className="message-frame"
+                        title="Message body"
+                        src={htmlUrl}
+                        referrerPolicy="no-referrer"
+                        sandbox="allow-popups allow-popups-to-escape-sandbox"
+                      />
+                    )}
+                  </>
+                ) : (
+                  <pre className="plain-message">
+                    {detail.content.plainText ||
+                      'This message has no plain-text alternative.'}
+                  </pre>
+                )}
+              </div>
+            )}
+          </article>
+        )}
+        {!detail && error && (
+          <p role="alert" className="error">
+            {error}{' '}
+            <button
+              type="button"
+              onClick={() => setAttempt((value) => value + 1)}
+            >
+              Retry loading
+            </button>
+          </p>
+        )}
+        {!detail && !error && (
+          <p role="status" className="muted">
+            Fetching message content…
+          </p>
+        )}
+        {detail?.content.state === 'ready' &&
+          Boolean(detail.content.attachments?.length) && (
             <section className="attachments" aria-label="Attachments">
-              <h3>Attachments</h3>
+              <h3 className="visually-hidden">Attachments</h3>
               <ul>
                 {detail.content.attachments?.map((attachment) => (
                   <AttachmentItem
@@ -697,75 +880,40 @@ export function Reader({
               </ul>
             </section>
           )}
-          {detail.content.hasHtml && (
-            <fieldset className="account-actions">
-              <legend>Body format</legend>
-              <button
-                type="button"
-                aria-pressed={view === 'html'}
-                disabled={busy || !detail.content.configured}
-                onClick={() => void showHtml()}
-              >
-                Formatted message
-              </button>
-              <button
-                type="button"
-                aria-pressed={view === 'text'}
-                onClick={() => setView('text')}
-              >
-                Plain text
-              </button>
-            </fieldset>
-          )}
-          {!detail.content.configured && detail.content.hasHtml && (
-            <p role="status">
-              Formatted mail needs the isolated content server. Plain text is
-              available below.
-            </p>
-          )}
-          {view === 'html' &&
-          detail.content.hasHtml &&
-          detail.content.configured ? (
-            <>
-              {Boolean(detail.content.imageCount) && (
-                <div className="reader-images">
-                  <p>
-                    {images
-                      ? 'Images are enabled for this message.'
-                      : 'Images are blocked. Remote images may notify the sender when loaded.'}
-                  </p>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void displayImages(!images)}
-                  >
-                    {busy
-                      ? 'Updating images…'
-                      : images
-                        ? 'Hide images'
-                        : 'Display images'}
-                  </button>
-                </div>
-              )}
-              {imageError && <p role="alert">{imageError}</p>}
-              {htmlUrl && (
-                <iframe
-                  className="message-frame"
-                  title="Message body"
-                  src={htmlUrl}
-                  referrerPolicy="no-referrer"
-                  sandbox="allow-popups allow-popups-to-escape-sandbox"
-                />
-              )}
-            </>
-          ) : (
-            <pre className="plain-message">
-              {detail.content.plainText ||
-                'This message has no plain-text alternative.'}
-            </pre>
-          )}
-        </>
-      )}
+        {detail && (
+          <div className="reply-actions">
+            <button
+              type="button"
+              className="filled"
+              disabled={responseBusy || detail.content.state !== 'ready'}
+              data-mail-command="reply"
+              onClick={() => void respond('reply')}
+            >
+              <Icon src={reply} />
+              Reply
+            </button>
+            <button
+              type="button"
+              disabled={responseBusy || detail.content.state !== 'ready'}
+              data-mail-command="reply-all"
+              onClick={() => void respond('replyAll')}
+            >
+              <Icon src={replyAll} />
+              Reply all
+            </button>
+            <button
+              type="button"
+              disabled={responseBusy || detail.content.state !== 'ready'}
+              data-mail-command="forward"
+              onClick={() => void respond('forward')}
+            >
+              <Icon src={forward} />
+              Forward
+            </button>
+            {responseBusy && <span role="status">Preparing response…</span>}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

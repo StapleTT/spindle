@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { MailApiError, mailApi } from './mail-api.js';
 import { mailPollDelay, subscribeMailChanges } from './mail-events.js';
 import { navigateMail } from './mail-navigation.js';
@@ -26,7 +27,15 @@ function readPreference(user: string): Preference {
   }
 }
 
-export function OpenNotifications({ user }: { user: string }) {
+// Always mounted so notifications keep working; its settings render into
+// Settings › Security when that section is open.
+export function OpenNotifications({
+  user,
+  container,
+}: {
+  user: string;
+  container: HTMLElement | null;
+}) {
   const [preference, setPreference] = useState(() => readPreference(user));
   const [permission, setPermission] = useState(() =>
     typeof Notification === 'undefined'
@@ -290,7 +299,8 @@ export function OpenNotifications({ user }: { user: string }) {
       window.removeEventListener('pageshow', pageshow);
     };
   }, [user, preference.enabled, preference.previews, supported]);
-  return (
+  if (!container) return null;
+  return createPortal(
     <section aria-label="Notifications" className="notification-settings">
       <details>
         <summary>
@@ -345,6 +355,7 @@ export function OpenNotifications({ user }: { user: string }) {
         )}
       </details>
       {issue && <p role="status">{issue}</p>}
-    </section>
+    </section>,
+    container,
   );
 }
