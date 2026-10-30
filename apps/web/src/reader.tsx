@@ -215,11 +215,11 @@ export function Reader({
   onAction,
   actionRevision,
   userId,
-  accentOf = () => 1,
+  accountStyleOf,
   toolsRef,
   threadRef,
 }: {
-  accentOf?: (accountId: string) => number;
+  accountStyleOf: (accountId: string) => import('react').CSSProperties;
   toolsRef: (element: HTMLElement | null) => void;
   threadRef: (element: HTMLElement | null) => void;
   id: string;
@@ -529,7 +529,6 @@ export function Reader({
   }
 
   const sender = detail?.message.sender[0];
-  const accent = detail ? accentOf(detail.message.accountId) : 1;
   const senderName = sender?.name || sender?.address || 'Unknown sender';
   return (
     <section className="reader" aria-labelledby="reader-title">
@@ -679,7 +678,10 @@ export function Reader({
         </h2>
         {detail && (
           <div className="reader-chips">
-            <span className={`chip account a${accent}`}>
+            <span
+              className="chip account"
+              style={accountStyleOf(detail.message.accountId)}
+            >
               <span className="dot" aria-hidden="true" />
               {detail.message.accountName}
             </span>
@@ -718,7 +720,11 @@ export function Reader({
         {detail && (
           <article className="message-card" aria-label="Message">
             <header className="message-card-head">
-              <span className={`avatar a${accent}`} aria-hidden="true">
+              <span
+                className="avatar"
+                style={accountStyleOf(detail.message.accountId)}
+                aria-hidden="true"
+              >
                 {initials(senderName)}
               </span>
               <div className="message-card-people">

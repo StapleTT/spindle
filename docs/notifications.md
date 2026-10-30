@@ -1,6 +1,6 @@
 # Notifications while Spindle is open
 
-Notifications are off by default. Open **Notifications** above the mail search controls and choose **Enable notifications**. Only that button requests browser permission. Denied or dismissed permission leaves alerts disabled and explains how to try again. Browser permission alone does not enable Spindle alerts.
+Notifications are off by default. Open **Settings › Security › Notifications** and turn on **Desktop notifications**. Only that switch requests browser permission. Denied or dismissed permission leaves alerts disabled and explains how to try again. Browser permission alone does not enable Spindle alerts.
 
 The preference is private to the signed-in user in this browser, shared across its tabs. Sender/subject previews have a separate opt-in and start hidden. Notification bodies never include recipients, message text, attachments or Bcc. Preview text is bounded and strips control/bidirectional override characters. Clearing site data resets these preferences.
 

@@ -206,7 +206,7 @@ test('opt-in open-app notifications handle privacy, tabs, permissions and page/s
           ),
         );
         await settings()
-          .getByRole('button', { name: 'Enable notifications' })
+          .getByRole('switch', { name: 'Desktop notifications' })
           .click();
         await settings()
           .getByRole('status')
@@ -221,10 +221,10 @@ test('opt-in open-app notifications handle privacy, tabs, permissions and page/s
           ),
         );
         await settings()
-          .getByRole('button', { name: 'Enable notifications' })
+          .getByRole('switch', { name: 'Desktop notifications' })
           .click();
         await settings()
-          .getByRole('button', { name: 'Disable notifications' })
+          .getByRole('switch', { name: 'Desktop notifications' })
           .waitFor();
         await refresh();
         assert.equal((await state()).alerts.length, 0);
@@ -302,7 +302,7 @@ test('opt-in open-app notifications handle privacy, tabs, permissions and page/s
         await openSettings();
         const beforeDisable = (await state()).alerts.length;
         await settings()
-          .getByRole('button', { name: 'Disable notifications' })
+          .getByRole('switch', { name: 'Desktop notifications' })
           .click();
         await arrival('Disabled arrival');
         await refresh();
@@ -314,7 +314,7 @@ test('opt-in open-app notifications handle privacy, tabs, permissions and page/s
       'pagehide closes alerts and pageshow/reopening establish a new baseline',
       async () => {
         await settings()
-          .getByRole('button', { name: 'Enable notifications' })
+          .getByRole('switch', { name: 'Desktop notifications' })
           .click();
         await refresh();
         await arrival('Before closing');

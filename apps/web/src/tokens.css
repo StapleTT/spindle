@@ -44,6 +44,27 @@
   --a4: oklch(57% 0.15 320);
   --a4s: oklch(92.5% 0.035 320);
   --a4t: oklch(36% 0.1 320);
+  /* Suggested account colors and the custom picker's full-spectrum tracks. */
+  --picker-coral: #c85a3c;
+  --picker-blue: #3a74c4;
+  --picker-green: #2f9563;
+  --picker-orchid: #a955b5;
+  --picker-amber: #bd811c;
+  --picker-teal: #188c91;
+  --picker-indigo: #6656c4;
+  --picker-rose: #c74c7a;
+  --picker-black: #000000;
+  --picker-white: #ffffff;
+  --picker-spectrum: linear-gradient(
+    to right,
+    hsl(0 100% 50%),
+    hsl(60 100% 50%),
+    hsl(120 100% 50%),
+    hsl(180 100% 50%),
+    hsl(240 100% 50%),
+    hsl(300 100% 50%),
+    hsl(360 100% 50%)
+  );
   --font: "Plus Jakarta Sans Variable", system-ui, sans-serif;
   --mono: "JetBrains Mono Variable", ui-monospace, monospace;
   --ease: cubic-bezier(0.2, 0, 0, 1);

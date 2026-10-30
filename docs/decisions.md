@@ -303,3 +303,12 @@ Status: confirmed by the user on 2026-10-30.
 Serve the landing page at `/`, account access at `/login`, and private mail at `/inbox` on the same origin. Public home remains visible when signed in. Session state guards the app URLs; unauthenticated inbox visits retain their mail fragment through sign-in, sign-in ends at `/inbox`, and sign-out/revocation returns to `/login`. Explicit password reset remains accessible under `/login`.
 
 Update registration/invitation/verification/recovery links to `/login`. Preserve earlier root auth queries/mail bookmarks and redirect `/landing/` home. Keep `APP_URL` as an origin, `/api/auth` and all ownership/cookie checks unchanged, and retain the separate content hostname. Native Vite HTML entries share the current auth/mail code without a new router dependency; static hosting must map the two clean URLs to `login.html`/`inbox.html`. See [design routes](design.md#reaching-the-landing-page) and [hosting](network-access.md#static-build-routing). This supersedes the open landing-origin choice in D027.
+
+
+## D029 — custom account colours and honest settings controls
+
+Status: custom styled picker and suggested colours requested by the user on 2026-10-30; implementation choices by the agent.
+
+Persist one nullable six-digit hex colour per owned connected account. Use a custom modal with suggested token-based swatches, live preview, HSL sliders, hex input and explicit save/cancel/reset; no native browser colour picker. Apply it consistently across app identity markers, keep theme-aware readable text and propagate saves through existing local account reads/SSE. Cosmetic concurrent changes use last-writer-wins. The additive 0028 migration is retained on rollback; reconnect preserves the preference.
+
+The Settings Security switches were intentionally disabled under D027. Represent fixed image-proxy/default-image-blocking/send-delay protections as Always on labels and future 2FA as Coming soon. Only implemented preferences appear interactive; desktop notifications use a functional permission-aware switch. This change preserves per-message remote-image consent and the five-second send floor. See [design details and proof](design.md#settings-controls-and-account-colours--2026-10-30).

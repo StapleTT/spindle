@@ -320,22 +320,31 @@ export function OpenNotifications({
         )}
         {supported && (
           <>
-            {preference.enabled ? (
+            <div className="switch-row">
+              <div>
+                <strong>Desktop notifications</strong>
+                <p className="muted">New inbox mail while Spindle is open.</p>
+              </div>
               <button
                 type="button"
-                onClick={() => change({ ...preference, enabled: false })}
-              >
-                Disable notifications
-              </button>
-            ) : (
-              <button
-                type="button"
+                role="switch"
+                className="switch"
+                aria-label="Desktop notifications"
+                aria-checked={preference.enabled}
                 disabled={requesting}
-                onClick={() => void enable()}
+                onClick={() =>
+                  preference.enabled
+                    ? change({ ...preference, enabled: false })
+                    : void enable()
+                }
               >
-                Enable notifications
+                <span className="visually-hidden">
+                  {preference.enabled
+                    ? 'Disable notifications'
+                    : 'Enable notifications'}
+                </span>
               </button>
-            )}
+            </div>
             <label>
               <input
                 type="checkbox"

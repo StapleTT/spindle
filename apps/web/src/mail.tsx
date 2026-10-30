@@ -21,7 +21,7 @@ const Composer = lazy(() =>
 
 import { BatchActions } from './batch-actions.js';
 import {
-  accent,
+  accountColorStyle,
   Icon,
   initials,
   SpindleLogo,
@@ -397,13 +397,13 @@ export function Mail({
   }
 
   const selected = mailboxes.find((box) => box.id === mailbox);
-  const accentOf = (accountId: string) =>
-    accent(
-      Math.max(
-        0,
-        accounts.findIndex((item) => item.id === accountId),
-      ),
+  const accountStyleOf = (accountId: string) => {
+    const index = Math.max(
+      0,
+      accounts.findIndex((item) => item.id === accountId),
     );
+    return accountColorStyle(accounts[index]?.color, index);
+  };
   const isInbox = (box: Mailbox) =>
     box.role === '\\Inbox' || box.path.toUpperCase() === 'INBOX';
   const inboxUnread = (accountId?: string) =>
@@ -561,14 +561,14 @@ export function Mail({
             .join(', ') || 'Unknown sender';
         const checked = selectedIds.includes(message.id);
         const subject = message.subject || '(No subject)';
-        const tone = accentOf(message.accountId);
         return (
           <li
             key={message.id}
             data-message-row={message.id}
+            style={accountStyleOf(message.accountId)}
             className={`row${message.unread ? ' unread' : ''}${message.id === messageId ? ' selected' : ''}${checked ? ' checked' : ''}`}
           >
-            <label className={`avatar a${tone}`} title="Select">
+            <label className="avatar" title="Select">
               <input
                 data-mail-command="select"
                 type="checkbox"
@@ -605,7 +605,7 @@ export function Mail({
                 {subject}
               </a>
               <p className="row-meta">
-                <span className={`dot a${tone}`} aria-hidden="true" />
+                <span className="dot" aria-hidden="true" />
                 {message.accountName}
                 {message.muted ? ' · Muted' : ''}
                 {message.snoozedUntil
@@ -747,7 +747,7 @@ export function Mail({
             <button
               key={item.id}
               type="button"
-              className={`a${accent(index)}`}
+              style={accountColorStyle(item.color, index)}
               aria-pressed={account === item.id && !mailbox}
               onClick={() =>
                 navigateMail({
@@ -953,7 +953,8 @@ export function Mail({
           return (
             <section
               key={item.id}
-              className={`drawer-account a${accent(index)}`}
+              className="drawer-account"
+              style={accountColorStyle(item.color, index)}
               aria-label={item.name}
             >
               <h3 className="visually-hidden">{item.name}</h3>
@@ -1119,6 +1120,13 @@ export function Mail({
                   ),
                 )
               }
+              onColor={(accountId, color) =>
+                setAccounts((current) =>
+                  current.map((item) =>
+                    item.id === accountId ? { ...item, color } : item,
+                  ),
+                )
+              }
               notificationsSlot={setNotificationsEl}
             />
           ) : view === 'drafts' ||
@@ -1156,7 +1164,7 @@ export function Mail({
                     onChange={reload}
                     actionRevision={actionRevision}
                     userId={userId}
-                    accentOf={accentOf}
+                    accountStyleOf={accountStyleOf}
                     toolsRef={setToolsEl}
                     threadRef={setThreadEl}
                     onAction={(action) => {

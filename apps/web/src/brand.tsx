@@ -166,6 +166,20 @@ const accents = 4;
 // Account colour slot (1–4) by position, matching the drawer order.
 export const accent = (index: number) => (index % accents) + 1;
 
+export function accountColorStyle(
+  color: string | null | undefined,
+  index: number,
+): CSSProperties {
+  const slot = accent(index);
+  return {
+    '--accent': color ?? `var(--a${slot})`,
+    '--accent-soft': color
+      ? `color-mix(in oklab, ${color} 14%, var(--surface))`
+      : `var(--a${slot}s)`,
+    '--accent-text': color ? 'var(--on)' : `var(--a${slot}t)`,
+  } as CSSProperties;
+}
+
 export const initials = (name: string) =>
   name
     .replace(/["<].*$/, '')

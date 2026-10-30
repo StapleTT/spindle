@@ -43,7 +43,7 @@ const accountParams = {
   properties: { id: uuid },
   additionalProperties: false,
 };
-const accountFields = `id,name,host,port,transport,username,status,error_code AS "errorCode",
+const accountFields = `id,name,color,host,port,transport,username,status,error_code AS "errorCode",
   last_synced_at AS "lastSyncedAt",history_since AS "historySince"`;
 
 function parseCursor(value: string | undefined, key?: string) {
@@ -160,6 +160,42 @@ export async function registerMailRoutes(
       )
     ).rows,
   }));
+
+  app.patch<{ Params: { id: string }; Body: { color: string | null } }>(
+    '/api/mail/accounts/:id/color',
+    {
+      bodyLimit: 256,
+      schema: {
+        params: accountParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['color'],
+          properties: {
+            color: {
+              anyOf: [
+                { type: 'null' },
+                { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
+              ],
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await pool.query(
+        'UPDATE mail_accounts SET color=$3 WHERE user_id=$1 AND id=$2 RETURNING id,color',
+        [
+          request.mailUser,
+          request.params.id,
+          request.body.color?.toLowerCase() ?? null,
+        ],
+      );
+      if (!result.rowCount)
+        return reply.code(404).send({ message: 'Mail account not found.' });
+      return { account: result.rows[0] };
+    },
+  );
 
   app.post<{
     Body: {

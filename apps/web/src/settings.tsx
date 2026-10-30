@@ -1,5 +1,6 @@
 import { type FormEvent, lazy, Suspense, useState } from 'react';
-import { accent, Icon, initials, ThemeChoice } from './brand.js';
+import { AccountColorPicker } from './account-color-picker.js';
+import { accountColorStyle, Icon, initials, ThemeChoice } from './brand.js';
 import type { Signature } from './draft-api.js';
 import {
   businessCenter,
@@ -32,6 +33,7 @@ const SignatureSettings = lazy(() =>
 export type Account = {
   id: string;
   name: string;
+  color: string | null;
   host: string;
   port: number;
   transport: 'tls' | 'starttls';
@@ -66,7 +68,7 @@ const tabs = [
 ] as const;
 type Tab = (typeof tabs)[number][0];
 
-// Always-on protections are shown as locked switches; future ones are marked.
+// Fixed protections are status labels, not inert preference controls.
 const protections = [
   [
     shield,
@@ -103,6 +105,7 @@ export function Settings({
   onRefresh,
   onReload,
   onSignature,
+  onColor,
   notificationsSlot,
 }: {
   accounts: Account[];
@@ -113,6 +116,7 @@ export function Settings({
   onRefresh: () => void;
   onReload: () => void;
   onSignature: (accountId: string, signature: Signature) => void;
+  onColor: (accountId: string, color: string | null) => void;
   notificationsSlot: (element: HTMLElement | null) => void;
 }) {
   const [tab, setTab] = useState<Tab>(() => {
@@ -249,11 +253,12 @@ export function Settings({
             {accounts.length > 0 && (
               <ul className="settings-list" aria-label="Connected accounts">
                 {accounts.map((item, index) => (
-                  <li key={item.id} className="account-row">
-                    <span
-                      className={`avatar a${accent(index)}`}
-                      aria-hidden="true"
-                    >
+                  <li
+                    key={item.id}
+                    className="account-row"
+                    style={accountColorStyle(item.color, index)}
+                  >
+                    <span className="avatar" aria-hidden="true">
                       {initials(item.name)}
                     </span>
                     <div className="account-row-text">
@@ -556,11 +561,22 @@ export function Settings({
             {accounts.length > 0 && (
               <div className="settings-group">
                 <h4>Account colors</h4>
+                <p className="muted small">
+                  Saved to your account and shared across your devices.
+                </p>
                 <ul className="account-colors">
                   {accounts.map((item, index) => (
-                    <li key={item.id} className={`a${accent(index)}`}>
+                    <li
+                      key={item.id}
+                      style={accountColorStyle(item.color, index)}
+                    >
                       <span className="dot" aria-hidden="true" />
-                      {item.name}
+                      <strong>{item.name}</strong>
+                      <AccountColorPicker
+                        account={item}
+                        index={index}
+                        onChange={(color) => onColor(item.id, color)}
+                      />
                     </li>
                   ))}
                 </ul>
@@ -578,7 +594,8 @@ export function Settings({
               <div key={item.id} className="settings-group">
                 <p className="identity">
                   <span
-                    className={`dot a${accent(index)}`}
+                    className="dot"
+                    style={accountColorStyle(item.color, index)}
                     aria-hidden="true"
                   />
                   <strong>{item.name}</strong>
@@ -622,14 +639,9 @@ export function Settings({
                     <strong>{label}</strong>
                     <p className="muted">{description}</p>
                   </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={on}
-                    aria-label={label}
-                    className="switch"
-                    disabled
-                  />
+                  <span className="protection-status">
+                    {on ? 'Always on' : 'Coming soon'}
+                  </span>
                 </li>
               ))}
             </ul>
