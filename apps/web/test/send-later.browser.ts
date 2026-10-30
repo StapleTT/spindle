@@ -148,7 +148,7 @@ test('Send later recovers lost responses, persists schedules, supports edit/canc
           })
           .replace(' ', 'T'),
       );
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     await page.getByLabel('To', { exact: true }).fill('recipient@example.test');
     await page
@@ -212,7 +212,7 @@ test('Send later recovers lost responses, persists schedules, supports edit/canc
       .waitFor();
     const second = await context.newPage();
     second.setDefaultTimeout(15000);
-    await second.goto(`${config.appUrl}/#view=outbox`);
+    await second.goto(`${config.appUrl}/inbox#view=outbox`);
     await outboxRow(second)
       .getByText('Scheduled: Browser send later', { exact: true })
       .waitFor();

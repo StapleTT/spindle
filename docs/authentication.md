@@ -15,7 +15,7 @@ npm run dev
 
 If Docker requires sudo, run `sudo docker compose up -d --wait` instead of `npm run db:up`. It starts Postgres and Mailpit without removing the database volume. Run npm/application commands as your regular user.
 
-Use the same email throughout. With the example Mailpit settings, development email is captured at http://127.0.0.1:8025; the application is http://127.0.0.1:5173. Open the invitation, register, open the verification email, then sign in. Active Resend settings deliver to the real recipient instead; see [Resend setup](resend.md).
+Use the same email throughout. With the example Mailpit settings, development email is captured at http://127.0.0.1:8025; the public home is http://127.0.0.1:5173/, account access is `/login`, and signed-in mail is `/inbox`. Open the invitation, register, open the verification email, then sign in. Active Resend settings deliver to the real recipient instead; see [Resend setup](resend.md).
 
 Issue another invitation with `npm run auth:invite -- friend@example.com`. Invitations expire after seven days and are tied to the normalized email address; there is no transferable invite code. Reissuing the command renews a pending invitation. To renew the initial admin invitation, include `--admin` again. Existing accounts use verification resend or password recovery instead of re-registration.
 
@@ -76,3 +76,8 @@ Versioned SQL lives in `apps/server/drizzle`. Drizzle's migrator applies it tran
 Install Chromium once with `npm exec -- playwright install chromium`, then run `npm run test:browser` for the full form/verification/login/reload/reset/logout journey and phone-width layout check. It also uses a disposable database and temporary servers. Browser/API tests capture synthetic email via a test transport; live relay connectivity is checked separately. CI runs both suites with Postgres and Chromium.
 
 The UI intentionally uses temporary native styling while Claude Design is pending. Mail connections and platform-admin screens are future features; the signed-in screen does not pretend those controls already exist.
+
+
+## Browser routes
+
+The public landing page is `/`. Signup, sign-in, verification callbacks and password recovery use `/login` (with existing `view`, `email` and verification/reset query parameters); signed-in mail uses `/inbox` with its existing hash navigation. Signed-out inbox visits retain their mail fragment through sign-in. Signed-in login visits switch to `/inbox`, except an explicit password-reset flow. Sign-out and revoked sessions return to `/login`. Old root auth/mail links remain compatible. `APP_URL`, Better Auth's `/api/auth` path and origin/ownership checks are unchanged. See [static hosting routes](network-access.md#static-build-routing).

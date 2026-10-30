@@ -41,7 +41,7 @@ Allow only the proxy to reach exposed development ports through your firewall. K
 
 ## Proxy routing
 
-The app hostname routes all paths, including `/api`, `/landing/`, assets and Vite's development WebSocket, to port 5173. Mail HTML uses its separate hostname on port 3001, exposing only `/body`, `/image` and `/attachment`. Preserve the app's original `Host`/`Origin`, cookies and security headers. Do not rewrite browser `Origin` to a loopback address or enable wildcard CORS.
+The app hostname routes all paths, including `/`, `/login`, `/inbox`, `/api`, assets and Vite's development WebSocket, to port 5173. Mail HTML uses its separate hostname on port 3001, exposing only `/body`, `/image` and `/attachment`. Preserve the app's original `Host`/`Origin`, cookies and security headers. Do not rewrite browser `Origin` to a loopback address or enable wildcard CORS.
 
 Example Caddy routes for a proxy running directly on the same computer:
 
@@ -80,3 +80,10 @@ This fixes development access; production static web hosting, deployment packagi
 The web bind is now independently configurable and Vite allows the configured `APP_URL` hostname. A synthetic HTTP test verified the wildcard listener, approved-host access, rejection of an unrelated hostname and forwarding to a loopback API. Existing auth tests still enforce HTTPS outside explicit loopback development. `npm run check` passed lint, both typechecks, 45 tests and both builds.
 
 On the development machine, setting only `WEB_HOST=0.0.0.0` and reloading Vite made the actual UI and proxied `/api/health` return 200 through the LAN interface while the API/content listeners stayed on loopback. Existing secrets and other environment values were preserved. Browser sign-in and formatted mail through the intended reverse proxy remain unverified until its location and canonical HTTPS app/content hostnames are supplied.
+
+
+## Static build routing
+
+The public landing page is `apps/web/dist/index.html`; the auth and mail entries are `login.html` and `inbox.html`. Vite development and preview resolve `/login` and `/inbox` automatically. For a static deployment, configure clean HTML URLs explicitly. With Nginx, the web-file location can use `try_files $uri $uri.html $uri/ =404;` under the built web root, while `/api/` is proxied separately to the API. With Caddy `file_server`, rewrite the exact `/login` and `/inbox` paths to their corresponding `.html` files before file serving. Do not send those requests to the landing page as a universal SPA fallback.
+
+Keep `landing/index.html` as the compatibility redirect to `/`. Old root auth queries and mail fragments are redirected by the home entry; keep query strings and fragments intact. The frontend normalizes authenticated mail to `/inbox` and account access to `/login`. The hostname, `APP_URL` origin and isolated mail-content routes do not change. Production packaging and proxy/TLS acceptance remain separate release gates.

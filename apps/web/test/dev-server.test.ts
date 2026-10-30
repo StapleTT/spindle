@@ -71,7 +71,14 @@ test('web bind address is independent of the API and allows only the configured 
             }).on('error', reject);
           },
         );
-      assert.equal((await request('/')).status, 200);
+      const home = await request('/');
+      assert.equal(home.status, 200);
+      assert.match(home.body, /src\/landing\.ts/);
+      for (const path of ['/login', '/inbox']) {
+        const app = await request(path);
+        assert.equal(app.status, 200);
+        assert.match(app.body, /src\/main\.tsx/);
+      }
       const health = await request('/api/health');
       assert.equal(health.status, 200);
       assert.deepEqual(JSON.parse(health.body), { status: 'synthetic-ok' });

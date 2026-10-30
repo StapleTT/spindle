@@ -145,7 +145,7 @@ test('recipient suggestions select only the active address, preserve autosave an
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     page.on('dialog', (dialog) => void dialog.accept());
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     await page
       .getByRole('button', { name: 'Add Cc recipients', exact: true })

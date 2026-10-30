@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="referrer" content="no-referrer" />
     <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="Spindle syncs your IMAP mailboxes into one private, keyboard-first inbox."
+    />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <title>Spindle</title>
+    <title>Spindle · Every inbox, one fast stream</title>
     <!-- Mirrors applyTheme() in src/theme.ts before first paint. -->
     <script>
       try {
@@ -18,9 +22,268 @@
             : 'light';
       } catch {}
     </script>
+    <script type="module" src="/src/landing.ts"></script>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="#top">
+          <svg class="spindle-logo" width="34" height="34" aria-hidden="true"><use href="#spindle-mark" /></svg>
+          Spindle
+        </a>
+        <nav class="site-nav" aria-label="Sections">
+          <a href="#features">Features</a>
+          <a href="#keyboard">Keyboard</a>
+          <a href="#security">Security</a>
+          <a href="#install">Self-host</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <button type="button" class="icon-button" data-theme-toggle>
+          <span class="icon" data-icon="contrast" aria-hidden="true"></span>
+        </button>
+        <a class="pill filled" href="/inbox">Open app</a>
+      </div>
+    </header>
+
+    <main>
+      <section id="top" class="wrap hero">
+        <p class="hero-chip">
+          <span class="dots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          Your IMAP accounts in one stream
+        </p>
+        <h1>Every inbox, one fast stream.</h1>
+        <p class="lede">
+          Spindle syncs your mailboxes into one unified inbox you can drive from
+          the keyboard. Lists and search read mail that is already synced, so
+          they never wait on your provider.
+        </p>
+        <div class="actions">
+          <a class="pill filled large" href="/login?view=signup">
+            <span class="icon" data-icon="arrow_forward" aria-hidden="true"></span>Get started
+          </a>
+          <a class="pill outlined large" href="#install">
+            <span class="icon" data-icon="terminal" aria-hidden="true"></span>Self-host it
+          </a>
+        </div>
+      </section>
+
+      <section class="wrap wide preview-section" aria-label="Product preview">
+        <div class="preview-frame">
+          <div class="preview" aria-hidden="true">
+            <div class="preview-nav">
+              <span class="preview-compose"><span class="icon" data-icon="edit_note"></span>Compose</span>
+              <span class="on"><span class="icon" data-icon="inbox"></span>Unified inbox<b>12</b></span>
+              <span><span class="icon" data-icon="draft"></span>Local drafts</span>
+              <span><span class="icon" data-icon="outbox"></span>Outbox</span>
+              <small>Accounts</small>
+              <span><i class="dot a1"></i>Personal</span>
+              <span><i class="dot a2"></i>Work</span>
+              <span><i class="dot a3"></i>Side project</span>
+            </div>
+            <div class="preview-list">
+              <div class="preview-search"><span class="icon" data-icon="search"></span>Search all mail<kbd>/</kbd></div>
+              <div class="row unread sel"><b class="av a2s">RA</b><div><p><strong>Rosa Alvarez</strong><time>9:41</time></p><p><strong>Q4 roadmap review</strong></p><p><i class="dot a2"></i>Notes from Thursday are in the doc. Can you look before…</p></div></div>
+              <div class="row unread"><b class="av a1s">TN</b><div><p><strong>Tomás Novak</strong><time>8:12</time></p><p><strong>Dinner on Saturday?</strong></p><p><i class="dot a1"></i>We could try the new place on Pine. I'll book for…</p></div></div>
+              <div class="row"><b class="av a3s">BH</b><div><p>Build bot<time>Tue</time></p><p>Release 2.4 passed all checks</p><p><i class="dot a3"></i>All 412 checks passed on main. Artifacts are ready…</p></div></div>
+              <div class="row"><b class="av a4s">LK</b><div><p>Lena Kim<time>Mon</time></p><p>Photos from the trip</p><p><i class="dot a1"></i>Finally sorted them. The ones from the lake are…</p></div></div>
+            </div>
+            <div class="preview-reader">
+              <h2>Q4 roadmap review</h2>
+              <p class="meta"><b class="av a2s">RA</b><span><strong>Rosa Alvarez</strong><br />to you · Work</span></p>
+              <p>Hi,</p>
+              <p>Notes from Thursday are in the doc. Can you look before the planning meeting? The sync work is on track; search needs one more pass.</p>
+              <p>Thanks,<br />Rosa</p>
+              <div class="snack">Archived 1 conversation<span>Undo</span></div>
+            </div>
+          </div>
+        </div>
+        <p class="hints">
+          <span><kbd>J</kbd><kbd>K</kbd>move</span>
+          <span><kbd>E</kbd>archive</span>
+          <span><kbd>Z</kbd>undo</span>
+          <span><kbd>⌘K</kbd>commands</span>
+        </p>
+      </section>
+
+      <section class="wrap providers" aria-labelledby="providers-title">
+        <h2 id="providers-title">Works with the mail you already have</h2>
+        <ul>
+          <li><span class="icon" data-icon="dns" style="color: var(--a3)" aria-hidden="true"></span>Any IMAP server<small>TLS required</small></li>
+          <li><span class="icon" data-icon="bolt" style="color: var(--a2)" aria-hidden="true"></span>Fastmail<small>IMAP</small></li>
+          <li><span class="icon" data-icon="cloud" style="color: var(--a4)" aria-hidden="true"></span>iCloud Mail<small>IMAP</small></li>
+          <li><span class="icon" data-icon="alternate_email" style="color: var(--a1)" aria-hidden="true"></span>Yahoo<small>IMAP</small></li>
+          <li class="soon"><span class="icon" data-icon="mail" aria-hidden="true"></span>Gmail<small>Coming later</small></li>
+          <li class="soon"><span class="icon" data-icon="business_center" aria-hidden="true"></span>Microsoft 365<small>Coming later</small></li>
+        </ul>
+      </section>
+
+      <section id="features" class="wrap section" aria-labelledby="features-title">
+        <div class="section-head">
+          <p class="eyebrow">Features</p>
+          <h2 id="features-title">Built for clearing your mail, not just reading it.</h2>
+        </div>
+        <div class="feature-grid">
+          <article><span class="tile pc"><span class="icon" data-icon="bolt" aria-hidden="true"></span></span><h3>Instant, because it’s synced</h3><p>Message metadata is mirrored into Spindle in the background. Lists, conversations and search read local data, so you never wait on a provider.</p></article>
+          <article><span class="tile a2"><span class="icon" data-icon="stacks" aria-hidden="true"></span></span><h3>One unified stream</h3><p>Every connected account merges into one paginated inbox. Filter to a single account or folder when you need to.</p></article>
+          <article><span class="tile a3"><span class="icon" data-icon="undo" aria-hidden="true"></span></span><h3>Triage with a safety net</h3><p>Archive, trash, pin, mute, snooze and batch-select at full speed. Mail actions can be undone for five seconds.</p></article>
+          <article><span class="tile a4"><span class="icon" data-icon="edit_note" aria-hidden="true"></span></span><h3>Compose that does it right</h3><p>Rich text, drafts that sync to your provider, real reply threading, reply-all, formatted forwards, per-account signatures, Send later and a five-second cancel window.</p></article>
+          <article><span class="tile a1"><span class="icon" data-icon="notifications_active" aria-hidden="true"></span></span><h3>Live updates</h3><p>IMAP IDLE watches your inbox between regular checks, and changes stream to every open tab as soon as they are synced.</p></article>
+          <article><span class="tile sc"><span class="icon" data-icon="devices" aria-hidden="true"></span></span><h3>One app, every screen</h3><p>One responsive app with semantic controls, visible focus and keyboard access. There is no separate mobile site to fall behind.</p></article>
+        </div>
+      </section>
+
+      <section id="keyboard" class="wrap section split" aria-labelledby="keyboard-title">
+        <div class="section-head">
+          <p class="eyebrow">Keyboard-first triage</p>
+          <h2 id="keyboard-title">Get through a hundred emails without touching the mouse.</h2>
+          <p>Single-key shortcuts cover the work you do all day. Mail actions can be undone for five seconds, so you can move fast. Press <kbd>⌘K</kbd> to find any command.</p>
+        </div>
+        <ul class="key-grid">
+          <li><kbd>⌘K</kbd>Command palette</li>
+          <li><kbd>J</kbd>Next</li>
+          <li><kbd>K</kbd>Previous</li>
+          <li><kbd>O</kbd>Open</li>
+          <li><kbd>E</kbd>Archive</li>
+          <li><kbd>#</kbd>Trash</li>
+          <li><kbd>M</kbd>Read / unread</li>
+          <li><kbd>R</kbd>Reply</li>
+          <li><kbd>A</kbd>Reply all</li>
+          <li><kbd>C</kbd>Compose</li>
+          <li><kbd>/</kbd>Search</li>
+          <li><kbd>Z</kbd>Undo</li>
+        </ul>
+      </section>
+
+      <section id="security" class="wrap-outer" aria-labelledby="security-title">
+        <div class="inverse">
+          <div class="section-head">
+            <p class="eyebrow">Security &amp; privacy</p>
+            <h2 id="security-title">We treat every incoming email as hostile.</h2>
+            <p>Your mailboxes hold your whole life, so Spindle is built in layers. If one layer fails, the others still protect you.</p>
+          </div>
+          <div class="security-grid">
+            <div><span class="icon" data-icon="web_asset_off" aria-hidden="true"></span><h3>Isolated message rendering</h3><p>Email HTML is sanitized, then shown from a separate content origin that never receives your app cookies.</p></div>
+            <div><span class="icon" data-icon="shield" aria-hidden="true"></span><h3>Private image proxy</h3><p>Remote images are blocked by default. When you allow them, they load through Spindle’s proxy instead of from your browser.</p></div>
+            <div><span class="icon" data-icon="key" aria-hidden="true"></span><h3>Encrypted mail credentials</h3><p>IMAP and SMTP passwords are encrypted at rest with a versioned key ring kept apart from the database.</p></div>
+            <div><span class="icon" data-icon="lock" aria-hidden="true"></span><h3>TLS everywhere</h3><p>IMAP and SMTP must use implicit TLS or required STARTTLS. Spindle never sends a login in cleartext.</p></div>
+            <div><span class="icon" data-icon="verified_user" aria-hidden="true"></span><h3>Private by design</h3><p>Every mailbox belongs to exactly one person. There are no shared inboxes, and admins get no access to your mail.</p></div>
+            <div><span class="icon" data-icon="coronavirus" aria-hidden="true"></span><h3>Scanned attachments</h3><p>Files you send are checked by a private ClamAV scanner first. Failed or unavailable checks block sending.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="install" class="wrap section" aria-labelledby="install-title">
+        <div class="section-head">
+          <p class="eyebrow">Hosted or self-hosted</p>
+          <h2 id="install-title">Run it yourself, or let us run it for you.</h2>
+        </div>
+        <div class="install-grid">
+          <article class="outlined-card">
+            <span class="tile pc"><span class="icon" data-icon="cloud" aria-hidden="true"></span></span>
+            <h3>Hosted</h3>
+            <p>The hosted beta is invite-only. Use the address that received your invitation, verify it, then connect your accounts.</p>
+            <ul class="checks">
+              <li><span class="icon" data-icon="check" aria-hidden="true"></span>Verified email and password sign-in</li>
+              <li><span class="icon" data-icon="check" aria-hidden="true"></span>Private mailboxes, one owner each</li>
+              <li><span class="icon" data-icon="check" aria-hidden="true"></span>Public sign-up at full release</li>
+            </ul>
+            <a class="pill filled" href="/login?view=signup">Create an account</a>
+          </article>
+          <article class="tonal-card">
+            <div class="install-head">
+              <span class="tile a3"><span class="icon" data-icon="dns" aria-hidden="true"></span></span>
+              <h3>Self-host</h3>
+              <div class="install-tabs" role="tablist" aria-label="Install method">
+                <button type="button" role="tab" id="tab-docker" aria-selected="true" aria-controls="install-docker" data-install-tab="docker">Docker</button>
+                <button type="button" role="tab" id="tab-node" aria-selected="false" aria-controls="install-node" data-install-tab="node" tabindex="-1">Node</button>
+              </div>
+            </div>
+            <div class="code">
+              <button type="button" class="copy" data-copy>
+                <span class="icon" data-icon="content_copy" aria-hidden="true"></span><span data-copy-label>Copy</span>
+              </button>
+              <pre id="install-docker" role="tabpanel" aria-labelledby="tab-docker"><code><span class="comment"># 1. Get the source and set your secrets</span>
+git clone https://github.com/staplett/spindle
+cd spindle &amp;&amp; cp .env.example .env   <span class="comment"># set AUTH_SECRET</span>
+
+<span class="comment"># 2. Start Postgres, Mailpit and ClamAV in Docker</span>
+npm ci &amp;&amp; npm run db:up
+npm run db:migrate &amp;&amp; npm run dev</code></pre>
+              <pre id="install-node" role="tabpanel" aria-labelledby="tab-node" hidden><code><span class="comment"># Bring your own Postgres 17 (Node 24)</span>
+git clone https://github.com/staplett/spindle
+cd spindle &amp;&amp; npm ci
+cp .env.example .env   <span class="comment"># set DATABASE_URL and AUTH_SECRET</span>
+npm run db:migrate
+npm run dev</code></pre>
+            </div>
+            <p>Runs on Postgres. Packaged releases and the full guide for OAuth apps, the reverse proxy, TLS and backups are still in progress.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="faq" class="wrap narrow section" aria-labelledby="faq-title">
+        <h2 id="faq-title">Questions</h2>
+        <details name="faq" open>
+          <summary>Does Spindle store a copy of my email?</summary>
+          <p>Yes. Spindle keeps message headers, flags and folders in its own database so every view opens instantly. Message bodies and attachments are downloaded when you first open them, then cached within storage limits. Disconnecting an account deletes its local copy and never deletes mail from your provider.</p>
+        </details>
+        <details name="faq">
+          <summary>Which providers are supported?</summary>
+          <p>Any IMAP/SMTP server that supports TLS, including Fastmail, iCloud and Yahoo with an app password. Native Gmail and Microsoft 365 connections are planned but not available yet.</p>
+        </details>
+        <details name="faq">
+          <summary>How do new messages arrive?</summary>
+          <p>Spindle watches your inbox with IMAP IDLE where the server supports it and checks every account about once a minute. Synced changes stream to your open tabs straight away.</p>
+        </details>
+        <details name="faq">
+          <summary>Can I undo an action?</summary>
+          <p>Read, archive, trash, move and restore actions show an Undo option for five seconds. Sending also waits five seconds, so you can cancel a message before it leaves.</p>
+        </details>
+        <details name="faq">
+          <summary>What does self-hosting need?</summary>
+          <p>Node 24, Postgres and an SMTP relay for sign-in email. Running the optional ClamAV service enables outgoing attachments.</p>
+        </details>
+        <details name="faq">
+          <summary>Does it work on my phone?</summary>
+          <p>Yes. The same app adapts to your screen, from a phone to an ultrawide monitor.</p>
+        </details>
+      </section>
+
+      <section class="wrap-outer" aria-labelledby="cta-title">
+        <div class="cta">
+          <h2 id="cta-title">Spend less time in your inbox.</h2>
+          <div class="actions">
+            <a class="pill filled large" href="/login?view=signup">Get started</a>
+            <a class="pill outlined large" href="#install">Read the setup guide</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="wrap site-footer">
+      <span class="brand">
+        <svg class="spindle-logo" width="28" height="28" aria-hidden="true"><use href="#spindle-mark" /></svg>
+        Spindle
+      </span>
+      <nav class="footer-links" aria-label="Footer">
+        <span aria-disabled="true" title="Coming soon">Privacy</span>
+        <span aria-disabled="true" title="Coming soon">Terms</span>
+        <a href="#security">Security</a>
+        <a href="#install">Docs</a>
+      </nav>
+    </footer>
+
+    <!-- Same geometry as SpindleLogo in src/brand.tsx. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <mask id="spindle-s" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff" /><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="#000" stroke="#000" stroke-width="3.4" stroke-linejoin="round" /><rect x="0" y="17" width="48" height="14" fill="#fff" /></g></mask>
+        <mask id="spindle-m" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff" /><path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" stroke="#000" stroke-width="8" stroke-linecap="round" /></mask>
+        <symbol id="spindle-mark" viewBox="0 0 48 48">
+          <g mask="url(#spindle-s)"><path d="M33 16.5C34 13.5 32.5 10.5 29.5 9.3C27.8 8.6 26 8.4 24 8.4C18.5 8.4 15 11.3 15 15.5C15 19.9 19.4 21.6 24.2 23.4C29.6 25.4 34.8 27.6 34.8 33C34.8 37 30.8 39.6 25 39.6C20 39.6 14.6 39.2 10 37.8" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" fill="none" stroke="currentColor" stroke-width="4.6" stroke-linecap="round" /></g>
+          <g mask="url(#spindle-m)"><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round" /><path d="M15.6 43.5L27 45.3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></g></g>
+          <path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" fill="none" stroke="currentColor" stroke-width="4.6" stroke-linecap="butt" />
+        </symbol>
+      </defs>
+    </svg>
   </body>
 </html>

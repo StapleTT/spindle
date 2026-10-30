@@ -108,7 +108,7 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
       );
       await processOutgoing(pool, keys, owner.id, account);
     };
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page
       .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();

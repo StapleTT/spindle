@@ -12,7 +12,7 @@ type View = 'login' | 'signup' | 'forgot' | 'reset';
 const params = new URLSearchParams(window.location.search);
 const resetToken = params.get('token');
 const initialView = params.get('view');
-const callbackURL = `${window.location.origin}/?verified=1`;
+const callbackURL = `${window.location.origin}/login?verified=1`;
 // Keep recovery credentials out of browser history and subsequent referrers.
 if (params.has('token'))
   window.history.replaceState(null, '', window.location.pathname);
@@ -40,6 +40,18 @@ function App() {
   );
   const [error, setError] = useState(false);
   const feedback = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    if (isPending) return;
+    const path = session && view !== 'reset' ? '/inbox' : '/login';
+    window.history.replaceState(
+      null,
+      '',
+      path +
+        (path === '/login' ? window.location.search : '') +
+        window.location.hash,
+    );
+  }, [session, isPending, view]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -72,6 +84,11 @@ function App() {
     setConfirmation('');
     setMessage('');
     setError(false);
+    window.history.replaceState(
+      null,
+      '',
+      `/login${next === 'login' ? '' : `?view=${next}`}${window.location.hash}`,
+    );
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -129,7 +146,7 @@ function App() {
       } else if (view === 'forgot') {
         const result = await authClient.requestPasswordReset({
           email: address,
-          redirectTo: `${window.location.origin}/?view=reset`,
+          redirectTo: `${window.location.origin}/login?view=reset`,
         });
         if (result.error)
           notify(
@@ -151,6 +168,7 @@ function App() {
             true,
           );
         else {
+          await refetch();
           navigate('login');
           notify('Password updated. Sign in with your new password.');
         }
@@ -227,7 +245,7 @@ function App() {
       {message}
     </p>
   );
-  if (session)
+  if (session && view !== 'reset')
     return (
       <>
         <h1 className="visually-hidden">Spindle</h1>
@@ -274,7 +292,7 @@ function App() {
           aria-busy={busy}
           aria-labelledby="auth-title"
         >
-          <a className="auth-brand" href="/landing/" title="Spindle home page">
+          <a className="auth-brand" href="/" title="Spindle home page">
             <SpindleLogo size={38} />
             Spindle
           </a>
@@ -419,7 +437,7 @@ function App() {
                 Request another reset link
               </button>
             )}
-            <a className="home-link" href="/landing/">
+            <a className="home-link" href="/">
               What is Spindle? Visit the home page
             </a>
           </nav>

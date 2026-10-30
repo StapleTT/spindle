@@ -294,3 +294,12 @@ Map the export's OKLCH tokens once into `apps/web/src/tokens.css` and skin exist
 Follow-up the same day (user request): the signed-in app was rebuilt to the prototype's structure rather than skinned. Existing feature components keep their logic and are moved or portalled into the drawer, top bar, panes, Settings, compose sheet and snackbars. The user chose design visuals with true copy, and **disabled "Coming soon" controls** for prototype features that do not exist (Gmail/Microsoft accounts, passkeys, two-step verification, Needs reply, Newsletters). Browser tests were updated where names or navigation changed (All inboxes, Drafts, Settings tabs, Search options).
 
 Shipped copy describes current capabilities: claims in the export about Gmail/Microsoft, passkeys, SQLite, KMS, audit logs, Docker packages, unavailable shortcuts and fabricated email details were rewritten. Mail HTML keeps its isolated white canvas in both themes. See [design](design.md) for tokens, rules, deviations, remaining layout work and proof.
+
+
+## D028 — public home, login and inbox paths
+
+Status: confirmed by the user on 2026-10-30.
+
+Serve the landing page at `/`, account access at `/login`, and private mail at `/inbox` on the same origin. Public home remains visible when signed in. Session state guards the app URLs; unauthenticated inbox visits retain their mail fragment through sign-in, sign-in ends at `/inbox`, and sign-out/revocation returns to `/login`. Explicit password reset remains accessible under `/login`.
+
+Update registration/invitation/verification/recovery links to `/login`. Preserve earlier root auth queries/mail bookmarks and redirect `/landing/` home. Keep `APP_URL` as an origin, `/api/auth` and all ownership/cookie checks unchanged, and retain the separate content hostname. Native Vite HTML entries share the current auth/mail code without a new router dependency; static hosting must map the two clean URLs to `login.html`/`inbox.html`. See [design routes](design.md#reaching-the-landing-page) and [hosting](network-access.md#static-build-routing). This supersedes the open landing-origin choice in D027.

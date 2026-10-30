@@ -128,7 +128,7 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
       tab.on('dialog', (dialog) => void dialog.accept());
     };
     watch(page);
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page
       .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();
@@ -291,7 +291,7 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
       (await body.textContent()) ?? '',
       /Ada|Updated signature/,
     );
-    await page.goto(`${config.appUrl}/#account=${second}`);
+    await page.goto(`${config.appUrl}/inbox#account=${second}`);
     await page
       .getByRole('heading', { name: 'Second account inbox', exact: true })
       .waitFor();

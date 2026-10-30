@@ -103,7 +103,7 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
       await accountsReady;
       await route.continue();
     });
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page
       .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();

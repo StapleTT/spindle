@@ -25,9 +25,9 @@ Keep an existing `.env` rather than overwriting it. The example credentials are 
 
 Replace `you@example.com` with the email you want to use. `--admin` explicitly designates the initial admin; the first person to register does not automatically become admin. For subsequent users, omit `--admin`.
 
-With the example Mailpit settings, open **http://127.0.0.1:8025** to read captured invitation, verification, and recovery emails. Follow the invitation to **http://127.0.0.1:5173**, create your account, open the verification email, and sign in. Use `127.0.0.1` consistently: it must match `APP_URL` for cookies and origin checks. For real delivery from `noreply@spindle.staplett.xyz`, see [Resend setup and receipt checks](docs/resend.md).
+With the example Mailpit settings, open **http://127.0.0.1:8025** to read captured invitation, verification, and recovery emails. The landing page is **http://127.0.0.1:5173/**. Follow the invitation to **http://127.0.0.1:5173/login**, create your account, open the verification email, and sign in. Use `127.0.0.1` consistently: it must match `APP_URL` for cookies and origin checks. For real delivery from `noreply@spindle.staplett.xyz`, see [Resend setup and receipt checks](docs/resend.md).
 
-`npm run dev` starts Vite, the Fastify API, and a separate pg-boss worker. Vite forwards `/api` to the API, so the browser uses one origin. Forms use temporary accessible styling pending Claude Design.
+`npm run dev` starts Vite, the Fastify API, and a separate pg-boss worker. Vite forwards `/api` to the API, so the browser uses one origin. The public home page is `/`, account access is `/login`, and signed-in mail is `/inbox`.
 
 Postgres listens on `127.0.0.1:15432`, the API on `127.0.0.1:3000`, Vite on `127.0.0.1:5173`, and Mailpit SMTP on `127.0.0.1:1025`. The worker owns pg-boss's queue schema and IMAP synchronization; `npm run db:migrate` applies versioned application migrations. After signing in, choose **Connect IMAP account**. See [IMAP setup, coverage and recovery](docs/imap.md).
 

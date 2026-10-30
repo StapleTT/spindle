@@ -179,7 +179,7 @@ test('attachments survive autosave, reload and conflict copies; checks gate send
       );
       await processOutgoing(pool, keys, owner.id, account);
     };
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page.getByRole('button', { name: 'Compose', exact: true }).click();
     // A single account is preselected, so the From row stays hidden.
     await page.getByLabel('To', { exact: true }).waitFor();

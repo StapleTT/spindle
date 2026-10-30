@@ -134,7 +134,7 @@ test('conversation controls persist, update private tabs, preserve focus and rec
     for (const tab of [page, second]) {
       tab.setDefaultTimeout(12000);
       tab.on('pageerror', (e) => errors.push(e.message));
-      await tab.goto(config.appUrl);
+      await tab.goto(`${config.appUrl}/inbox`);
       await tab.locator(`[data-message-row="${root}"]`).waitFor();
     }
     const open = async () => {

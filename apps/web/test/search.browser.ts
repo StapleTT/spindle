@@ -174,7 +174,7 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
       }
       assert.fail('Expected search/triage state was not reached');
     }
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await rows.first().waitFor();
     await t.test(
       'search persists in URL, saved views restore filters, and typing/IME/modifiers cannot mutate mail',

@@ -218,7 +218,9 @@ test('conversation timeline preserves scoped navigation, reply identity, message
       assert.fail('Conversation did not reach expected state');
     }
     async function openRoot() {
-      await page.goto(`${config.appUrl}/#q=subject%3Aoriginal&message=${root}`);
+      await page.goto(
+        `${config.appUrl}/inbox#q=subject%3Aoriginal&message=${root}`,
+      );
       await title.filter({ hasText: 'Project original' }).waitFor();
       await timeline.getByRole('listitem').first().waitFor();
     }
@@ -466,7 +468,7 @@ test('conversation timeline preserves scoped navigation, reply identity, message
             await route.fulfill({ response }).catch(() => {});
           },
         );
-        await page.goto(`${config.appUrl}/#message=${root}`);
+        await page.goto(`${config.appUrl}/inbox#message=${root}`);
         await pending;
         await search.fill('subject:other');
         await search.press('Enter');

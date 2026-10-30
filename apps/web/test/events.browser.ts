@@ -171,7 +171,7 @@ test('SSE updates private tabs, preserves edits and focus, and recovers API rest
       const page = await context.newPage();
       page.setDefaultTimeout(12000);
       page.on('pageerror', (error) => errors.push(error.message));
-      await page.goto(config.appUrl);
+      await page.goto(`${config.appUrl}/inbox`);
       await page.waitForFunction(() => (window as DebugWindow).mailResets);
       return page;
     }

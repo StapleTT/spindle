@@ -78,7 +78,15 @@ test('browser signup, verification, sessions, recovery and phone layout', {
     };
 
     await page.goto(config.appUrl);
+    await page.getByRole('link', { name: 'Open app', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, '/');
+    assert.equal(
+      await page.getByRole('heading', { name: 'Sign in', exact: true }).count(),
+      0,
+    );
+    await page.getByRole('link', { name: 'Open app', exact: true }).click();
     await heading('Sign in');
+    await page.waitForURL((url) => url.pathname === '/login');
     await click('Create an account');
     await page.getByLabel('Email address').fill('browser@example.test');
     await page.getByLabel('Password', { exact: true }).fill(password);
@@ -99,6 +107,7 @@ test('browser signup, verification, sessions, recovery and phone layout', {
       .waitFor();
     await page.goto(link('Verify'));
     await heading('Sign in');
+    assert.equal(new URL(page.url()).pathname, '/login');
     await page
       .getByRole('status')
       .filter({ hasText: 'Email verified' })
@@ -107,6 +116,7 @@ test('browser signup, verification, sessions, recovery and phone layout', {
     await page.getByLabel('Password', { exact: true }).fill(password);
     await click('Sign in');
     await heading('You’re signed in');
+    await page.waitForURL((url) => url.pathname === '/inbox');
     assert.equal(
       (await page.request.get(`${config.appUrl}/api/me`)).status(),
       200,
@@ -114,9 +124,22 @@ test('browser signup, verification, sessions, recovery and phone layout', {
     await page.reload();
     await heading('You’re signed in');
 
+    await page.goto(config.appUrl);
+    await page.getByRole('link', { name: 'Open app', exact: true }).waitFor();
+    assert.equal(new URL(page.url()).pathname, '/');
+    await page.goto(`${config.appUrl}/login`);
+    await heading('You’re signed in');
+    await page.waitForURL((url) => url.pathname === '/inbox');
+
+    await page.goto(`${config.appUrl}/#view=drafts`);
+    await heading('You’re signed in');
+    await page.waitForURL(
+      (url) => url.pathname === '/inbox' && url.hash === '#view=drafts',
+    );
+
     const recoveryContext = await browser.newContext();
     const recovery = await recoveryContext.newPage();
-    await recovery.goto(config.appUrl);
+    await recovery.goto(`${config.appUrl}/login`);
     await recovery.getByRole('button', { name: 'Forgot password?' }).click();
     await recovery.getByLabel('Email address').fill('browser@example.test');
     await recovery.getByRole('button', { name: 'Send reset link' }).click();
@@ -129,6 +152,7 @@ test('browser signup, verification, sessions, recovery and phone layout', {
       .getByRole('heading', { name: 'Choose a new password' })
       .waitFor();
     assert.ok(!recovery.url().includes('token='));
+    assert.equal(new URL(recovery.url()).pathname, '/login');
     await recovery.getByLabel('Password', { exact: true }).fill(changed);
     await recovery.getByLabel('Confirm password').fill(changed);
     await recovery.getByRole('button', { name: 'Update password' }).click();
@@ -137,6 +161,7 @@ test('browser signup, verification, sessions, recovery and phone layout', {
       .waitFor();
     await page.reload();
     await heading('Sign in');
+    await page.waitForURL((url) => url.pathname === '/login');
     assert.equal(
       (await page.request.get(`${config.appUrl}/api/me`)).status(),
       401,
@@ -151,12 +176,26 @@ test('browser signup, verification, sessions, recovery and phone layout', {
       .click();
     await click('Sign out');
     await heading('Sign in');
+    await page.waitForURL((url) => url.pathname === '/login');
     assert.equal(
       await page
         .getByRole('link', { name: 'What is Spindle? Visit the home page' })
         .getAttribute('href'),
-      '/landing/',
+      '/',
     );
+    await page.goto(`${config.appUrl}/landing/`);
+    await page.waitForURL((url) => url.pathname === '/');
+    await page.goto(
+      `${config.appUrl}/?view=signup&email=legacy%40example.test`,
+    );
+    await heading('Create your account');
+    assert.equal(new URL(page.url()).pathname, '/login');
+    assert.equal(
+      await page.getByLabel('Email address').inputValue(),
+      'legacy@example.test',
+    );
+    await page.goto(`${config.appUrl}/login`);
+    await heading('Sign in');
     await page.setViewportSize({ width: 375, height: 812 });
     await click('Create an account');
     await heading('Create your account');

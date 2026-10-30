@@ -150,7 +150,7 @@ test('provider drafts show status, reconcile clean editors, preserve recovery an
       tab.on('dialog', (dialog) => void dialog.accept());
     };
     watch(page);
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page
       .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();

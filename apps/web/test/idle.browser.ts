@@ -120,7 +120,7 @@ test('IDLE-triggered inbox arrival appears automatically and cached mail survive
     const page = await context.newPage();
     page.setDefaultTimeout(18000);
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page
       .getByRole('link', { name: 'Before notifications', exact: true })
       .waitFor();

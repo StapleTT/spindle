@@ -31,6 +31,40 @@ import '@fontsource-variable/jetbrains-mono';
 import './landing.css';
 import { nextTheme, readTheme, saveTheme, watchTheme } from './theme.js';
 
+// Preserve emailed auth links and mail bookmarks issued before the app moved off `/`.
+const query = new URLSearchParams(window.location.search);
+const fragment = new URLSearchParams(window.location.hash.slice(1));
+const authLink = ['view', 'token', 'verified', 'error', 'email'].some((key) =>
+  query.has(key),
+);
+const mailLink = [
+  'q',
+  'account',
+  'mailbox',
+  'cursor',
+  'message',
+  'conversation',
+  'draft',
+  'view',
+  'schedule',
+].some((key) => fragment.has(key));
+const path = window.location.pathname;
+if (
+  authLink ||
+  mailLink ||
+  ['/login/', '/inbox/', '/landing', '/landing/'].includes(path)
+) {
+  const target =
+    path.startsWith('/login') || authLink
+      ? '/login'
+      : path.startsWith('/inbox') || mailLink
+        ? '/inbox'
+        : '/';
+  window.location.replace(
+    target + window.location.search + window.location.hash,
+  );
+}
+
 // Only icons imported here are bundled; add one before using a new data-icon.
 const icons: Record<string, string> = {
   alternate_email: alternateEmail,

@@ -99,7 +99,7 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
     page.setDefaultTimeout(20000);
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page.getByLabel('Email address').fill('mail-browser@example.test');
     await page.getByLabel('Password', { exact: true }).fill(password);
     await page.getByRole('button', { name: 'Sign in', exact: true }).click();

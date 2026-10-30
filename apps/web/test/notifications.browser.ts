@@ -189,7 +189,7 @@ test('opt-in open-app notifications handle privacy, tabs, permissions and page/s
       await settings(p).locator('summary').click();
     }
     async function opened(p = page) {
-      await p.goto(config.appUrl);
+      await p.goto(`${config.appUrl}/inbox`);
       await openSettings(p);
     }
     await opened();

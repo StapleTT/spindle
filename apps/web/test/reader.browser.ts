@@ -179,7 +179,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       if (request.url().startsWith('https://images.example.test/'))
         directImages.push(request.url());
     });
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page
       .getByRole('link', { name: 'Reader message 50', exact: true })
       .click();

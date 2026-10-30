@@ -56,7 +56,7 @@ try {
       .values(values)
       .onConflictDoUpdate({ target: invites.email, set: values });
   });
-  const link = new URL(config.appUrl);
+  const link = new URL('/login', config.appUrl);
   link.searchParams.set('view', 'signup');
   link.searchParams.set('email', email);
   await sendAuthEmail(

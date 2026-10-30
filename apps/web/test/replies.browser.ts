@@ -212,7 +212,7 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
       );
       await processOutgoing(pool, keys, owner.id, account);
     };
-    await page.goto(config.appUrl);
+    await page.goto(`${config.appUrl}/inbox`);
     await page
       .getByRole('heading', { name: 'All inboxes', exact: true })
       .waitFor();

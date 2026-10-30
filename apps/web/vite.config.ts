@@ -14,7 +14,9 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         input: {
-          app: fileURLToPath(new URL('index.html', import.meta.url)),
+          home: fileURLToPath(new URL('index.html', import.meta.url)),
+          login: fileURLToPath(new URL('login.html', import.meta.url)),
+          inbox: fileURLToPath(new URL('inbox.html', import.meta.url)),
           landing: fileURLToPath(
             new URL('landing/index.html', import.meta.url),
           ),
