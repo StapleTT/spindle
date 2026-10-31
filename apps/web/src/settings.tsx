@@ -1,10 +1,9 @@
 import { type FormEvent, lazy, Suspense, useState } from 'react';
 import { AccountColorPicker } from './account-color-picker.js';
+import { AccountOrderHandle } from './account-order-handle.js';
 import { accountColorStyle, Icon, initials, ThemeChoice } from './brand.js';
 import type { Signature } from './draft-api.js';
 import {
-  arrowDownward,
-  arrowUpward,
   businessCenter,
   dns,
   keyboard,
@@ -111,7 +110,6 @@ export function Settings({
     }
   });
   const [busy, setBusy] = useState(false);
-  const [orderStatus, setOrderStatus] = useState('');
   const [orderError, setOrderError] = useState('');
   const [editing, setEditing] = useState<Account | null>(null);
   const [showConnect, setShowConnect] = useState(false);
@@ -121,17 +119,9 @@ export function Settings({
     null,
   );
 
-  async function moveAccount(index: number, direction: -1 | 1) {
-    const target = index + direction;
-    const moved = accounts[index];
-    const adjacent = accounts[target];
-    if (busy || !moved || !adjacent) return;
-    const expectedAccountIds = accounts.map((account) => account.id);
-    const accountIds = [...expectedAccountIds];
-    accountIds[index] = adjacent.id;
-    accountIds[target] = moved.id;
+  async function saveOrder(accountIds: string[], expectedAccountIds: string[]) {
+    if (busy) return;
     setBusy(true);
-    setOrderStatus('Saving account order…');
     setOrderError('');
     try {
       const result = await api<{ accountIds: string[] }>('accounts/order', {
@@ -139,11 +129,7 @@ export function Settings({
         body: JSON.stringify({ accountIds, expectedAccountIds }),
       });
       onOrder(result.accountIds);
-      setOrderStatus(
-        `${moved.name} moved to position ${target + 1} of ${accounts.length}.`,
-      );
     } catch (error) {
-      setOrderStatus('');
       setOrderError(
         error instanceof Error
           ? error.message
@@ -270,23 +256,27 @@ export function Settings({
               </p>
             )}
             {accounts.length > 1 && (
-              <p className="muted account-order-help">
-                Use the arrows to reorder accounts. Your order is saved across
-                devices.
+              <p id="account-order-instructions" className="visually-hidden">
+                Drag the handle to reorder. With a keyboard, use the Up and Down
+                arrow keys.
               </p>
             )}
-            {accounts.length > 1 && <p role="status">{orderStatus}</p>}
             {orderError && (
               <p role="alert" className="error">
                 {orderError}
               </p>
             )}
             {accounts.length > 0 && (
-              <ul className="settings-list" aria-label="Connected accounts">
+              <ul
+                className="settings-list"
+                aria-label="Connected accounts"
+                aria-busy={busy}
+              >
                 {accounts.map((item, index) => (
                   <li
                     key={item.id}
                     className="account-row"
+                    data-account-id={item.id}
                     style={accountColorStyle(item.color, index)}
                   >
                     <span className="avatar" aria-hidden="true">
@@ -356,28 +346,13 @@ export function Settings({
                       </div>
                     </div>
                     {accounts.length > 1 && (
-                      <div className="account-order-buttons">
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={`Move ${item.name} up`}
-                          title={`Move ${item.name} up`}
-                          aria-disabled={busy || index === 0}
-                          onClick={() => void moveAccount(index, -1)}
-                        >
-                          <Icon src={arrowUpward} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          aria-label={`Move ${item.name} down`}
-                          title={`Move ${item.name} down`}
-                          aria-disabled={busy || index === accounts.length - 1}
-                          onClick={() => void moveAccount(index, 1)}
-                        >
-                          <Icon src={arrowDownward} />
-                        </button>
-                      </div>
+                      <AccountOrderHandle
+                        id={item.id}
+                        name={item.name}
+                        accountIds={accounts.map((account) => account.id)}
+                        disabled={busy}
+                        onOrder={saveOrder}
+                      />
                     )}
                   </li>
                 ))}

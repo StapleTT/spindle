@@ -1604,17 +1604,29 @@ label.avatar:has(:focus-visible) {
   width: 44px;
   height: 44px;
 }
-.account-order-help {
-  margin-bottom: 12px;
+.account-drag-handle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
 }
-.account-order-buttons {
-  display: flex;
-  flex-direction: column;
-  flex: none;
+.account-drag-handle[data-dragging] {
+  cursor: grabbing;
 }
-.account-order-buttons [aria-disabled="true"] {
+.account-drag-handle[aria-disabled="true"] {
   opacity: 0.4;
   cursor: default;
+}
+.account-row:has(.account-drag-handle[data-dragging]) {
+  background: var(--sc);
+}
+.account-drop-marker {
+  position: fixed;
+  z-index: 100;
+  height: 3px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: var(--primary);
+  pointer-events: none;
 }
 .account-row-text {
   flex: 1;

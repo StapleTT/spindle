@@ -581,7 +581,7 @@ test('settings expose honest controls and a custom color picker that persists an
       },
     );
     await t.test(
-      'account arrows save across tabs and devices, preserve focus and composer choice, and expose failures',
+      'account handles drag with mouse and touch, retain keyboard access, save across tabs and expose failures without success notices',
       async () => {
         await pool.query(
           "DELETE FROM mail_request_limits WHERE user_id=$1 AND action IN ('read','write')",
@@ -623,19 +623,14 @@ test('settings expose honest controls and a custom color picker that persists an
           'Project mail',
         ]);
         assert.equal(
-          await page
-            .getByRole('button', { name: 'Move Personal mail up', exact: true })
-            .getAttribute('aria-disabled'),
-          'true',
+          await page.getByRole('button', { name: /^Reorder / }).count(),
+          3,
         );
         assert.equal(
           await page
-            .getByRole('button', {
-              name: 'Move Project mail down',
-              exact: true,
-            })
-            .getAttribute('aria-disabled'),
-          'true',
+            .getByRole('button', { name: /^Move .* (up|down)$/ })
+            .count(),
+          0,
         );
         await page.route('**/api/mail/accounts/order', (route) =>
           route.fulfill({
@@ -645,8 +640,8 @@ test('settings expose honest controls and a custom color picker that persists an
           }),
         );
         await page
-          .getByRole('button', { name: 'Move Project mail up', exact: true })
-          .click();
+          .getByRole('button', { name: 'Reorder Project mail', exact: true })
+          .press('ArrowUp');
         await page
           .getByRole('alert')
           .filter({ hasText: 'Synthetic order save failure.' })
@@ -657,12 +652,42 @@ test('settings expose honest controls and a custom color picker that persists an
           'Project mail',
         ]);
         await page.unroute('**/api/mail/accounts/order');
-        const up = page.getByRole('button', {
-          name: 'Move Project mail up',
+        const handle = page.getByRole('button', {
+          name: 'Reorder Project mail',
           exact: true,
         });
-        await up.focus();
-        await up.press('Enter');
+        const source = await handle.boundingBox();
+        const destination = await page
+          .locator('.account-row')
+          .filter({ hasText: 'Work mail' })
+          .boundingBox();
+        assert.ok(source && destination);
+        const start = {
+          x: source.x + source.width / 2,
+          y: source.y + source.height / 2,
+        };
+        const end = { x: start.x, y: destination.y + 20 };
+        let saves = 0;
+        page.on('request', (request) => {
+          if (
+            request.method() === 'PATCH' &&
+            request.url().endsWith('/api/mail/accounts/order')
+          )
+            saves++;
+        });
+        // An abandoned gesture must never persist an order.
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(end.x, end.y, { steps: 8 });
+        await page.locator('.account-drop-marker').waitFor();
+        await page.keyboard.press('Escape');
+        await page.mouse.up();
+        assert.equal(saves, 0);
+        await page.mouse.move(start.x, start.y);
+        await page.mouse.down();
+        await page.mouse.move(end.x, end.y, { steps: 8 });
+        await page.locator('.account-drop-marker').waitFor();
+        await page.mouse.up();
         await page.waitForFunction(
           (selector) =>
             document.querySelectorAll(selector)[1]?.textContent ===
@@ -670,8 +695,30 @@ test('settings expose honest controls and a custom color picker that persists an
           listNames,
         );
         assert.equal(
-          await up.evaluate((node) => document.activeElement === node),
+          await handle.evaluate((node) => document.activeElement === node),
           true,
+        );
+        assert.equal(saves, 1);
+        assert.equal(await page.getByText(/moved to position/).count(), 0);
+        // Reordering the focused DOM row itself must also retain keyboard focus.
+        await handle.press('ArrowDown');
+        await page.waitForFunction(
+          (selector) =>
+            document.querySelectorAll(selector)[2]?.textContent ===
+            'Project mail',
+          listNames,
+        );
+        await page.waitForFunction(
+          () =>
+            document.activeElement?.getAttribute('aria-label') ===
+            'Reorder Project mail',
+        );
+        await handle.press('ArrowUp');
+        await page.waitForFunction(
+          (selector) =>
+            document.querySelectorAll(selector)[1]?.textContent ===
+            'Project mail',
+          listNames,
         );
         await second.goto(`${config.appUrl}/inbox`);
         await second.waitForFunction(
@@ -708,10 +755,41 @@ test('settings expose honest controls and a custom color picker that persists an
           const phone = await mobile.newPage();
           await phone.goto(`${config.appUrl}/inbox#view=settings`);
           const move = phone.getByRole('button', {
-            name: 'Move Project mail up',
+            name: 'Reorder Project mail',
             exact: true,
           });
-          await move.tap();
+          await move.scrollIntoViewIfNeeded();
+          const grip = await move.boundingBox();
+          const scroller = await phone.locator('.settings-body').boundingBox();
+          assert.ok(grip && scroller);
+          const touch = await mobile.newCDPSession(phone);
+          const x = grip.x + grip.width / 2;
+          await touch.send('Input.dispatchTouchEvent', {
+            type: 'touchStart',
+            touchPoints: [{ x, y: grip.y + grip.height / 2 }],
+          });
+          await touch.send('Input.dispatchTouchEvent', {
+            type: 'touchMove',
+            touchPoints: [{ x, y: scroller.y + 12 }],
+          });
+          await phone.waitForFunction(
+            () =>
+              (document.querySelector('.settings-body')?.scrollTop ?? 1) <= 1,
+          );
+          const first = await phone
+            .locator('.account-row')
+            .first()
+            .boundingBox();
+          assert.ok(first);
+          await touch.send('Input.dispatchTouchEvent', {
+            type: 'touchMove',
+            touchPoints: [{ x, y: first.y + 12 }],
+          });
+          await phone.locator('.account-drop-marker').waitFor();
+          await touch.send('Input.dispatchTouchEvent', {
+            type: 'touchEnd',
+            touchPoints: [],
+          });
           await phone.waitForFunction(
             (selector) =>
               document.querySelectorAll(selector)[0]?.textContent ===
@@ -748,6 +826,7 @@ test('settings expose honest controls and a custom color picker that persists an
             'Personal mail',
             'Work mail',
           ]);
+          assert.equal(await phone.getByText(/moved to position/).count(), 0);
           assert.deepEqual(errors, []);
         } finally {
           await mobile.close();
