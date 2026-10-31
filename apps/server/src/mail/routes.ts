@@ -38,6 +38,13 @@ declare module 'fastify' {
 }
 
 const uuid = { type: 'string', format: 'uuid' };
+const accountOrderIds = {
+  type: 'array',
+  minItems: 1,
+  maxItems: 5,
+  uniqueItems: true,
+  items: uuid,
+};
 const accountParams = {
   type: 'object',
   required: ['id'],
@@ -157,11 +164,69 @@ export async function registerMailRoutes(
         (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS sender,
         (SELECT display_name FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "senderName",
         (SELECT count(*)::int FROM mailboxes b WHERE b.user_id=$1 AND b.account_id=a.id AND NOT b.initial_complete) AS "foldersRemaining"
-       FROM mail_accounts a WHERE user_id=$1 ORDER BY created_at,id`,
+       FROM mail_accounts a WHERE user_id=$1 ORDER BY sort_order NULLS LAST,created_at,id`,
         [request.mailUser],
       )
     ).rows,
   }));
+
+  app.patch<{ Body: { accountIds: string[]; expectedAccountIds: string[] } }>(
+    '/api/mail/accounts/order',
+    {
+      bodyLimit: 1024,
+      schema: {
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['accountIds', 'expectedAccountIds'],
+          properties: {
+            accountIds: accountOrderIds,
+            expectedAccountIds: accountOrderIds,
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { accountIds, expectedAccountIds } = request.body;
+      const saved = await transaction(pool, async (db) => {
+        // Match connection's owner-first lock order, then fence disconnects.
+        await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [
+          request.mailUser,
+        ]);
+        const { rows } = await db.query<{ id: string }>(
+          `SELECT id FROM mail_accounts WHERE user_id=$1
+           ORDER BY sort_order NULLS LAST,created_at,id FOR UPDATE`,
+          [request.mailUser],
+        );
+        if (
+          rows.length !== accountIds.length ||
+          !rows.every((row) => accountIds.includes(row.id))
+        )
+          return false;
+        // A replay after a lost response is already satisfied.
+        if (rows.every((row, index) => row.id === accountIds[index]))
+          return true;
+        if (
+          rows.length !== expectedAccountIds.length ||
+          !rows.every((row, index) => row.id === expectedAccountIds[index])
+        )
+          return false;
+        await db.query(
+          `UPDATE mail_accounts a SET sort_order=o.position::int-1
+           FROM unnest($2::uuid[]) WITH ORDINALITY AS o(id,position)
+           WHERE a.user_id=$1 AND a.id=o.id AND a.sort_order IS DISTINCT FROM o.position::int-1`,
+          [request.mailUser, accountIds],
+        );
+        return true;
+      });
+      if (!saved)
+        return reply.code(409).send({
+          message:
+            'Your accounts or their order changed. Refresh and try again.',
+        });
+      return { accountIds };
+    },
+  );
 
   app.patch<{ Params: { id: string }; Body: { color: string | null } }>(
     '/api/mail/accounts/:id/color',

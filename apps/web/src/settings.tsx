@@ -3,6 +3,8 @@ import { AccountColorPicker } from './account-color-picker.js';
 import { accountColorStyle, Icon, initials, ThemeChoice } from './brand.js';
 import type { Signature } from './draft-api.js';
 import {
+  arrowDownward,
+  arrowUpward,
   businessCenter,
   dns,
   keyboard,
@@ -85,6 +87,7 @@ export function Settings({
   onReload,
   onSignature,
   onColor,
+  onOrder,
   notificationsSlot,
 }: {
   accounts: Account[];
@@ -96,6 +99,7 @@ export function Settings({
   onReload: () => void;
   onSignature: (accountId: string, signature: Signature) => void;
   onColor: (accountId: string, color: string | null) => void;
+  onOrder: (accountIds: string[]) => void;
   notificationsSlot: (element: HTMLElement | null) => void;
 }) {
   const [tab, setTab] = useState<Tab>(() => {
@@ -107,6 +111,8 @@ export function Settings({
     }
   });
   const [busy, setBusy] = useState(false);
+  const [orderStatus, setOrderStatus] = useState('');
+  const [orderError, setOrderError] = useState('');
   const [editing, setEditing] = useState<Account | null>(null);
   const [showConnect, setShowConnect] = useState(false);
   const [disconnect, setDisconnect] = useState<Account | null>(null);
@@ -114,6 +120,40 @@ export function Settings({
   const [signatureAccount, setSignatureAccount] = useState<Account | null>(
     null,
   );
+
+  async function moveAccount(index: number, direction: -1 | 1) {
+    const target = index + direction;
+    const moved = accounts[index];
+    const adjacent = accounts[target];
+    if (busy || !moved || !adjacent) return;
+    const expectedAccountIds = accounts.map((account) => account.id);
+    const accountIds = [...expectedAccountIds];
+    accountIds[index] = adjacent.id;
+    accountIds[target] = moved.id;
+    setBusy(true);
+    setOrderStatus('Saving account order…');
+    setOrderError('');
+    try {
+      const result = await api<{ accountIds: string[] }>('accounts/order', {
+        method: 'PATCH',
+        body: JSON.stringify({ accountIds, expectedAccountIds }),
+      });
+      onOrder(result.accountIds);
+      setOrderStatus(
+        `${moved.name} moved to position ${target + 1} of ${accounts.length}.`,
+      );
+    } catch (error) {
+      setOrderStatus('');
+      setOrderError(
+        error instanceof Error
+          ? error.message
+          : 'Unable to save account order.',
+      );
+      onReload();
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function connect(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -229,6 +269,18 @@ export function Settings({
                 connect accounts.
               </p>
             )}
+            {accounts.length > 1 && (
+              <p className="muted account-order-help">
+                Use the arrows to reorder accounts. Your order is saved across
+                devices.
+              </p>
+            )}
+            {accounts.length > 1 && <p role="status">{orderStatus}</p>}
+            {orderError && (
+              <p role="alert" className="error">
+                {orderError}
+              </p>
+            )}
             {accounts.length > 0 && (
               <ul className="settings-list" aria-label="Connected accounts">
                 {accounts.map((item, index) => (
@@ -303,6 +355,30 @@ export function Settings({
                         </button>
                       </div>
                     </div>
+                    {accounts.length > 1 && (
+                      <div className="account-order-buttons">
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Move ${item.name} up`}
+                          title={`Move ${item.name} up`}
+                          aria-disabled={busy || index === 0}
+                          onClick={() => void moveAccount(index, -1)}
+                        >
+                          <Icon src={arrowUpward} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button"
+                          aria-label={`Move ${item.name} down`}
+                          title={`Move ${item.name} down`}
+                          aria-disabled={busy || index === accounts.length - 1}
+                          onClick={() => void moveAccount(index, 1)}
+                        >
+                          <Icon src={arrowDownward} />
+                        </button>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -1127,6 +1127,20 @@ export function Mail({
                   ),
                 )
               }
+              onOrder={(accountIds) => {
+                // Prevent an older in-flight read from restoring the previous order.
+                generation.current++;
+                setAccounts((current) =>
+                  [...current].sort((a, b) => {
+                    const rank = (id: string) => {
+                      const index = accountIds.indexOf(id);
+                      return index < 0 ? accountIds.length : index;
+                    };
+                    return rank(a.id) - rank(b.id);
+                  }),
+                );
+                reload();
+              }}
               notificationsSlot={setNotificationsEl}
             />
           ) : view === 'drafts' ||

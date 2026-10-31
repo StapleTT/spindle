@@ -580,6 +580,180 @@ test('settings expose honest controls and a custom color picker that persists an
         assert.deepEqual(errors, []);
       },
     );
+    await t.test(
+      'account arrows save across tabs and devices, preserve focus and composer choice, and expose failures',
+      async () => {
+        await pool.query(
+          "DELETE FROM mail_request_limits WHERE user_id=$1 AND action IN ('read','write')",
+          [owner.id],
+        );
+        const added: string[] = [];
+        for (const name of ['Work mail', 'Project mail']) {
+          const response = await app.inject({
+            method: 'POST',
+            url: '/api/mail/accounts',
+            headers: { cookie: owner.cookie, origin: config.appUrl },
+            payload: {
+              name,
+              host: 'mail.example.test',
+              port: 993,
+              transport: 'tls',
+              username: `${name.replace(' ', '-')}@example.test`,
+              password: 'synthetic-only-password',
+              history: 'all',
+            },
+          });
+          assert.equal(response.statusCode, 202, response.body);
+          added.push(response.json().account.id);
+        }
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.goto(`${config.appUrl}/inbox#view=settings`);
+        await page
+          .getByRole('button', { name: 'Accounts', exact: true })
+          .click();
+        const listNames =
+          '[aria-label="Connected accounts"] .account-row-text strong';
+        await page.waitForFunction(
+          (selector) => document.querySelectorAll(selector).length === 3,
+          listNames,
+        );
+        assert.deepEqual(await page.locator(listNames).allTextContents(), [
+          'Personal mail',
+          'Work mail',
+          'Project mail',
+        ]);
+        assert.equal(
+          await page
+            .getByRole('button', { name: 'Move Personal mail up', exact: true })
+            .getAttribute('aria-disabled'),
+          'true',
+        );
+        assert.equal(
+          await page
+            .getByRole('button', {
+              name: 'Move Project mail down',
+              exact: true,
+            })
+            .getAttribute('aria-disabled'),
+          'true',
+        );
+        await page.route('**/api/mail/accounts/order', (route) =>
+          route.fulfill({
+            status: 503,
+            contentType: 'application/json',
+            body: JSON.stringify({ message: 'Synthetic order save failure.' }),
+          }),
+        );
+        await page
+          .getByRole('button', { name: 'Move Project mail up', exact: true })
+          .click();
+        await page
+          .getByRole('alert')
+          .filter({ hasText: 'Synthetic order save failure.' })
+          .waitFor();
+        assert.deepEqual(await page.locator(listNames).allTextContents(), [
+          'Personal mail',
+          'Work mail',
+          'Project mail',
+        ]);
+        await page.unroute('**/api/mail/accounts/order');
+        const up = page.getByRole('button', {
+          name: 'Move Project mail up',
+          exact: true,
+        });
+        await up.focus();
+        await up.press('Enter');
+        await page.waitForFunction(
+          (selector) =>
+            document.querySelectorAll(selector)[1]?.textContent ===
+            'Project mail',
+          listNames,
+        );
+        assert.equal(
+          await up.evaluate((node) => document.activeElement === node),
+          true,
+        );
+        await second.goto(`${config.appUrl}/inbox`);
+        await second.waitForFunction(
+          () =>
+            [...document.querySelectorAll('.drawer-account')]
+              .map((node) => node.getAttribute('aria-label'))
+              .join(',') === 'Personal mail,Project mail,Work mail',
+        );
+        assert.deepEqual(
+          await second.locator('.account-chips button').allTextContents(),
+          ['All accounts', 'Personal mail', 'Project mail', 'Work mail'],
+        );
+        await second
+          .getByRole('button', { name: 'Compose', exact: true })
+          .click();
+        const sending = second.getByLabel('Sending account');
+        await sending.waitFor();
+        assert.deepEqual(
+          await sending
+            .locator('option')
+            .evaluateAll((nodes) =>
+              nodes.map((node) => (node as HTMLOptionElement).value),
+            ),
+          ['', account, added[1], added[0]],
+        );
+        const selected = await sending.inputValue();
+        assert.ok(browser);
+        const mobile = await browser.newContext({
+          viewport: { width: 390, height: 844 },
+          hasTouch: true,
+        });
+        try {
+          await mobile.addCookies(await context.cookies());
+          const phone = await mobile.newPage();
+          await phone.goto(`${config.appUrl}/inbox#view=settings`);
+          const move = phone.getByRole('button', {
+            name: 'Move Project mail up',
+            exact: true,
+          });
+          await move.tap();
+          await phone.waitForFunction(
+            (selector) =>
+              document.querySelectorAll(selector)[0]?.textContent ===
+              'Project mail',
+            listNames,
+          );
+          assert.equal(
+            await phone
+              .locator('body')
+              .evaluate((node) => node.scrollWidth <= window.innerWidth),
+            true,
+          );
+          await phone.screenshot({
+            path: '/tmp/spindle-account-order-phone.png',
+            animations: 'disabled',
+          });
+          // This tab stays open: its SSE subscription must invalidate the shared list.
+          await second.waitForFunction(
+            () =>
+              document
+                .querySelector('.drawer-account')
+                ?.getAttribute('aria-label') === 'Project mail',
+          );
+          assert.equal(await sending.inputValue(), selected);
+          await page.reload();
+          await page.waitForFunction(
+            (selector) =>
+              document.querySelectorAll(selector)[0]?.textContent ===
+              'Project mail',
+            listNames,
+          );
+          assert.deepEqual(await page.locator(listNames).allTextContents(), [
+            'Project mail',
+            'Personal mail',
+            'Work mail',
+          ]);
+          assert.deepEqual(errors, []);
+        } finally {
+          await mobile.close();
+        }
+      },
+    );
   } finally {
     await browser?.close();
     await vite.close();

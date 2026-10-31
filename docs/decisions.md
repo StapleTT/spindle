@@ -334,3 +334,11 @@ Status: requested by the user on 2026-10-30.
 Remove the received-message formatted/plain-text selector. Use plain text when no HTML MIME body exists; otherwise display sanitized HTML on the isolated content origin, retaining the plain fallback when that service is unconfigured. Composer output-format choices remain separate.
 
 Replace the forced-white HTML canvas with a muted light fallback and a dark fallback for uncoloured HTML in the app's dark theme. Preserve explicit sender palettes, text/background pairing and newsletter layout rather than inverting or overwriting authored styles. A validated appearance-only theme parameter crosses the content boundary; theme changes renew grants with existing image consent and keep cached content readable during outages. Sandbox, CSP, content ownership and image preferences remain intact. This supersedes D027's always-white canvas choice.
+
+## D032 — saved account ordering
+
+Status: requested by the user on 2026-10-31; implementation and focused automated checks complete.
+
+Provide Move up/Move down controls in Settings → Accounts, usable with keyboard and touch. Save per-user ordering across devices and apply it to the shared account list used by the sidebar, filters, search and composer selectors. Keep focus on the move control and announce the saved position inline. Existing accounts retain creation order until reordered, new accounts append, reconnect preserves position and disconnect preserves the other accounts' relative order. Reordering does not change an open draft's selected account or provider state.
+
+Use an additive nullable account position and existing accounts-topic SSE invalidation. Validate the complete owned account set and expected previous order under existing owner-first locks; reject stale writes atomically and accept an already-satisfied replay. Preserve all mail, credentials, drafts and immutable sends. See [account ordering](account-ordering.md) for API, rollout/rollback and proof. Remaining K07 preferences/admin/help/legal work stays open.

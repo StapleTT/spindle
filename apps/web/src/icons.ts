@@ -4,7 +4,9 @@
 export { default as add } from '@material-symbols/svg-400/rounded/add.svg';
 export { default as archive } from '@material-symbols/svg-400/rounded/archive.svg';
 export { default as arrowBack } from '@material-symbols/svg-400/rounded/arrow_back.svg';
+export { default as arrowDownward } from '@material-symbols/svg-400/rounded/arrow_downward.svg';
 export { default as arrowDropDown } from '@material-symbols/svg-400/rounded/arrow_drop_down.svg';
+export { default as arrowUpward } from '@material-symbols/svg-400/rounded/arrow_upward.svg';
 export { default as attachFile } from '@material-symbols/svg-400/rounded/attach_file.svg';
 export { default as bolt } from '@material-symbols/svg-400/rounded/bolt.svg';
 export { default as bookmark } from '@material-symbols/svg-400/rounded/bookmark.svg';

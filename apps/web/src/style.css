@@ -1604,6 +1604,18 @@ label.avatar:has(:focus-visible) {
   width: 44px;
   height: 44px;
 }
+.account-order-help {
+  margin-bottom: 12px;
+}
+.account-order-buttons {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+}
+.account-order-buttons [aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
 .account-row-text {
   flex: 1;
   min-width: 0;
