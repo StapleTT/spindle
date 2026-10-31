@@ -193,8 +193,12 @@ test('PostgreSQL authentication flows', {
       assert.equal((await verify('one@example.test')).statusCode, 302);
       assert.equal(
         Number(
-          (await pool.query('SELECT count(*) FROM auth_sessions')).rows[0]
-            .count,
+          (
+            await pool.query(
+              'SELECT count(*) FROM auth_sessions WHERE user_id=$1',
+              [firstId],
+            )
+          ).rows[0].count,
         ),
         0,
       );
