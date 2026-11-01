@@ -383,6 +383,7 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
             },
           )
           .waitFor();
+        await page.getByRole('button', { name: /^All recent actions/ }).click();
         await page
           .getByRole('button', {
             name: 'Undo: Archived “Project alpha”.',

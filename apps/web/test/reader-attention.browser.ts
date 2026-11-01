@@ -191,9 +191,16 @@ test('foreground reader dwell and quiet read feedback preserve explicit choices,
         assert.equal(await count(), 0);
         await page.clock.runFor(200);
         await waitCount(1);
-        await page
-          .getByRole('button', { name: /^All recent actions/ })
-          .waitFor();
+        assert.equal(
+          await page
+            .getByRole('button', { name: /^All recent actions/ })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await page.getByRole('button', { name: /^Undo: Marked/ }).count(),
+          0,
+        );
         assert.equal(
           await page
             .getByRole('list', { name: 'Recent actions' })
@@ -213,12 +220,26 @@ test('foreground reader dwell and quiet read feedback preserve explicit choices,
       },
     );
     await t.test(
-      'history retains undo and a manual unread choice is never automatically reversed',
+      'read actions have no visible Undo/history controls and a manual unread choice is never automatically reversed',
       async () => {
-        await page
-          .getByRole('button', { name: /^All recent actions/ })
-          .click({ force: true });
-        await page.getByRole('button', { name: /^Undo: Marked/ }).waitFor();
+        assert.equal(
+          await page.getByRole('button', { name: /^Undo: Marked/ }).count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .locator('.snackbars-actions')
+            .getByText('Pending:', { exact: true })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .locator('.snackbars-actions .snack-text')
+            .filter({ hasText: 'Marking as read' })
+            .count(),
+          0,
+        );
         await pool.query(
           "UPDATE mail_actions SET state='applied',completed_at=clock_timestamp() WHERE user_id=$1",
           [owner.id],
@@ -235,9 +256,17 @@ test('foreground reader dwell and quiet read feedback preserve explicit choices,
               ) as HTMLButtonElement
             )?.disabled,
         );
-        await page
-          .getByRole('button', { name: 'Show fewer actions', exact: true })
-          .click({ force: true });
+        // Reproduce expanded history leaking the completed read toast.
+        const completedRead = page
+          .locator('.action-status > li')
+          .filter({ hasText: 'as read.' })
+          .getByText('Completed:', { exact: true });
+        for (let n = 0; n < 30 && (await completedRead.count()) === 0; n++) {
+          await page.clock.runFor(100);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(await completedRead.count(), 1);
+        assert.equal(await completedRead.isVisible(), false);
         await page
           .getByRole('button', { name: 'Mark as unread', exact: true })
           .click({ force: true });
@@ -257,7 +286,7 @@ test('foreground reader dwell and quiet read feedback preserve explicit choices,
       },
     );
     await t.test(
-      'read failures remain visible and folder moves still produce pending toasts',
+      'failures and completed moves remain visible while pending actions are quiet, and sending still shows progress',
       async () => {
         await pool.query(
           "UPDATE mail_actions SET state='failed',error_code='provider_unavailable',completed_at=clock_timestamp() WHERE user_id=$1 AND kind='unread'",
@@ -297,8 +326,95 @@ test('foreground reader dwell and quiet read feedback preserve explicit choices,
           .getByRole('list', { name: 'Recent actions' })
           .getByRole('listitem')
           .filter({ hasText: 'Attention 0' });
-        await moved.getByText('Pending:', { exact: true }).waitFor();
-        await moved.getByRole('button', { name: /^Undo: Archived/ }).waitFor();
+        await moved.waitFor({ state: 'hidden' });
+        await page
+          .getByRole('button', { name: /^All recent actions/ })
+          .click({ force: true });
+        await page
+          .getByRole('button', { name: /^Undo: Archived “Attention 0”/ })
+          .waitFor();
+        const pendingRead = await app.inject({
+          method: 'POST',
+          url: `/api/mail/messages/${ids[1]}/actions`,
+          headers: { cookie: owner.cookie, origin: config.appUrl },
+          payload: { id: randomUUID(), kind: 'read' },
+        });
+        assert.equal(pendingRead.statusCode, 202, pendingRead.body);
+        await page.evaluate(() =>
+          window.dispatchEvent(
+            new CustomEvent('spindle:mail-changed', { detail: ['actions'] }),
+          ),
+        );
+        const hiddenUndo = page.locator(
+          'button[aria-label="Undo: Marked “Attention 1” as read."]',
+        );
+        for (let n = 0; n < 30 && (await hiddenUndo.count()) === 0; n++) {
+          await page.clock.runFor(100);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(await hiddenUndo.count(), 1);
+        assert.equal(await hiddenUndo.isVisible(), false);
+        assert.equal(
+          await page.getByRole('button', { name: /^Undo: Marked/ }).count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .locator('.snackbars-actions')
+            .getByText('Pending:', { exact: true })
+            .count(),
+          0,
+        );
+        await page
+          .getByRole('button', { name: 'Show fewer actions', exact: true })
+          .click({ force: true });
+        await pool.query(
+          "UPDATE mail_actions SET state='applied',completed_at=clock_timestamp() WHERE user_id=$1 AND kind='archive'",
+          [owner.id],
+        );
+        for (
+          let n = 0;
+          n < 30 &&
+          !(await moved.getByText('Completed:', { exact: true }).isVisible());
+          n++
+        ) {
+          await page.clock.runFor(100);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(
+          await moved.getByText('Completed:', { exact: true }).isVisible(),
+          true,
+        );
+        await page.route('**/api/mail/outbox', (route) =>
+          route.fulfill({
+            json: {
+              messages: [
+                {
+                  id: randomUUID(),
+                  state: 'sending',
+                  subject: 'Sending feedback fixture',
+                  scheduledAt: null,
+                  startedAt: new Date().toISOString(),
+                },
+              ],
+              nextCursor: null,
+            },
+          }),
+        );
+        await page.evaluate(() =>
+          window.dispatchEvent(
+            new CustomEvent('spindle:mail-changed', { detail: ['outbox'] }),
+          ),
+        );
+        const sending = page
+          .getByRole('status')
+          .filter({ hasText: 'Outgoing mail: Sending' });
+        for (let n = 0; n < 30 && !(await sending.isVisible()); n++) {
+          await page.clock.runFor(100);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(await sending.isVisible(), true);
+        await page.unroute('**/api/mail/outbox');
       },
     );
     await t.test(
@@ -353,6 +469,57 @@ test('foreground reader dwell and quiet read feedback preserve explicit choices,
         await page.locator('.reader').waitFor({ state: 'detached' });
         await page.clock.runFor(5000);
         assert.equal(await count(), before + 1);
+      },
+    );
+    await t.test(
+      'expanding history never exposes completed read or unread toasts after refresh',
+      async () => {
+        // Accelerated browser time must not exhaust the real database request window.
+        await pool.query(
+          "DELETE FROM mail_request_limits WHERE user_id=$1 AND action='read'",
+          [owner.id],
+        );
+        await pool.query(
+          "UPDATE mail_actions SET state='applied',completed_at=clock_timestamp() WHERE user_id=$1 AND kind IN ('read','unread')",
+          [owner.id],
+        );
+        await page.evaluate(() =>
+          window.dispatchEvent(
+            new CustomEvent('spindle:mail-changed', { detail: ['actions'] }),
+          ),
+        );
+        const completedUnread = page
+          .locator('.action-status > li')
+          .filter({ hasText: 'as unread.' })
+          .getByText('Completed:', { exact: true });
+        for (let n = 0; n < 30 && (await completedUnread.count()) === 0; n++) {
+          await page.clock.runFor(100);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        assert.equal(await completedUnread.count(), 1);
+        assert.equal(await completedUnread.isVisible(), false);
+        const readRows = page
+          .locator('.action-status > li')
+          .filter({ hasText: /Marked .* as (un)?read\./ });
+        assert.equal(
+          await readRows.evaluateAll((rows) =>
+            rows.every((row) => (row as HTMLElement).hidden),
+          ),
+          true,
+        );
+        await page.clock.resume();
+        await page.reload();
+        await page
+          .getByRole('button', { name: 'Compose', exact: true })
+          .waitFor();
+        assert.equal(
+          await page
+            .getByRole('list', { name: 'Recent actions' })
+            .getByRole('listitem')
+            .filter({ hasText: /Marked .* as (un)?read\./ })
+            .count(),
+          0,
+        );
       },
     );
   } finally {

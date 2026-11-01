@@ -560,12 +560,16 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       .getByRole('heading', { name: 'Reader message 42', exact: true })
       .waitFor();
     await page.reload();
+    await page.getByRole('button', { name: /^All recent actions/ }).click();
     await page
       .getByRole('button', { name: 'Undo: Archived “Reader message 43”.' })
       .click();
     await page
       .getByText('Undone: Archived “Reader message 43”.', { exact: true })
       .waitFor();
+    await page
+      .getByRole('button', { name: 'Show fewer actions', exact: true })
+      .click();
     assert.equal(
       (
         await pool.query(
@@ -639,8 +643,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await feedbackRow.getByRole('button', { name: /^Retry:/ }).click();
     await feedbackRow.waitFor({ state: 'hidden' });
     await applyFeedback();
-    await page.getByRole('button', { name: /^All recent actions/ }).click();
-    await feedbackRow.getByText('Completed:', { exact: true }).waitFor();
+    await feedbackRow.waitFor({ state: 'hidden' });
     const local = (
       await pool.query('SELECT uid FROM mail_memberships WHERE message_id=$1', [
         feedbackMessage,
@@ -651,10 +654,8 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
         .getMessage('INBOX', Number(local.uid))
         .flags.includes('\\Seen'),
     );
-    await feedbackRow.getByRole('button', { name: /^Dismiss:/ }).click();
-    await feedbackRow.waitFor({ state: 'detached' });
     await page.reload();
-    assert.equal(await feedbackRow.count(), 0);
+    assert.equal(await feedbackRow.isVisible(), false);
 
     // A change made in another mail client is retained as a conflict in the bar.
     await page

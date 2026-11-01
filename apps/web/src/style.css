@@ -2605,6 +2605,12 @@ label.avatar input {
 .action-status > li[hidden] {
   display: none;
 }
+.action-status > li[data-undo-only] {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+  justify-content: flex-end;
+}
 .snackbars-actions > button {
   align-self: center;
   min-height: 32px;

@@ -139,11 +139,19 @@ export function ActionStatus({
 
   const toastActions = actions.filter(
     (action) =>
-      !['read', 'unread'].includes(action.kind) ||
-      action.state === 'failed' ||
-      action.state === 'conflict',
+      action.state !== 'pending' &&
+      (!['read', 'unread'].includes(action.kind) ||
+        action.state === 'failed' ||
+        action.state === 'conflict'),
   );
-  const shown = expanded ? actions : toastActions.slice(0, visibleActions);
+  const history = actions.filter(
+    (action) =>
+      toastActions.includes(action) ||
+      (action.state === 'pending' &&
+        !['read', 'unread'].includes(action.kind) &&
+        action.until > Date.now()),
+  );
+  const shown = expanded ? history : toastActions.slice(0, visibleActions);
 
   return (
     <section aria-label="Action status" className="snackbars-actions">
@@ -160,35 +168,39 @@ export function ActionStatus({
         aria-relevant="additions text"
       >
         {actions.map((action) => (
-          <li key={action.id} hidden={!shown.includes(action)}>
-            <span className="snack-text">
-              <strong>
+          <li
+            key={action.id}
+            hidden={!shown.includes(action)}
+            data-undo-only={action.state === 'pending' || undefined}
+          >
+            {action.state !== 'pending' && (
+              <span className="snack-text">
+                <strong>
+                  {action.state === 'applied'
+                    ? 'Completed'
+                    : action.state === 'conflict'
+                      ? 'Conflict'
+                      : action.state === 'failed'
+                        ? 'Failed'
+                        : 'Cancelled'}
+                  :{' '}
+                </strong>
                 {action.state === 'applied'
-                  ? 'Completed'
-                  : action.state === 'conflict'
-                    ? 'Conflict'
-                    : action.state === 'failed'
-                      ? 'Failed'
-                      : 'Pending'}
-                :{' '}
-              </strong>
-              {action.state === 'applied'
-                ? actionNotice(action)
-                : `${actionText[action.kind].pending} “${action.subject || '(No subject)'}”${action.target ? ` → ${action.target}` : ''}.`}{' '}
-              {action.state === 'pending' &&
-                'Waiting for provider confirmation. '}
-              {action.error && <span className="error">{action.error} </span>}
-            </span>
+                  ? actionNotice(action)
+                  : `${actionText[action.kind].pending} “${action.subject || '(No subject)'}”${action.target ? ` → ${action.target}` : ''}.`}{' '}
+                {action.error && <span className="error">{action.error} </span>}
+              </span>
+            )}
             {action.state === 'pending' && action.until > Date.now() && (
               <button
                 type="button"
                 disabled={busy !== null}
                 data-mail-command="undo"
-                className="snack-action"
+                className="outlined"
                 aria-label={`Undo: ${actionNotice(action)}`}
                 onClick={() => void change(action, 'undo')}
               >
-                Undo
+                {expanded ? `Undo: ${actionNotice(action)}` : 'Undo'}
               </button>
             )}
             {action.state === 'failed' && action.messageId && (
@@ -217,7 +229,7 @@ export function ActionStatus({
           </li>
         ))}
       </ul>
-      {(actions.length > Math.min(visibleActions, toastActions.length) ||
+      {(history.length > Math.min(visibleActions, toastActions.length) ||
         expanded) && (
         <button
           type="button"
@@ -226,7 +238,7 @@ export function ActionStatus({
         >
           {expanded
             ? 'Show fewer actions'
-            : `All recent actions (${actions.length})`}
+            : `All recent actions (${history.length})`}
         </button>
       )}
       {expanded && more && (
