@@ -374,7 +374,7 @@ test('conversation timeline preserves scoped navigation, reply identity, message
           Number(
             (
               await pool.query(
-                'SELECT count(*) FROM mail_actions WHERE user_id=$1 AND message_id<>$2',
+                "SELECT count(*) FROM mail_actions WHERE user_id=$1 AND message_id<>$2 AND kind<>'read'",
                 [owner.id, child],
               )
             ).rows[0].count,
@@ -570,6 +570,45 @@ test('conversation timeline preserves scoped navigation, reply identity, message
             () => document.documentElement.scrollWidth <= window.innerWidth,
           ),
           true,
+        );
+      },
+    );
+    await t.test(
+      'a loaded HTML message becomes read once after foreground viewing without a routine toast',
+      async () => {
+        const viewed = await mail('HTML viewing', 'html-viewing', null);
+        await page.setViewportSize({ width: 1280, height: 900 });
+        await page.goto(`${config.appUrl}/inbox#message=${viewed}`);
+        await page.frameLocator('iframe').locator('.newsletter').waitFor();
+        await page.bringToFront();
+        await waitFor(
+          async () =>
+            Number(
+              (
+                await pool.query(
+                  "SELECT count(*) FROM mail_actions WHERE user_id=$1 AND message_id=$2 AND kind='read'",
+                  [owner.id, viewed],
+                )
+              ).rows[0].count,
+            ) === 1,
+        );
+        await page
+          .getByRole('button', { name: 'Mark as unread', exact: true })
+          .waitFor();
+        assert.equal(
+          await page
+            .getByRole('list', { name: 'Recent actions' })
+            .getByRole('listitem')
+            .filter({ hasText: 'HTML viewing' })
+            .count(),
+          0,
+        );
+        assert.equal(
+          await page
+            .locator('.reader-status')
+            .getByText(/Marking as read|Marked as read/)
+            .count(),
+          0,
         );
       },
     );

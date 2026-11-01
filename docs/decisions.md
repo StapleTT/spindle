@@ -346,3 +346,11 @@ Provide Move up/Move down controls in Settings → Accounts, usable with keyboar
 Use an additive nullable account position and existing accounts-topic SSE invalidation. Validate the complete owned account set and expected previous order under existing owner-first locks; reject stale writes atomically and accept an already-satisfied replay. Preserve all mail, credentials, drafts and immutable sends. See [account ordering](account-ordering.md) for API, rollout/rollback and proof. Remaining K07 preferences/admin/help/legal work stays open.
 
 User follow-up on 2026-10-31: replace the visible arrows with draggable accounts using a three-line handle on the right, and remove the saved-position feedback. Mouse/touch drag and drop, edge scrolling and keyboard Up/Down use the existing persistence path. Preserve focus, cancellation, failure feedback and stale-write protections; show no success/position message.
+
+## D033 — quiet read actions and one-second reader dwell
+
+Status: explicitly requested by the user on 2026-11-01.
+
+Hide routine read/unread pending and success toasts, retaining folder-move and sending feedback. Keep failures/conflicts visible and read/unread history/Undo available on demand and by keyboard. Routine inline read progress/completion and read Undo confirmations are quiet as well.
+
+After one continuous second viewing loaded content in the visible, focused reader, queue the existing owned durable read action for that physical message. Wait for plain content or the isolated HTML frame; cancel on navigation, backgrounding, obscuring overlays or pending actions. Attempt once per opening; explicit reader actions prevent re-marking a message the user leaves unread. Auto-read failures remain visible without a loop. If auto-reading removes a message from an unread search, return to the results instead of starting an automatic chain through its neighbors. Body fetches/conversation lists alone still never change flags. This supersedes D010's earlier explicit-controls-only opening rule. Existing authorization, grace deadlines, worker/provider behavior and uncertain-operation protections remain in place; no migration is needed.

@@ -403,6 +403,11 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page
       .getByRole('heading', { name: 'Reader message 49', exact: true })
       .waitFor();
+    // The preceding content/attachment journey has its own request budget.
+    await pool.query(
+      "DELETE FROM mail_request_limits WHERE user_id=$1 AND action='read'",
+      [owner.id],
+    );
     const inboxCount = (unread: number) =>
       page
         .getByRole('button', { name: `INBOX (${unread} unread / 51)` })
@@ -412,7 +417,19 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       .getByRole('button', { name: 'Mark as read', exact: true })
       .click();
     await inboxCount(50);
-    await page.getByText('Marked as read.', { exact: true }).waitFor();
+    await page
+      .getByRole('button', { name: 'Mark as unread', exact: true })
+      .waitFor();
+    const markedDeadline = Date.now() + 15000;
+    while (
+      Date.now() < markedDeadline &&
+      !server.control.getMessage('INBOX', 50).flags.includes('\\Seen')
+    )
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(
+      await page.getByText('Marked as read.', { exact: true }).count(),
+      0,
+    );
     assert.ok(server.control.getMessage('INBOX', 50).flags.includes('\\Seen'));
     await page
       .getByRole('link', { name: 'Back to message list', exact: true })
@@ -444,6 +461,33 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
           [owner.id, subject],
         )
       ).rows[0].id;
+    const folderCount = async (path: string, total: number) => {
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        const counts = (
+          await pool.query(
+            `SELECT count(*)::int AS total,count(*) FILTER(WHERE NOT '\\Seen'=ANY(mm.flags))::int AS unread
+           FROM mail_memberships mm JOIN mailboxes b ON b.user_id=mm.user_id AND b.id=COALESCE(mm.pending_mailbox_id,mm.mailbox_id)
+           WHERE mm.user_id=$1 AND b.path=$2`,
+            [owner.id, path],
+          )
+        ).rows[0];
+        if (
+          counts.total === total &&
+          (await page
+            .getByRole('button', {
+              name: `${path} (${counts.unread} unread / ${total})`,
+              exact: true,
+            })
+            .isVisible())
+        )
+          return;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      assert.fail(
+        `Folder ${path} did not show current read state and ${total} messages`,
+      );
+    };
     await page.evaluate(
       (id) => {
         window.location.hash = `message=${id}`;
@@ -461,12 +505,9 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       .getByRole('heading', { name: 'Reader message 46', exact: true })
       .waitFor();
     await page.getByText('Archived “Reader message 47”.').waitFor();
-    await page
-      .getByRole('button', { name: 'INBOX (48 unread / 50)' })
-      .waitFor();
-    await page
-      .getByRole('button', { name: 'Archive (2 unread / 2)' })
-      .waitFor();
+    // The newly opened neighbor can become read while the move is dispatched.
+    await folderCount('INBOX', 50);
+    await folderCount('Archive', 2);
     await waitFor(() => server.control.getMailbox('Archive').messages === 2);
     await page
       .getByRole('link', { name: 'Back to message list', exact: true })
@@ -573,7 +614,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
       .getByRole('list', { name: 'Recent actions' })
       .getByRole('listitem')
       .filter({ hasText: 'Reader message 42' });
-    await feedbackRow.getByText('Pending:', { exact: true }).waitFor();
+    await feedbackRow.waitFor({ state: 'hidden' });
     const applyFeedback = async (offline = false) => {
       await pool.query(
         "UPDATE mail_actions SET next_attempt_at=now(),undo_until=now() WHERE user_id=$1 AND state='pending'",
@@ -596,8 +637,9 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await page.reload();
     await feedbackRow.getByText('Failed:', { exact: true }).waitFor();
     await feedbackRow.getByRole('button', { name: /^Retry:/ }).click();
-    await feedbackRow.getByText('Pending:', { exact: true }).waitFor();
+    await feedbackRow.waitFor({ state: 'hidden' });
     await applyFeedback();
+    await page.getByRole('button', { name: /^All recent actions/ }).click();
     await feedbackRow.getByText('Completed:', { exact: true }).waitFor();
     const local = (
       await pool.query('SELECT uid FROM mail_memberships WHERE message_id=$1', [

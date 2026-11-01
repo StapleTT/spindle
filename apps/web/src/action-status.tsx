@@ -120,7 +120,8 @@ export function ActionStatus({
         method: 'POST',
         body: '{}',
       });
-      if (operation === 'undo') setNotice(`Undone: ${actionNotice(action)}`);
+      if (operation === 'undo' && !['read', 'unread'].includes(action.kind))
+        setNotice(`Undone: ${actionNotice(action)}`);
       if (operation === 'dismiss' || operation === 'undo')
         setActions((list) => list.filter((item) => item.id !== action.id));
       onChange();
@@ -135,6 +136,14 @@ export function ActionStatus({
       setRevision((value) => value + 1);
     }
   }
+
+  const toastActions = actions.filter(
+    (action) =>
+      !['read', 'unread'].includes(action.kind) ||
+      action.state === 'failed' ||
+      action.state === 'conflict',
+  );
+  const shown = expanded ? actions : toastActions.slice(0, visibleActions);
 
   return (
     <section aria-label="Action status" className="snackbars-actions">
@@ -151,7 +160,7 @@ export function ActionStatus({
         aria-relevant="additions text"
       >
         {actions.map((action) => (
-          <li key={action.id}>
+          <li key={action.id} hidden={!shown.includes(action)}>
             <span className="snack-text">
               <strong>
                 {action.state === 'applied'
@@ -208,7 +217,8 @@ export function ActionStatus({
           </li>
         ))}
       </ul>
-      {(actions.length > visibleActions || expanded) && (
+      {(actions.length > Math.min(visibleActions, toastActions.length) ||
+        expanded) && (
         <button
           type="button"
           aria-expanded={expanded}

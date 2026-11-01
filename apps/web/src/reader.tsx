@@ -209,6 +209,7 @@ function AttachmentItem({
 
 export function Reader({
   id,
+  active,
   query = '',
   conversation = '',
   account,
@@ -226,6 +227,7 @@ export function Reader({
   toolsRef: (element: HTMLElement | null) => void;
   threadRef: (element: HTMLElement | null) => void;
   id: string;
+  active: boolean;
   query?: string;
   conversation?: string;
   account: string;
@@ -241,6 +243,7 @@ export function Reader({
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [htmlUrl, setHtmlUrl] = useState<string | null>(null);
+  const [loadedHtmlUrl, setLoadedHtmlUrl] = useState<string | null>(null);
   const [images, setImages] = useState(false);
   const themedHtmlUrl = useThemedContentUrl(
     htmlUrl,
@@ -257,6 +260,10 @@ export function Reader({
   const [imageError, setImageError] = useState('');
   const [ownAction, setOwnAction] = useState('');
   const [actionError, setActionError] = useState('');
+  const readHandled = useRef(false);
+  const actionInFlight = useRef(false);
+  const currentMark = useRef(mark);
+  currentMark.current = mark;
   const [responseBusy, setResponseBusy] = useState(false);
   const responseIds = useRef(new Map<string, string>());
   const responseActive = useRef(true);
@@ -379,6 +386,48 @@ export function Reader({
 
   const lastAction = detail?.message.lastAction ?? null;
   const pendingAction = lastAction?.state === 'pending';
+  const unread = detail?.message.unread;
+  const readable =
+    detail?.message.id === id &&
+    detail.content.state === 'ready' &&
+    !error &&
+    (!(detail.content.hasHtml && detail.content.configured) ||
+      Boolean(themedHtmlUrl && loadedHtmlUrl === themedHtmlUrl));
+
+  useEffect(() => {
+    if (!readable) return;
+    if (!unread) {
+      readHandled.current = true;
+      return;
+    }
+    if (!active || pendingAction || readHandled.current) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function schedule() {
+      clearTimeout(timer);
+      if (document.visibilityState !== 'visible' || !document.hasFocus())
+        return;
+      timer = setTimeout(() => {
+        if (
+          readHandled.current ||
+          actionInFlight.current ||
+          document.visibilityState !== 'visible' ||
+          !document.hasFocus()
+        )
+          return;
+        void currentMark.current('read', undefined, true);
+      }, 1000);
+    }
+    schedule();
+    document.addEventListener('visibilitychange', schedule);
+    window.addEventListener('focus', schedule);
+    window.addEventListener('blur', schedule);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', schedule);
+      window.removeEventListener('focus', schedule);
+      window.removeEventListener('blur', schedule);
+    };
+  }, [readable, unread, active, pendingAction]);
 
   // Follow the durable action until the worker reports the provider outcome.
   useEffect(() => {
@@ -417,7 +466,14 @@ export function Reader({
     };
   }, [pendingAction, endpoint, onChange, actionRevision, liveRevision]);
 
-  async function mark(kind: MailAction['kind'], folder?: string) {
+  async function mark(
+    kind: MailAction['kind'],
+    folder?: string,
+    automatic = false,
+  ) {
+    if (actionInFlight.current) return;
+    readHandled.current = true;
+    actionInFlight.current = true;
     setActionError('');
     try {
       const { action, target, undoMs } = await requestAction(id, kind, folder);
@@ -442,7 +498,9 @@ export function Reader({
       if (!responseActive.current) return;
       if (leftView) {
         // The message has left this view; continue with its neighbor.
-        navigateMail({ message: detail?.next ?? detail?.previous ?? '' });
+        navigateMail({
+          message: automatic ? '' : (detail?.next ?? detail?.previous ?? ''),
+        });
         return;
       }
       setOwnAction(action.id);
@@ -463,6 +521,8 @@ export function Reader({
       setActionError(
         failure instanceof Error ? failure.message : 'Unable to update mail.',
       );
+    } finally {
+      actionInFlight.current = false;
     }
   }
 
@@ -708,15 +768,17 @@ export function Reader({
         {detail && (
           <div className="reader-status">
             <span role="status">
-              {lastAction?.state === 'pending'
-                ? `${actionText[lastAction.kind].pending}… saving to your provider.`
-                : lastAction?.id !== ownAction
-                  ? ''
-                  : lastAction.state === 'applied'
-                    ? `${actionText[lastAction.kind].done}.`
-                    : lastAction.state === 'cancelled'
-                      ? 'Undone.'
-                      : ''}
+              {lastAction && ['read', 'unread'].includes(lastAction.kind)
+                ? ''
+                : lastAction?.state === 'pending'
+                  ? `${actionText[lastAction.kind].pending}… saving to your provider.`
+                  : lastAction?.id !== ownAction
+                    ? ''
+                    : lastAction.state === 'applied'
+                      ? `${actionText[lastAction.kind].done}.`
+                      : lastAction.state === 'cancelled'
+                        ? 'Undone.'
+                        : ''}
             </span>
             {(lastAction?.state === 'failed' ||
               lastAction?.state === 'conflict') && (
@@ -849,6 +911,7 @@ export function Reader({
                         className="message-frame"
                         title="Message body"
                         src={themedHtmlUrl}
+                        onLoad={() => setLoadedHtmlUrl(themedHtmlUrl)}
                         referrerPolicy="no-referrer"
                         sandbox="allow-popups allow-popups-to-escape-sandbox"
                       />

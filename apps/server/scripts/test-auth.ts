@@ -34,6 +34,7 @@ try {
             'apps/web/test/conversations.browser.ts',
             'apps/web/test/conversation-state.browser.ts',
             'apps/web/test/reader.browser.ts',
+            'apps/web/test/reader-attention.browser.ts',
             'apps/web/test/composer.browser.ts',
             'apps/web/test/contacts.browser.ts',
             'apps/web/test/signatures.browser.ts',

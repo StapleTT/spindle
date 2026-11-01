@@ -4,7 +4,9 @@ Mail actions change provider mail on the user's behalf. Read/unread, archive, mo
 
 ## Read and unread
 
-**Mark as read** / **Mark as unread** appear in the reader and on each list row. Opening a message still leaves its read state unchanged; only these explicit controls change it.
+**Mark as read** / **Mark as unread** appear in the reader and on each list row. An unread message is also marked read after one continuous second of viewing its loaded content in the focused, visible reader (D033). Plain text must be ready; formatted mail waits for the isolated frame to load. Brief visits, loading/error states, background tabs and an open navigation drawer or composer do not count. Leaving the message cancels the timer; returning from the background starts a new full second. Listing conversations and fetching bodies alone remain non-mutating.
+
+The automatic attempt uses the same owned durable read action as the explicit control. It runs at most once per reader opening; explicit reader actions disarm it, so marking unread or undoing a read is not immediately reversed. A failed attempt stays visible for explicit recovery. If auto-reading removes the source from an unread search, return to the results instead of automatically advancing and reading each subsequent result.
 
 Each click carries a client-generated operation ID. The API checks that the signed-in, verified user owns the message, then in one transaction records a pending `mail_actions` row and applies the `\Seen` change to the local membership. Lists, folder unread counts and the reader reflect it immediately. Replaying the same operation ID returns the original action; reusing it for another message or state is rejected. Actions are ordered per message.
 
@@ -39,6 +41,8 @@ The **Recent actions** view in the mail shell retains the **Undo** button until 
 ## Reliable feedback and reconciliation
 
 The shell polls the local action table every two seconds, independently of reader navigation. It shows **Pending**, **Completed**, **Failed** and **Conflict**, subject and destination, and safe error explanations. Pending means the provider has not confirmed the action. Completed means it acknowledged the operation; later changes in another client still reconcile through normal sync. An unavailable status API keeps the last known view visible with an explicit stale-status notice.
+
+Read/unread pending and completed outcomes are quiet by default: no toast or routine inline progress/success message. **All recent actions** still expands their history and Undo controls, and the keyboard Undo command remains available. Read/unread Undo success is also quiet. Failures/conflicts always surface, including after navigation or reload. Archive/trash/move/restore toasts and their Undo feedback remain; sending and Outbox feedback are unchanged.
 
 Pending actions and undismissed failures/conflicts have no age cutoff and appear before recent completions. Completions remain visible for ten minutes after completion (including late outcomes), unless dismissed. Keyset pages contain 50 actions; **Show more actions** loads additional history. Finished outcomes can be dismissed; pending work cannot. Completed/cancelled actions and dismissed outcomes are eligible for cleanup after seven days; unresolved failures/conflicts remain until dismissal or account removal.
 

@@ -2,7 +2,7 @@
 
 Open any synchronized message to read its cached body. Format selection is automatic: plain-only messages display escaped plain text; messages with HTML display their isolated sanitized formatting. There is no manual format switch. Previous/next follows the current account/folder view across list pages. **Back to message list** preserves that list's filters and page. Browser Back/Forward and message links use the URL fragment. Slow requests for a previously selected message cannot replace the current one.
 
-The reader remains read-only: fetching uses IMAP's non-mutating download and a read-only mailbox lock. Opening mail does not change its provider read flag. Attachments are listed and downloaded on demand (see below); threads and mail actions have separate implementation gates. Styles remain temporary pending Claude Design.
+Body fetching uses IMAP's non-mutating download and a read-only mailbox lock. The web reader separately queues the existing durable read action after one continuous second of foreground viewing of loaded content (D033); listing or fetching mail alone does not change provider flags. Explicit read/unread, move and reply controls remain available. Attachments are listed and downloaded on demand (see below).
 
 ## Local setup and hosted content origin
 
@@ -85,6 +85,14 @@ The reader accepts the active local search/account/folder scope. Previous/Next s
 ## Conversation context
 
 The [conversation timeline](conversations.md) connects owned messages across folders in one account. Select a member to use this same reader and its per-message image consent, attachment controls and action/reply paths. The original source anchors search/folder navigation; opening the timeline itself never fetches other bodies or marks mail read.
+
+## Viewing and quiet read feedback — 2026-11-01
+
+The one-second timer starts only once plain content is ready or the formatted frame has loaded, with a visible, focused document and unobscured reader. Backgrounding, navigation, an open drawer/composer, pending actions or content errors cancel it. Returning starts a fresh second. Only the opened physical message is marked, with existing authentication/ownership/origin checks, five-second Undo, worker fencing and IMAP STORE semantics. An already-read message adds no action. Manual reader actions disarm automatic marking for that opening, and a failed read does not cause a retry loop. Auto-reading out of an unread filter returns to the results rather than advancing through the remaining unread messages.
+
+Routine read/unread pending/completed messages and Undo confirmations are silent. Their history/Undo remain under All recent actions, including keyboard Undo. Failures/conflicts remain visible; folder changes and Outbox/sending keep their toast feedback. See [mail actions](actions.md). No schema, provider protocol, dependency or environment change is required.
+
+Proof: `npm run check` passed lint, both typechecks, 49 unit tests and both builds. Twenty-three focused Chromium checks passed across the new controlled-clock attention journey, conversations/loaded HTML, keyboard search/Undo and the existing IMAP reader/provider journey. Coverage includes brief versus sustained viewing, simulated visibility transitions, loading content, manual unread preservation, one attempt per opening, quiet outcomes after reload, visible failures, move toasts, unread-search return without cascading reads, and provider STORE/move/retry/conflict/Undo behavior. The long reader fixture starts its triage phase with a fresh read budget and checks dynamic unread counts because its newly opened neighbors now become read. Real browser/OS focus transitions and manual cross-browser/screen-reader acceptance remain pending.
 
 
 ## Saved image defaults — 2026-10-30

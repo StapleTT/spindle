@@ -1170,6 +1170,7 @@ export function Mail({
                   <Reader
                     key={`${messageId}:${account}:${mailbox}:${q}:${conversation}`}
                     id={messageId}
+                    active={!draftId && !drawerOpen}
                     conversation={conversation}
                     query={q}
                     account={account}

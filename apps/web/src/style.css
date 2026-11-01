@@ -2602,7 +2602,7 @@ label.avatar input {
   margin-inline: -12px;
 }
 
-.action-status:not(.expanded) > li:nth-child(n + 4) {
+.action-status > li[hidden] {
   display: none;
 }
 .snackbars-actions > button {
