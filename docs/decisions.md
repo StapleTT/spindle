@@ -222,6 +222,8 @@ Use exact validated Message-ID/In-Reply-To/References links within one owned con
 
 The reader provides chronological cross-folder context, including synchronized Sent replies. Opening another member reuses safe per-message rendering, image consent, attachments, reply identity and actions. Inbox/search rows and batch scope stay per message. An owned source anchors the original search/folder and result navigation; context never grants cross-account or cross-user access. Inbox IDLE notifications are implemented under D021; authenticated SSE invalidates local browser views under D022, with polling recovery. See [conversation behavior and upgrade](conversations.md).
 
+Reader correction requested on 2026-11-01: a standalone email must not look like a thread or repeat its selected header. Show only other related messages in the timeline; combine matching Inbox/All Mail envelopes for display while retaining all physical IDs, individual actions, local list/count/search semantics and scoped navigation. Copy hints require a valid exact Message-ID and matching account/envelope/date/size metadata; differing metadata and same-folder deliveries stay separate. Prefer a matching current-view copy and a regular folder over virtual All Mail for links. Hide the timeline when no other loaded entries or earlier pages remain. No data merge, migration or provider mutation is authorized or needed for this display correction.
+
 ## D021 — bounded inbox IDLE refresh
 
 Status: agent implementation choices for the user's requested IMAP IDLE refresh on 2026-10-29.

@@ -236,6 +236,54 @@ test('account-scoped local conversation graph, context authorization, pagination
     },
   );
   await t.test(
+    'copy hints require valid matching account-scoped envelopes and never replace physical identities',
+    async () => {
+      const first = await mail('Newsletter', '<newsletter-copy@example.test>');
+      const copy = await mail(
+        'Newsletter',
+        '<newsletter-copy@example.test>',
+        null,
+        [],
+        archive,
+      );
+      await pool.query(
+        "UPDATE mail_messages SET received_at='2026-11-01T12:00:00Z',sent_at='2026-11-01T11:59:00Z',size_bytes=4096 WHERE id=ANY($1::uuid[])",
+        [[first, copy]],
+      );
+      const fingerprints = async () => {
+        const response = await conversation(first);
+        assert.equal(response.statusCode, 200, response.body);
+        assert.equal(response.json().total, 2);
+        return new Map<string, string>(
+          response
+            .json()
+            .messages.map((item: { id: string; copyKey: string }) => [
+              item.id,
+              item.copyKey,
+            ]),
+        );
+      };
+      const matching = await fingerprints();
+      assert.deepEqual(new Set(matching.keys()), new Set([first, copy]));
+      assert.equal(matching.get(first), matching.get(copy));
+      await pool.query('UPDATE mail_messages SET size_bytes=4097 WHERE id=$1', [
+        copy,
+      ]);
+      const changedSize = await fingerprints();
+      assert.notEqual(changedSize.get(first), changedSize.get(copy));
+      await pool.query(
+        "UPDATE mail_messages SET size_bytes=4096,subject='Different content' WHERE id=$1",
+        [copy],
+      );
+      const changedSubject = await fingerprints();
+      assert.notEqual(changedSubject.get(first), changedSubject.get(copy));
+      const invalid = await mail('Newsletter', '<invalid>');
+      const response = await conversation(invalid);
+      assert.equal(response.statusCode, 200);
+      assert.equal(response.json().messages[0].copyKey, invalid);
+    },
+  );
+  await t.test(
     'foreign admins, anonymous/unverified users and forged source/context/cursors cannot disclose mail',
     async () => {
       assert.equal(

@@ -119,6 +119,9 @@ export function registerConversationRoutes(app: FastifyInstance, pool: Pool) {
       const rows = (
         await pool.query(
           `SELECT m.id,m.subject,m.sender,m.received_at AS "receivedAt",
+        CASE WHEN mail_thread_ids(m.message_id)=ARRAY[m.message_id]
+          THEN md5(jsonb_build_array(m.account_id,m.message_id,m.subject,m.sender,m.recipients,m.sent_at,m.received_at,m.size_bytes)::text)
+          ELSE m.id::text END AS "copyKey",
         NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=m.user_id AND seen.message_id=m.id AND '\\Seen'=ANY(seen.flags)) AS unread,
         (${condition}) AS "matchesView",
         m.reference_ids IS NULL AS "headersPending",

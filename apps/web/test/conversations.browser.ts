@@ -230,7 +230,7 @@ test('conversation timeline preserves scoped navigation, reply identity, message
         await openRoot();
         assert.deepEqual(
           await timeline.getByRole('listitem').locator('a').allTextContents(),
-          ['Project original', 'Sent reply', 'Archived response'],
+          ['Sent reply', 'Archived response'],
         );
         assert.equal(
           await timeline
@@ -269,8 +269,8 @@ test('conversation timeline preserves scoped navigation, reply identity, message
         assert.equal(
           await timeline
             .getByRole('link', { name: 'Sent reply', exact: true })
-            .getAttribute('aria-current'),
-          'true',
+            .count(),
+          0,
         );
         await page.locator('iframe').waitFor();
         assert.equal(
@@ -420,6 +420,78 @@ test('conversation timeline preserves scoped navigation, reply identity, message
       },
     );
     await t.test(
+      'single receipts have no thread and Inbox/All Mail copies never repeat the open message or a reply',
+      async () => {
+        const allMail = await box('All Mail', '\\All');
+        async function copy(id: string) {
+          const copied = (
+            await pool.query(
+              `INSERT INTO mail_messages(user_id,account_id,remote_key,subject,sender,recipients,message_id,in_reply_to,reference_ids,received_at,sent_at,size_bytes)
+               SELECT user_id,account_id,gen_random_uuid()::text,subject,sender,recipients,message_id,in_reply_to,reference_ids,received_at,sent_at,size_bytes
+               FROM mail_messages WHERE user_id=$1 AND id=$2 RETURNING id`,
+              [owner.id, id],
+            )
+          ).rows[0].id;
+          await pool.query(
+            "INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,uid_validity,uid,flags) VALUES($1,$2,$3,$4,'1',$5,'{}')",
+            [owner.id, account, allMail, copied, ++uid],
+          );
+          return copied;
+        }
+        const receipt = await mail('Single receipt', 'receipt', null);
+        await page.goto(`${config.appUrl}/inbox#message=${receipt}`);
+        await title.filter({ hasText: 'Single receipt' }).waitFor();
+        await page
+          .getByRole('button', { name: 'Pin conversation', exact: true })
+          .waitFor();
+        assert.equal(await timeline.count(), 0);
+        const duplicate = await copy(receipt);
+        await page.reload();
+        await title.filter({ hasText: 'Single receipt' }).waitFor();
+        await page
+          .getByRole('button', { name: 'Pin conversation', exact: true })
+          .waitFor();
+        assert.equal(await timeline.count(), 0);
+        assert.equal(await page.locator('.message-card-head').count(), 1);
+        await page.screenshot({
+          path: '/tmp/spindle-single-message-reader.png',
+          animations: 'disabled',
+        });
+        // Keep physical copies and their own actions; grouping is presentation only.
+        assert.equal(
+          (
+            await pool.query(
+              'SELECT count(*)::int AS n FROM mail_messages WHERE user_id=$1 AND id=ANY($2::uuid[])',
+              [owner.id, [receipt, duplicate]],
+            )
+          ).rows[0].n,
+          2,
+        );
+        await copy(root);
+        await copy(child);
+        await openRoot();
+        assert.deepEqual(
+          await timeline.getByRole('listitem').locator('a').allTextContents(),
+          ['Sent reply', 'Archived response'],
+        );
+        assert.equal(
+          await timeline
+            .getByRole('link', { name: 'Project original', exact: true })
+            .count(),
+          0,
+        );
+        await timeline
+          .getByRole('link', { name: 'Sent reply', exact: true })
+          .click();
+        await title.filter({ hasText: 'Sent reply' }).waitFor();
+        assert.deepEqual(
+          await timeline.getByRole('listitem').locator('a').allTextContents(),
+          ['Project original', 'Archived response'],
+        );
+        assert.deepEqual(contentRequests, []);
+      },
+    );
+    await t.test(
       'older pages and delayed timeline responses preserve the current reader and keyboard result navigation',
       async () => {
         for (let i = 0; i < 51; i++)
@@ -438,9 +510,13 @@ test('conversation timeline preserves scoped navigation, reply identity, message
           })
           .click();
         await timeline
-          .getByRole('link', { name: 'Project original', exact: true })
+          .getByRole('link', { name: 'Sent reply', exact: true })
           .waitFor();
-        assert.equal(await timeline.getByRole('listitem').count(), 54);
+        assert.equal(await timeline.getByRole('listitem').count(), 53);
+        await timeline
+          .getByRole('link', { name: 'Sent reply', exact: true })
+          .click();
+        await title.filter({ hasText: 'Sent reply' }).waitFor();
         await timeline
           .getByRole('link', { name: 'Project original', exact: true })
           .click();
@@ -449,7 +525,7 @@ test('conversation timeline preserves scoped navigation, reply identity, message
           .getByRole('link', { name: 'Sent reply', exact: true })
           .click();
         await title.filter({ hasText: 'Sent reply' }).waitFor();
-        assert.equal(await timeline.getByRole('listitem').count(), 54);
+        assert.equal(await timeline.getByRole('listitem').count(), 53);
         let release = () => {},
           started = () => {};
         const gate = new Promise<void>((resolve) => {
@@ -478,9 +554,10 @@ test('conversation timeline preserves scoped navigation, reply identity, message
         await title.filter({ hasText: 'Other message' }).waitFor();
         release();
         await page.unrouteAll({ behavior: 'wait' });
-        await timeline
-          .getByRole('link', { name: 'Other message', exact: true })
+        await page
+          .getByRole('button', { name: 'Pin conversation', exact: true })
           .waitFor();
+        assert.equal(await timeline.count(), 0);
         assert.equal(
           await timeline
             .getByRole('link', { name: 'Sent reply', exact: true })

@@ -5,20 +5,14 @@ import {
   ConversationControls,
   type ConversationState,
 } from './conversation-controls.js';
+import {
+  type ConversationItem as Item,
+  relatedConversationItems,
+} from './conversation-items.js';
 import { mailApi } from './mail-api.js';
 import { mailPollDelay, useMailRevision } from './mail-events.js';
 import { mailHref } from './mail-navigation.js';
 
-type Item = {
-  id: string;
-  subject: string;
-  sender: { name: string; address: string }[];
-  receivedAt: string;
-  unread: boolean;
-  matchesView: boolean;
-  headersPending: boolean;
-  folders: { path: string; role: string | null }[];
-};
 type Page = {
   messages: Item[];
   total: number;
@@ -112,6 +106,7 @@ export function Conversation({
       clearTimeout(timer);
     };
   }, [endpoint, pages, revision, retry, liveRevision]);
+  const related = relatedConversationItems(data?.messages ?? [], selected);
   // Controls join the reader toolbar; the thread sits under the subject.
   return (
     <>
@@ -130,11 +125,10 @@ export function Conversation({
           tools,
         )}
       {thread &&
+        (!data || error || related.length > 0 || data.nextCursor) &&
         createPortal(
           <section className="conversation" aria-label="Conversation">
-            <h3 className="visually-hidden">
-              Conversation{data ? ` (${data.total} messages)` : ''}
-            </h3>
+            <h3 className="visually-hidden">Conversation</h3>
             <p className="visually-hidden">
               Related messages in this account, including Sent and mail outside
               this search or folder. Read, move and delete actions affect only
@@ -171,7 +165,7 @@ export function Conversation({
                   </button>
                 )}
                 <ol aria-label="Conversation messages">
-                  {[...data.messages].reverse().map((item) => {
+                  {[...related].reverse().map((item) => {
                     const from =
                       item.sender
                         .map((person) => person.name || person.address)
@@ -179,7 +173,7 @@ export function Conversation({
                     return (
                       <li
                         key={item.id}
-                        className={`thread-card${item.unread ? ' unread' : ''}${item.id === selected ? ' current' : ''}`}
+                        className={`thread-card${item.unread ? ' unread' : ''}`}
                       >
                         <span className="avatar" aria-hidden="true">
                           {initials(from)}
@@ -191,9 +185,6 @@ export function Conversation({
                               message: item.id,
                               conversation: anchor,
                             })}
-                            aria-current={
-                              item.id === selected ? 'true' : undefined
-                            }
                           >
                             {item.subject || '(No subject)'}
                           </a>
