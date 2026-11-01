@@ -1,5 +1,6 @@
 import { type FormEvent, StrictMode, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { accountApi } from './account-api.js';
 import { authClient } from './auth-client.js';
 import { Icon, SpindleLogo, ThemeToggle } from './brand.js';
 import { passkey } from './icons.js';
@@ -8,7 +9,7 @@ import '@fontsource-variable/plus-jakarta-sans';
 import '@fontsource-variable/jetbrains-mono';
 import './style.css';
 
-type View = 'login' | 'signup' | 'forgot' | 'reset';
+type View = 'login' | 'signup' | 'forgot' | 'reset' | 'email-change';
 const params = new URLSearchParams(window.location.search);
 const resetToken = params.get('token');
 const initialView = params.get('view');
@@ -22,7 +23,8 @@ function App() {
   const [view, setView] = useState<View>(
     initialView === 'signup' ||
       initialView === 'forgot' ||
-      initialView === 'reset'
+      initialView === 'reset' ||
+      initialView === 'email-change'
       ? initialView
       : 'login',
   );
@@ -34,16 +36,23 @@ function App() {
   const [message, setMessage] = useState(
     params.has('error')
       ? 'This email link is invalid or expired. Request a new one.'
-      : params.has('verified')
-        ? 'Email verified. You can now sign in.'
-        : '',
+      : params.has('passwordChanged')
+        ? 'Password changed. Sign in with your new password.'
+        : params.has('emailChanged')
+          ? 'Sign-in email updated. Sign in with your new email and existing password.'
+          : params.has('verified')
+            ? 'Email verified. You can now sign in.'
+            : '',
   );
   const [error, setError] = useState(false);
   const feedback = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
     if (isPending) return;
-    const path = session && view !== 'reset' ? '/inbox' : '/login';
+    const path =
+      session && view !== 'reset' && view !== 'email-change'
+        ? '/inbox'
+        : '/login';
     window.history.replaceState(
       null,
       '',
@@ -108,6 +117,15 @@ function App() {
     setBusy(true);
     setMessage('');
     try {
+      if (view === 'email-change') {
+        if (!resetToken)
+          throw new Error(
+            'This email-change link is missing. Request a new one in Settings.',
+          );
+        await accountApi('/email/confirm', { token: resetToken });
+        window.location.assign('/login?emailChanged=1');
+        return;
+      }
       const address = email.trim().toLowerCase();
       if (view === 'login') {
         const result = await authClient.signIn.email({
@@ -173,8 +191,13 @@ function App() {
           notify('Password updated. Sign in with your new password.');
         }
       }
-    } catch {
-      notify('Unable to reach Spindle. Please try again.', true);
+    } catch (error) {
+      notify(
+        view === 'email-change' && error instanceof Error
+          ? error.message
+          : 'Unable to reach Spindle. Please try again.',
+        true,
+      );
     } finally {
       setBusy(false);
     }
@@ -225,6 +248,7 @@ function App() {
     signup: 'Create your account',
     forgot: 'Reset your password',
     reset: 'Choose a new password',
+    'email-change': 'Confirm new sign-in email',
   }[view];
   const subtitle = {
     login: 'One login for every mailbox you own.',
@@ -234,6 +258,8 @@ function App() {
         : 'Create an account and verify your email to get started.',
     forgot: 'We’ll email you a link to choose a new password.',
     reset: 'Use 15–128 characters. A password manager is recommended.',
+    'email-change':
+      'Confirm the address that received this link. You’ll be signed out on every device, then you can sign in with your new email and existing password.',
   }[view];
   const feedbackText = message && (
     <p
@@ -245,7 +271,7 @@ function App() {
       {message}
     </p>
   );
-  if (session && view !== 'reset')
+  if (session && view !== 'reset' && view !== 'email-change')
     return (
       <>
         <h1 className="visually-hidden">Spindle</h1>
@@ -256,6 +282,7 @@ function App() {
             key={session.user.id}
             userId={session.user.id}
             email={session.user.email}
+            name={session.user.name}
             busy={busy}
             onSignOut={() => void signOut()}
           />
@@ -313,7 +340,7 @@ function App() {
               <div className="auth-or">or</div>
             </>
           )}
-          {view !== 'reset' && (
+          {view !== 'reset' && view !== 'email-change' && (
             <label htmlFor="email">
               <span>Email</span>
               <input
@@ -330,7 +357,7 @@ function App() {
               />
             </label>
           )}
-          {view !== 'forgot' && (
+          {view !== 'forgot' && view !== 'email-change' && (
             <div className="field">
               <span className="label-row">
                 <label htmlFor="password">Password</label>

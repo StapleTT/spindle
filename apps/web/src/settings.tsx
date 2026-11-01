@@ -1,6 +1,7 @@
 import { type FormEvent, lazy, Suspense, useState } from 'react';
 import { AccountColorPicker } from './account-color-picker.js';
 import { AccountOrderHandle } from './account-order-handle.js';
+import { AccountSecurity } from './account-security.js';
 import { accountColorStyle, Icon, initials, ThemeChoice } from './brand.js';
 import type { Signature } from './draft-api.js';
 import {
@@ -660,7 +661,15 @@ export function Settings({
         )}
         {tab === 'security' && (
           <>
-            <h3>Security &amp; privacy</h3>
+            <div className="settings-head">
+              <h3>Account &amp; security</h3>
+              <p>
+                Manage your Spindle identity and the devices signed in to your
+                account.
+              </p>
+            </div>
+            <AccountSecurity />
+            <h3>Privacy &amp; preferences</h3>
             <MailPreferenceSettings />
             <ul className="settings-list">
               {protections.map(([icon, label, description, on]) => (

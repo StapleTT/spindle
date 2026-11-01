@@ -102,11 +102,13 @@ type Page = {
 export function Mail({
   userId,
   email,
+  name,
   busy,
   onSignOut,
 }: {
   userId: string;
   email: string;
+  name: string;
   busy: boolean;
   onSignOut: () => void;
 }) {
@@ -1087,7 +1089,12 @@ export function Mail({
           <div className="top-actions">
             <KeyboardTriage root={root} />
             <ThemeToggle />
-            <AccountMenu email={email} busy={busy} onSignOut={onSignOut} />
+            <AccountMenu
+              email={email}
+              name={name}
+              busy={busy}
+              onSignOut={onSignOut}
+            />
           </div>
         </header>
         {!configured && !inSettings && (

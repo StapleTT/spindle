@@ -6,10 +6,12 @@ import { logout } from './icons.js';
 // shortcuts pause while it has focus.
 export function AccountMenu({
   email,
+  name,
   busy,
   onSignOut,
 }: {
   email: string;
+  name: string;
   busy: boolean;
   onSignOut: () => void;
 }) {
@@ -36,7 +38,7 @@ export function AccountMenu({
     document.addEventListener('pointerdown', outside);
     return () => document.removeEventListener('pointerdown', outside);
   }, [open]);
-  const letter = initials(email).slice(0, 1);
+  const letter = initials(name || email).slice(0, 1);
   return (
     <div className="account-anchor" ref={anchor}>
       <button
@@ -65,6 +67,9 @@ export function AccountMenu({
           <span className="account-avatar large" aria-hidden="true">
             {letter}
           </span>
+          <p>
+            <strong>{name}</strong>
+          </p>
           <p id="account-menu-email">{email}</p>
           <p className="muted small">Signed in to Spindle</p>
         </div>

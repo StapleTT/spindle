@@ -16,6 +16,7 @@ export { default as close } from '@material-symbols/svg-400/rounded/close.svg';
 export { default as contrast } from '@material-symbols/svg-400/rounded/contrast.svg';
 export { default as darkMode } from '@material-symbols/svg-400/rounded/dark_mode.svg';
 export { default as trash } from '@material-symbols/svg-400/rounded/delete.svg';
+export { default as devices } from '@material-symbols/svg-400/rounded/devices.svg';
 export { default as dns } from '@material-symbols/svg-400/rounded/dns.svg';
 export { default as doneAll } from '@material-symbols/svg-400/rounded/done_all.svg';
 export { default as download } from '@material-symbols/svg-400/rounded/download.svg';

@@ -218,6 +218,13 @@
       "when": 1793540000000,
       "tag": "0030_account_order",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793550000000,
+      "tag": "0031_account_security",
+      "breakpoints": true
     }
   ]
 }

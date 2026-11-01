@@ -1,6 +1,6 @@
 # Authentication and signup
 
-Spindle uses Better Auth with its transactional Drizzle/Postgres adapter. The application owns registration policy, email-address-bound invitations, server-controlled roles and its protected profile endpoint. Passkeys, 2FA, social login and mailbox OAuth are outside this slice.
+Spindle uses Better Auth with its transactional Drizzle/Postgres adapter. The application owns registration policy, email-address-bound invitations, server-controlled roles and its private account/security settings. See [account and security](account-security.md) for profile, credential and device controls. Passkeys, 2FA, social login and mailbox OAuth are outside this slice.
 
 ## Development setup
 
@@ -43,11 +43,11 @@ The development Vite proxy shares the loopback IP bucket. Per-IP login/signup li
 - Signup returns a generic response for duplicate, uninvited or expired-invite addresses, without creating unauthorized accounts or disclosing invitation membership. A successful-looking response does not guarantee an email was eligible for registration.
 - Verification links are signed and expire after one hour. Verification is idempotent and never automatically logs the recipient in; replay cannot grant a session. This uses the library's native verification flow rather than adding a second token framework.
 - Login requires both the password and verified email. Each successful login receives a fresh server-backed session. Sessions expire after seven days; validation reads the database instead of trusting a cached user cookie.
-- Logout revokes the current session. Other sessions remain valid until logout, expiry, or credential reset.
+- Logout revokes the current session. Other sessions remain valid until logout, expiry, explicit device revocation, or a password/email change.
 - Password recovery returns the same response for present/absent accounts, including relay failures. Errors are logged without SMTP details. Reset token identifiers are hashed in the database, expire after one hour, and are consumed atomically once.
 - A database trigger on credential changes revokes **all** user sessions and outstanding recovery records in the same transaction as the password update. Another user's sessions remain untouched. Concurrent use of one recovery link has one winner.
 - Verification queries and recovery token path segments are removed from request logs. Pages use a no-referrer policy, and the browser removes a recovery token from its address/history after loading it.
-- Email messages are plain text and do not interpolate untrusted HTML. The SMTP transport has bounded timeouts. A failed invitation delivery can be retried by reissuing the command; the pending invitation may already be saved.
+- Email messages include the shared branded HTML layout and a plain-text alternative. Interpolated text and URLs are escaped. The SMTP transport has bounded timeouts. A failed invitation delivery can be retried by reissuing the command; the pending invitation may already be saved.
 
 Only these auth routes are exposed:
 
@@ -63,11 +63,11 @@ Only these auth routes are exposed:
 | POST   | `/api/auth/sign-out`                                                    | Current session, exact trusted Origin required                                       |
 | GET    | `/api/me`                                                               | Current verified user's ID/email/role only; 401 without a session, 403 if unverified |
 
-Unused Better Auth endpoints are not exposed. There are no user-by-ID lookup, admin management, email-change, social-login or passkey endpoints in this slice.
+Private account/security routes are documented in [account and security](account-security.md#api-and-security). Unused native Better Auth update/change/list/revoke routes remain unexposed. There are no user-by-ID lookup, admin management, social-login or passkey endpoints in this slice.
 
 ## Storage, migrations and proof
 
-Tables are `users`, `auth_sessions`, `auth_accounts`, `auth_verifications`, `auth_rate_limits`, and `invites`. `auth_accounts` contains login credential records; it is not a connected-mailbox table. Foreign keys and unique constraints protect user/session/credential relationships. Existing pg-boss tables are separate and preserved.
+Tables are `users`, `auth_sessions`, `auth_accounts`, `auth_verifications`, `auth_rate_limits`, `invites`, and `auth_email_changes`. `auth_accounts` contains login credential records; it is not a connected-mailbox table. Foreign keys and unique constraints protect user/session/credential relationships. Existing pg-boss tables are separate and preserved.
 
 Versioned SQL lives in `apps/server/drizzle`. Drizzle's migrator applies it transactionally under an advisory lock. Run `npm run db:migrate` explicitly before API startup; do not edit an applied migration, delete its history or drop user tables to upgrade. Future changes must append migrations. Production rollback/restore still needs its own release proof.
 
@@ -75,9 +75,9 @@ Versioned SQL lives in `apps/server/drizzle`. Drizzle's migrator applies it tran
 
 Install Chromium once with `npm exec -- playwright install chromium`, then run `npm run test:browser` for the full form/verification/login/reload/reset/logout journey and phone-width layout check. It also uses a disposable database and temporary servers. Browser/API tests capture synthetic email via a test transport; live relay connectivity is checked separately. CI runs both suites with Postgres and Chromium.
 
-The UI intentionally uses temporary native styling while Claude Design is pending. Mail connections and platform-admin screens are future features; the signed-in screen does not pretend those controls already exist.
+The UI uses the imported Claude Design tokens and components; see [design guidelines](design.md). Mail connections and account/security controls are implemented; platform-admin management remains future scope.
 
 
 ## Browser routes
 
-The public landing page is `/`. Signup, sign-in, verification callbacks and password recovery use `/login` (with existing `view`, `email` and verification/reset query parameters); signed-in mail uses `/inbox` with its existing hash navigation. Signed-out inbox visits retain their mail fragment through sign-in. Signed-in login visits switch to `/inbox`, except an explicit password-reset flow. Sign-out and revoked sessions return to `/login`. Old root auth/mail links remain compatible. `APP_URL`, Better Auth's `/api/auth` path and origin/ownership checks are unchanged. See [static hosting routes](network-access.md#static-build-routing).
+The public landing page is `/`. Signup, sign-in, verification callbacks and password recovery use `/login` (with existing `view`, `email` and verification/reset query parameters); signed-in mail uses `/inbox` with its existing hash navigation. Signed-out inbox visits retain their mail fragment through sign-in. Signed-in login visits switch to `/inbox`, except explicit password-reset and email-change confirmation flows. Sign-out and revoked sessions return to `/login`. Old root auth/mail links remain compatible. `APP_URL`, Better Auth's `/api/auth` path and origin/ownership checks are unchanged. See [static hosting routes](network-access.md#static-build-routing).

@@ -75,7 +75,11 @@ button.filled:hover {
 }
 button.outlined {
   border-color: var(--outline);
+  background: transparent;
   color: var(--primary);
+}
+button.outlined:hover {
+  background: var(--hover);
 }
 .text-button,
 .text-link {
@@ -1735,6 +1739,63 @@ label.avatar:has(:focus-visible) {
 }
 .settings-panel .wide {
   grid-column: 1 / -1;
+}
+
+.account-security {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.account-security form,
+.account-security fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.account-security fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.account-security h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+.account-settings-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 16px;
+}
+.account-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.account-settings-email {
+  overflow-wrap: anywhere;
+}
+.session-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+}
+.session-row-text {
+  flex: 1;
+  min-width: min(100%, 160px);
+  overflow-wrap: anywhere;
+}
+.session-agent {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--on-var);
+}
+.session-agent p {
+  margin-top: 6px;
 }
 .tls-note {
   flex: 1;

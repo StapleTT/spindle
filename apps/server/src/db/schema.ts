@@ -110,6 +110,21 @@ export const rateLimit = pgTable('auth_rate_limits', {
   lastRequest: bigint('last_request', { mode: 'number' }).notNull(),
 });
 
+export const emailChange = pgTable('auth_email_changes', {
+  id: text('id').primaryKey(),
+  userId: text('user_id')
+    .notNull()
+    .unique()
+    .references(() => user.id, { onDelete: 'cascade' }),
+  verificationId: text('verification_id')
+    .notNull()
+    .unique()
+    .references(() => verification.id, { onDelete: 'cascade' }),
+  oldEmail: text('old_email').notNull(),
+  newEmail: text('new_email').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 export const invites = pgTable('invites', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()::text`),
   email: text('email').notNull().unique(),

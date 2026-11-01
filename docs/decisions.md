@@ -360,3 +360,12 @@ User follow-up on 2026-11-01: suppress all pending mail-action toasts, including
 Completed-read correction on 2026-11-01: expanded history must apply the same quiet-outcome rules as the collapsed stack. Successful/cancelled read and unread actions remain hidden after expansion, refresh and reload; only their available Undo controls or failures/conflicts can appear. Retain completed folder actions and outgoing-send feedback. The initial collapsed-stack filter did not cover expanded history; the screenshot and new browser regression reproduced that path.
 
 Further user correction on 2026-11-01: hide read/unread Undo buttons as well, including expanded history. Pending read/unread actions must not create a visible history affordance by themselves. Folder Undo controls, keyboard Undo, failures/conflicts and outgoing-send feedback remain available. This supersedes the earlier visible read/unread Undo exception.
+
+
+## D034 — account profile, credentials and device sessions
+
+Status: explicitly requested by the user on 2026-11-01; implementation choices below.
+
+Add profile-name editing, current-password-confirmed password changes, replacement-verified login email changes and active session review/sign-out in the existing Security settings pane, following the imported design. Keep all controls private to the verified owner, including against foreign admins. Passkeys/2FA remain deferred under D003.
+
+Implementation: password changes sign out every device. Email requests keep the current login active until an explicit one-use, one-hour confirmation at the replacement address; cancellation/new requests invalidate the previous link. Confirmation signs out every device without automatically signing in. Bind tokens to stable user IDs and use Better Auth verification/password/session primitives with the existing transactional adapter. Preserve mail ownership, profile role and connected-account sender/signature settings. Device revocation requires the current password and preserves this device; session listings expose safe metadata, never bearer tokens. Use additive migration 0031 and retain it on application rollback. See [behavior, limits and proof](account-security.md).

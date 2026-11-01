@@ -25,6 +25,7 @@ try {
       ...(process.argv.includes('--browser')
         ? [
             'apps/web/test/auth.browser.ts',
+            'apps/web/test/account-security.browser.ts',
             'apps/web/test/mail.browser.ts',
             'apps/web/test/idle.browser.ts',
             'apps/web/test/events.browser.ts',
@@ -46,6 +47,7 @@ try {
           ]
         : [
             'apps/server/test/auth.integration.ts',
+            'apps/server/test/account-security.integration.ts',
             'apps/server/test/mail.integration.ts',
             'apps/server/test/idle.integration.ts',
             'apps/server/test/events.integration.ts',

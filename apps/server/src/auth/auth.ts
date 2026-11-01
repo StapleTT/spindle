@@ -7,6 +7,7 @@ import type { Transporter } from 'nodemailer';
 import type { Pool } from 'pg';
 import * as schema from '../db/schema.js';
 import { logger } from '../logger.js';
+import { accountSettings } from './account-settings.js';
 import type { AuthConfig } from './config.js';
 import {
   createMailer,
@@ -31,6 +32,7 @@ export function createAuth(
     trustedOrigins: [config.appUrl],
     database: drizzleAdapter(db, { provider: 'pg', schema, transaction: true }),
     plugins: [
+      accountSettings(pool, config, mailer),
       {
         id: 'spindle-invites',
         schema: {
@@ -103,6 +105,8 @@ export function createAuth(
         '/sign-up/email': { window: 60, max: 5 },
         '/request-password-reset': { window: 60, max: 3 },
         '/send-verification-email': { window: 60, max: 3 },
+        '/account/*': { window: 60, max: 30 },
+        '/account/email/confirm': { window: 60, max: 10 },
       },
     },
     advanced: {

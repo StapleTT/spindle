@@ -39,9 +39,20 @@ export function registerAuthRoutes(
               '/send-verification-email',
               '/request-password-reset',
               '/reset-password',
+              '/account/profile',
+              '/account/password',
+              '/account/email',
+              '/account/email/cancel',
+              '/account/email/confirm',
+              '/account/sessions/revoke',
+              '/account/sessions/revoke-others',
             ].includes(path)
-          : ['/get-session', '/verify-email'].includes(path) ||
-            /^\/reset-password\/[^/]+$/.test(path);
+          : [
+              '/get-session',
+              '/verify-email',
+              '/account',
+              '/account/sessions',
+            ].includes(path) || /^\/reset-password\/[^/]+$/.test(path);
       if (!allowed) return reply.code(404).send({ message: 'Not found.' });
       if (
         request.method === 'POST' &&

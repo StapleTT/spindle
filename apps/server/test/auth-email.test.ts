@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { AuthConfig } from '../src/auth/config.js';
 import {
+  emailChangeEmail,
   invitationEmail,
   passwordResetEmail,
   verificationEmail,
@@ -13,6 +14,7 @@ const url = 'https://app.example.test/api/auth/verify?token=a"b<c>&d=1';
 test('auth emails escape user values and keep the action link first in plain text', () => {
   const email = '"><img src=x onerror=alert(1)>@example.test';
   for (const message of [
+    emailChangeEmail(config, email, url),
     verificationEmail(config, email, url),
     passwordResetEmail(config, email, url),
     invitationEmail(config, email, url, new Date('2026-11-05T12:00:00Z')),

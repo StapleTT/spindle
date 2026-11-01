@@ -189,6 +189,37 @@ export function passwordResetEmail(
   };
 }
 
+export function emailChangeEmail(
+  config: AuthConfig,
+  email: string,
+  url: string,
+): AuthEmail {
+  return {
+    subject: 'Verify your new Spindle sign-in email',
+    text: `Verify your new sign-in email within one hour:\n\n${url}\n\nYour current sign-in email stays active until you confirm. Confirming signs you out on every device. If you did not request this change, ignore this email.`,
+    html: layout(config, {
+      title: 'Verify your new sign-in email',
+      preheader:
+        'Confirm this address before your Spindle sign-in email changes.',
+      body: [
+        heading('Confirm your new sign-in email'),
+        paragraph(
+          `Use ${strong(email)} to sign in to your existing Spindle account. Your current address stays active until you confirm.`,
+        ),
+        button(url, 'Review email change'),
+        divider,
+        paragraph(
+          'The link expires in one hour and can be used once. Confirming signs you out on every device. If you didn’t request this change, ignore this email.',
+          14,
+        ),
+        fallbackLink(url),
+      ].join('\n'),
+      footer:
+        'You’re getting this because a signed-in Spindle user requested an email change.',
+    }),
+  };
+}
+
 export function invitationEmail(
   config: AuthConfig,
   email: string,
