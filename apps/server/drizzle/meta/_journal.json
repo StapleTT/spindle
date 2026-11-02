@@ -225,6 +225,20 @@
       "when": 1793550000000,
       "tag": "0031_account_security",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793550000001,
+      "tag": "0032_admin_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793550000002,
+      "tag": "0033_admin_unlock",
+      "breakpoints": true
     }
   ]
 }

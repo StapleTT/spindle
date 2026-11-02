@@ -48,6 +48,7 @@ async function lockOwner(ctx: GenericEndpointContext, userId: string) {
     where: [
       { field: 'id', value: userId },
       { field: 'emailVerified', value: true },
+      { field: 'suspended', value: false },
     ],
     update: { updatedAt: new Date() },
   });
@@ -62,7 +63,8 @@ async function withConfirmedSession<T>(
   operation: (adapter: Adapter, user: User) => Promise<T>,
 ) {
   const session = ctx.context.session;
-  if (!session?.user.emailVerified) throw new APIError('UNAUTHORIZED');
+  if (!session?.user.emailVerified || session.user.suspended)
+    throw new APIError('UNAUTHORIZED');
   const credential =
     currentPassword === undefined
       ? null
@@ -142,7 +144,7 @@ export function accountSettings(
 ) {
   const accountAccess = createAuthMiddleware(async (ctx) => {
     const session = ctx.context.session;
-    if (!session?.user.emailVerified)
+    if (!session?.user.emailVerified || session.user.suspended)
       throw new APIError('FORBIDDEN', {
         message: 'Verify your email to continue.',
       });

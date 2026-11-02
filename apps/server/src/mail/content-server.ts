@@ -42,7 +42,7 @@ async function grantedContent(pool: Pool, grant: ContentGrant) {
       `SELECT c.* FROM mail_content c JOIN users u ON u.id=c.user_id
     JOIN auth_sessions s ON s.user_id=c.user_id AND s.id=$4
     WHERE c.user_id=$1 AND c.message_id=$2 AND c.version=$3 AND c.state='ready'
-    AND c.sanitizer_version=${SANITIZER_VERSION} AND c.expires_at>clock_timestamp() AND s.expires_at>clock_timestamp() AND u.email_verified
+    AND c.sanitizer_version=${SANITIZER_VERSION} AND c.expires_at>clock_timestamp() AND s.expires_at>clock_timestamp() AND u.email_verified AND NOT u.suspended
     AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=c.user_id AND mm.account_id=c.account_id AND mm.message_id=c.message_id)`,
       [grant.owner, grant.message, grant.version, grant.session],
     )
@@ -59,7 +59,7 @@ async function grantedForward(
         `SELECT d.forward_content FROM mail_drafts d JOIN users u ON u.id=d.user_id
     JOIN auth_sessions s ON s.user_id=d.user_id AND s.id=$4
     WHERE d.user_id=$1 AND d.id::text=$2 AND d.id::text=$3
-    AND d.forward_content IS NOT NULL AND s.expires_at>clock_timestamp() AND u.email_verified`,
+    AND d.forward_content IS NOT NULL AND s.expires_at>clock_timestamp() AND u.email_verified AND NOT u.suspended`,
         [grant.owner, grant.message, grant.version, grant.session],
       )
     ).rows[0]?.forward_content ?? null
@@ -464,7 +464,7 @@ export function buildContentApp(
           const valid = await db.query(
             `SELECT c.message_id FROM mail_content c JOIN auth_sessions s ON s.user_id=c.user_id
           JOIN users u ON u.id=c.user_id WHERE c.user_id=$1 AND c.message_id=$2 AND c.version=$3 AND c.state='ready'
-          AND c.sanitizer_version=${SANITIZER_VERSION} AND c.expires_at>clock_timestamp() AND s.id=$4 AND s.expires_at>clock_timestamp() AND u.email_verified FOR UPDATE OF c`,
+          AND c.sanitizer_version=${SANITIZER_VERSION} AND c.expires_at>clock_timestamp() AND s.id=$4 AND s.expires_at>clock_timestamp() AND u.email_verified AND NOT u.suspended FOR UPDATE OF c`,
             [grant.owner, grant.message, grant.version, grant.session],
           );
           if (!valid.rowCount) return false;

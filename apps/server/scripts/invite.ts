@@ -1,14 +1,9 @@
-import { and, eq, gt } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';
 import { readAuthConfig } from '../src/auth/config.js';
-import {
-  createMailer,
-  invitationEmail,
-  sendAuthEmail,
-} from '../src/auth/email.js';
+import { createMailer } from '../src/auth/email.js';
+import { deliverInvitation, saveInvitation } from '../src/auth/invitations.js';
 import { readConfig } from '../src/config.js';
-import { invites, user } from '../src/db/schema.js';
+import { transaction } from '../src/mail/store.js';
 
 const [input, flag, ...extra] = process.argv.slice(2);
 const email = input?.trim().toLowerCase();
@@ -26,45 +21,30 @@ const pool = new Pool({
   connectionString: readConfig().databaseUrl,
   connectionTimeoutMillis: 5000,
 });
-const db = drizzle(pool);
 const mailer = createMailer(config);
-const expiresAt = new Date(Date.now() + 7 * 24 * 3600000);
 try {
-  await db.transaction(async (tx) => {
-    // Serializes explicit admin designation; it is never granted by registration order.
-    await tx.execute('SELECT pg_advisory_xact_lock(728491603)');
-    if ((await tx.select().from(user).where(eq(user.email, email))).length)
-      throw new Error('This email already has an account.');
-    if (flag === '--admin') {
-      const admins = await tx.select().from(user).where(eq(user.role, 'admin'));
-      const pending = await tx
-        .select()
-        .from(invites)
-        .where(
-          and(eq(invites.role, 'admin'), gt(invites.expiresAt, new Date())),
-        );
-      if (admins.length || pending.some((invite) => invite.email !== email))
-        throw new Error('An admin already exists or has an active invitation.');
-    }
-    const values = {
-      email,
-      role: flag === '--admin' ? ('admin' as const) : ('user' as const),
-      expiresAt,
-    };
-    await tx
-      .insert(invites)
-      .values(values)
-      .onConflictDoUpdate({ target: invites.email, set: values });
+  const invitation = await transaction(pool, async (client) => {
+    await client.query('SELECT pg_advisory_xact_lock(728491603)');
+    if (
+      (await client.query('SELECT 1 FROM users WHERE email=$1', [email]))
+        .rowCount
+    )
+      throw new Error('Account exists');
+    if (
+      flag === '--admin' &&
+      (
+        await client.query(
+          `SELECT 1 FROM users WHERE role='admin'
+      UNION ALL SELECT 1 FROM invites WHERE role='admin' AND revoked_at IS NULL AND accepted_at IS NULL AND expires_at>clock_timestamp() AND email<>$1`,
+          [email],
+        )
+      ).rowCount
+    )
+      throw new Error('An administrator is designated');
+    return saveInvitation(client, email, flag === '--admin' ? 'admin' : 'user');
   });
-  const link = new URL('/login', config.appUrl);
-  link.searchParams.set('view', 'signup');
-  link.searchParams.set('email', email);
-  await sendAuthEmail(
-    mailer,
-    config,
-    email,
-    invitationEmail(config, email, link.href, expiresAt),
-  );
+  if ((await deliverInvitation(pool, mailer, config, invitation)) !== 'sent')
+    throw new Error('Delivery unavailable');
   console.log(
     'Invitation issued. Check the recipient inbox (Mailpit during local development).',
   );

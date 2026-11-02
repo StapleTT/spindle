@@ -1,8 +1,11 @@
 import helmet from '@fastify/helmet';
 import Fastify, { type FastifyError } from 'fastify';
+import type { Transporter } from 'nodemailer';
 import type { Pool } from 'pg';
+import { registerAdminRoutes } from './admin/routes.js';
 import type { Auth } from './auth/auth.js';
 import type { AuthConfig } from './auth/config.js';
+import { createMailer } from './auth/email.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { loggerOptions } from './logger.js';
 import { readContentConfig } from './mail/content-config.js';
@@ -15,6 +18,7 @@ export function buildApp(
   config: AuthConfig,
   mailKeys: MailKeys = readMailKeys(),
   content = readContentConfig(config),
+  mailer: Transporter = createMailer(config),
 ) {
   const app = Fastify({
     logger: loggerOptions,
@@ -28,6 +32,9 @@ export function buildApp(
     },
   });
   registerAuthRoutes(app, auth, config);
+  app.register(async (admin) =>
+    registerAdminRoutes(admin, database, auth, config, mailer),
+  );
   app.register(async (mail) =>
     registerMailRoutes(mail, database, auth, config, mailKeys, content),
   );
@@ -45,6 +52,7 @@ export function buildApp(
     });
   });
   app.addHook('onClose', async () => {
+    mailer.close();
     await database.end();
   });
 

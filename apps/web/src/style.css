@@ -3296,3 +3296,77 @@ dialog.account-menu[open] {
     display: none;
   }
 }
+
+.admin-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.admin-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.admin-overview > div {
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--surf-hi);
+}
+.admin-overview dt {
+  color: var(--on-var);
+  font-size: 13px;
+}
+.admin-overview dd {
+  margin: 6px 0 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+.admin-toolbar,
+.admin-row-actions,
+.admin-badges {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.admin-toolbar {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 12px;
+}
+.admin-search {
+  flex: 1;
+  min-width: min(100%, 200px);
+}
+.admin-list {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.admin-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 16px;
+}
+.admin-row-text {
+  flex: 1;
+  min-width: min(100%, 200px);
+  overflow-wrap: anywhere;
+}
+.admin-row-text > * + * {
+  margin-top: 8px;
+}
+.admin-confirm {
+  overflow-y: auto;
+}
+.admin-confirm form {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}

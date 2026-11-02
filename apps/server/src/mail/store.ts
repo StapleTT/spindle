@@ -50,7 +50,7 @@ export async function claimAccount(
        lease_until=clock_timestamp()+interval '90 seconds', status=CASE WHEN $3 THEN 'syncing' ELSE status END
      WHERE a.id=$1 AND a.user_id=$2
        AND (lease_until IS NULL OR lease_until<clock_timestamp())
-       AND EXISTS (SELECT 1 FROM users u WHERE u.id=a.user_id AND u.email_verified)
+       AND EXISTS (SELECT 1 FROM users u WHERE u.id=a.user_id AND u.email_verified AND NOT u.suspended)
      RETURNING a.*`,
     [id, userId, syncing],
   );
@@ -64,14 +64,14 @@ export async function withLease<T>(
 ) {
   return transaction(pool, async (client) => {
     const owner = await client.query(
-      'SELECT id FROM users WHERE id=$1 AND email_verified FOR UPDATE',
+      'SELECT id FROM users WHERE id=$1 AND email_verified AND NOT suspended FOR UPDATE',
       [account.user_id],
     );
     if (!owner.rowCount) throw new Error('Mail owner is unavailable');
     const valid = await client.query(
       `SELECT a.id FROM mail_accounts a JOIN users u ON u.id=a.user_id
        WHERE a.id=$1 AND a.user_id=$2 AND a.lease_token=$3
-       AND a.lease_until>clock_timestamp() AND u.email_verified FOR UPDATE OF a`,
+       AND a.lease_until>clock_timestamp() AND u.email_verified AND NOT u.suspended FOR UPDATE OF a`,
       [account.id, account.user_id, account.lease_token],
     );
     if (!valid.rowCount) throw new Error('Sync lease no longer valid');

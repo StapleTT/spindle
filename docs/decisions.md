@@ -369,3 +369,21 @@ Status: explicitly requested by the user on 2026-11-01; implementation choices b
 Add profile-name editing, current-password-confirmed password changes, replacement-verified login email changes and active session review/sign-out in the existing Security settings pane, following the imported design. Keep all controls private to the verified owner, including against foreign admins. Passkeys/2FA remain deferred under D003.
 
 Implementation: password changes sign out every device. Email requests keep the current login active until an explicit one-use, one-hour confirmation at the replacement address; cancellation/new requests invalidate the previous link. Confirmation signs out every device without automatically signing in. Bind tokens to stable user IDs and use Better Auth verification/password/session primitives with the existing transactional adapter. Preserve mail ownership, profile role and connected-account sender/signature settings. Device revocation requires the current password and preserves this device; session listings expose safe metadata, never bearer tokens. Use additive migration 0031 and retain it on application rollback. See [behavior, limits and proof](account-security.md).
+
+
+## D035 — administration as a Settings tab
+
+Status: explicitly requested by the user on 2026-11-01, following the proposed initial admin-panel scope.
+
+Add an administrator-only tab inside Settings, following the imported design. Ship user search/status, regular-user invitations with send/resend/revoke, pause/resume access, session revocation, guarded role changes and administration audit history. Preserve private mail ownership: administration exposes access and aggregate account/session metadata, never other users' mail or credentials. Initial administrator designation stays explicit and operator controlled.
+
+Implementation: require the acting administrator's current password for every mutation, reject self access changes, protect the last active administrator and serialize concurrent privilege changes. Suspension preserves mail/drafts, revokes sessions/links and fences new provider work and stale commits; work already submitted externally may still complete. Resume permits fresh login/background work and may dispatch held queued/overdue scheduled sends. Use expected versions, replay-safe operation IDs and transactional audit records. Delivery failures remain visible and explicit resends recover invitations. Append migration 0032 and deploy API/worker/web together; old workers must remain stopped while suspended users exist. See [administration behavior and rollout](admin.md). User deletion/export, broader monitoring and full authentication auditing remain separate C06/C08/C09/L07 work.
+
+
+## D036 — unlock administration once per sign-in session
+
+Status: explicitly requested by the user on 2026-11-01; supersedes D035's password-per-mutation choice.
+
+Hide all administration content and data behind one current-password gate. After a successful unlock, further administration actions do not ask for a password. Keep normal action confirmation, authorization, self/last-admin protection, audit and replay safety.
+
+Implementation: store the unlock on the current Better Auth database session, with no separate bearer token or client-storage flag. It persists across tabs/reloads/server restarts for that sign-in session, and a new device/sign-in starts locked. Require the unlock for all admin reads and writes; recheck it inside mutation transactions. Role/verification changes clear it; password/email changes, suspension, sign-out and session expiry/revocation invalidate it with the session. Before unlocking, request only the access boolean and render only the gate; mount the management component afterward. Personal Account & security controls keep their existing password confirmations. Append migration 0033. See [administration](admin.md).

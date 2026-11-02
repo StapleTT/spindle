@@ -471,7 +471,7 @@ export function registerDraftRoutes(
       const result = await transaction(pool, async (db) => {
         // Serialize per-user creation quotas.
         await db.query(
-          'SELECT id FROM users WHERE id=$1 AND email_verified FOR UPDATE',
+          'SELECT id FROM users WHERE id=$1 AND email_verified AND NOT suspended FOR UPDATE',
           [owner],
         );
         // Account deletion locks the account before its draft cascade.

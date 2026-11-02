@@ -32,7 +32,7 @@ const locate = `SELECT m.size_bytes,mm.uid,mm.uid_validity,b.path,c.attachments,
 const leased = (
   token: string,
 ) => `EXISTS(SELECT 1 FROM mail_accounts a JOIN users u ON u.id=a.user_id
-  WHERE a.id=$2 AND a.user_id=$1 AND a.lease_token=${token} AND a.lease_until>clock_timestamp() AND u.email_verified)`;
+  WHERE a.id=$2 AND a.user_id=$1 AND a.lease_token=${token} AND a.lease_until>clock_timestamp() AND u.email_verified AND NOT u.suspended)`;
 
 export async function withMailbox<T>(
   account: MailAccount,

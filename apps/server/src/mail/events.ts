@@ -199,7 +199,7 @@ export function registerMailEvents(
           const valid = (
             await pool.query(
               `SELECT 1 FROM auth_sessions s JOIN users u ON u.id=s.user_id
-          WHERE s.id=$1 AND s.user_id=$2 AND s.expires_at>clock_timestamp() AND u.email_verified`,
+          WHERE s.id=$1 AND s.user_id=$2 AND s.expires_at>clock_timestamp() AND u.email_verified AND NOT u.suspended`,
               [session, owner],
             )
           ).rowCount;

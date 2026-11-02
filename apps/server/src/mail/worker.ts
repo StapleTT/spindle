@@ -61,7 +61,7 @@ export async function startMailWorker(
       WHERE f.state='pending_fetch' AND NOT EXISTS(SELECT 1 FROM mail_accounts a WHERE a.user_id=f.user_id AND a.id::text=f.source->>'accountId')`);
     for (const row of (
       await pool.query(`SELECT f.user_id,f.id FROM mail_uploads f JOIN users u ON u.id=f.user_id
-      WHERE u.email_verified AND (f.state='pending_scan' OR (f.state='scanning' AND f.lease_until<clock_timestamp())) LIMIT 100`)
+      WHERE u.email_verified AND NOT u.suspended AND (f.state='pending_scan' OR (f.state='scanning' AND f.lease_until<clock_timestamp())) LIMIT 100`)
     ).rows)
       await boss.send(
         'mail-file',
@@ -73,14 +73,14 @@ export async function startMailWorker(
       SELECT m.user_id,m.account_id,b.path,mm.uid_validity::text,mm.uid::text,left(m.subject,1000)
       FROM mail_memberships mm JOIN mail_messages m ON m.user_id=mm.user_id AND m.id=mm.message_id
       JOIN mailboxes b ON b.user_id=mm.user_id AND b.id=mm.mailbox_id JOIN users u ON u.id=m.user_id
-      WHERE b.role='\\Drafts' AND u.email_verified AND NOT('\\Deleted'=ANY(mm.flags))
+      WHERE b.role='\\Drafts' AND u.email_verified AND NOT u.suspended AND NOT('\\Deleted'=ANY(mm.flags))
       AND NOT EXISTS(SELECT 1 FROM mail_draft_imports i WHERE i.user_id=m.user_id AND i.account_id=m.account_id AND i.path=b.path AND i.uid_validity=mm.uid_validity::text AND i.uid=mm.uid::text)
       AND NOT EXISTS(SELECT 1 FROM mail_draft_copies c JOIN mail_draft_links l ON l.user_id=c.user_id AND l.id=c.link_id
         WHERE l.user_id=m.user_id AND l.account_id=m.account_id AND ((c.path=b.path AND c.uid_validity=mm.uid_validity::text AND c.uid=mm.uid::text) OR (c.message_id IS NOT NULL AND c.message_id=m.message_id)))
       LIMIT 20 ON CONFLICT DO NOTHING`);
     for (const row of (
-      await pool.query(`SELECT p.user_id,p.account_id FROM mail_draft_links p JOIN users u ON u.id=p.user_id WHERE p.state NOT IN ('conflict','removed','unknown') AND p.next_attempt_at<=clock_timestamp() AND u.email_verified
-      UNION SELECT i.user_id,i.account_id FROM mail_draft_imports i JOIN users u ON u.id=i.user_id WHERE i.state='pending' AND i.next_attempt_at<=clock_timestamp() AND u.email_verified LIMIT 100`)
+      await pool.query(`SELECT p.user_id,p.account_id FROM mail_draft_links p JOIN users u ON u.id=p.user_id WHERE p.state NOT IN ('conflict','removed','unknown') AND p.next_attempt_at<=clock_timestamp() AND u.email_verified AND NOT u.suspended
+      UNION SELECT i.user_id,i.account_id FROM mail_draft_imports i JOIN users u ON u.id=i.user_id WHERE i.state='pending' AND i.next_attempt_at<=clock_timestamp() AND u.email_verified AND NOT u.suspended LIMIT 100`)
     ).rows)
       await boss.send(
         'mail-content',
@@ -101,8 +101,8 @@ export async function startMailWorker(
     await pool.query(`DELETE FROM mail_outbox WHERE completed_at<clock_timestamp()-interval '7 days'
       AND (state='cancelled' OR (state='accepted' AND sent_copy IN ('saved','unavailable','failed')))`);
     const outgoing =
-      await pool.query(`SELECT user_id,account_id FROM mail_smtp WHERE state='pending'
-      UNION SELECT user_id,account_id FROM mail_outbox WHERE account_id IS NOT NULL AND
+      await pool.query(`SELECT user_id,account_id FROM mail_smtp WHERE state='pending' AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_smtp.user_id AND u.email_verified AND NOT u.suspended)
+      UNION SELECT user_id,account_id FROM mail_outbox WHERE account_id IS NOT NULL AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_outbox.user_id AND u.email_verified AND NOT u.suspended) AND
       ((state='queued' AND next_attempt_at<=clock_timestamp()) OR state='sending' OR
        (state IN ('accepted','partial','unknown') AND sent_copy IN ('pending','appending','unknown') AND next_attempt_at<=clock_timestamp())) LIMIT 100`);
     for (const row of outgoing.rows)
@@ -113,7 +113,7 @@ export async function startMailWorker(
       );
     const actions =
       await pool.query(`SELECT DISTINCT user_id,account_id FROM mail_actions
-      WHERE state='pending' AND next_attempt_at<=clock_timestamp() LIMIT 100`);
+      WHERE state='pending' AND next_attempt_at<=clock_timestamp() AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_actions.user_id AND u.email_verified AND NOT u.suspended) LIMIT 100`);
     // Actions share the content queue so each worker keeps two provider connections at most.
     for (const row of actions.rows)
       await boss.send(
@@ -123,7 +123,7 @@ export async function startMailWorker(
       );
     for (const row of (
       await pool.query(`SELECT f.user_id,f.id,f.source->>'accountId' AS account_id FROM mail_uploads f JOIN users u ON u.id=f.user_id
-      WHERE f.state='pending_fetch' AND u.email_verified LIMIT 100`)
+      WHERE f.state='pending_fetch' AND u.email_verified AND NOT u.suspended LIMIT 100`)
     ).rows)
       await boss.send(
         'mail-content',
@@ -137,7 +137,7 @@ export async function startMailWorker(
       );
     const pending =
       await pool.query(`SELECT user_id,account_id,message_id,version FROM mail_content
-      WHERE (state='pending' OR reply_headers_pending) AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
+      WHERE (state='pending' OR reply_headers_pending) AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_content.user_id AND u.email_verified AND NOT u.suspended) AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
     for (const row of pending.rows)
       await boss.send(
         'mail-content',
@@ -152,7 +152,7 @@ export async function startMailWorker(
     const attachments =
       await pool.query(`SELECT t.user_id,t.account_id,t.message_id,t.position,c.version
       FROM mail_content_attachments t JOIN mail_content c ON c.user_id=t.user_id AND c.message_id=t.message_id
-      WHERE t.state='pending' AND t.next_attempt_at<=clock_timestamp() ORDER BY t.next_attempt_at LIMIT 100`);
+      WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=t.user_id AND u.email_verified AND NOT u.suspended) AND t.state='pending' AND t.next_attempt_at<=clock_timestamp() ORDER BY t.next_attempt_at LIMIT 100`);
     for (const row of attachments.rows)
       await boss.send(
         'mail-content',
@@ -168,7 +168,7 @@ export async function startMailWorker(
     const due =
       await pool.query(`SELECT a.id,a.user_id FROM mail_accounts a JOIN users u ON u.id=a.user_id
       WHERE a.next_sync_at<=clock_timestamp() AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())
-      AND u.email_verified ORDER BY a.next_sync_at LIMIT 100`);
+      AND u.email_verified AND NOT u.suspended ORDER BY a.next_sync_at LIMIT 100`);
     for (const account of due.rows) {
       if (
         (await pool.query(contentPending, [account.user_id, account.id]))
@@ -184,7 +184,7 @@ export async function startMailWorker(
     // IDLE rotates through ready inboxes after real sync work, using the same slot.
     const idle =
       await pool.query(`SELECT a.id,a.user_id FROM mail_accounts a JOIN users u ON u.id=a.user_id
-      WHERE u.email_verified AND a.status='ready' AND a.next_idle_at<=clock_timestamp() AND a.next_sync_at>clock_timestamp()
+      WHERE u.email_verified AND NOT u.suspended AND a.status='ready' AND a.next_idle_at<=clock_timestamp() AND a.next_sync_at>clock_timestamp()
       AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())
       AND EXISTS(SELECT 1 FROM mailboxes b WHERE b.user_id=a.user_id AND b.account_id=a.id AND b.role='inbox' AND b.initial_complete)
       ORDER BY a.next_idle_at,a.id LIMIT 100`);

@@ -283,6 +283,7 @@ function App() {
             userId={session.user.id}
             email={session.user.email}
             name={session.user.name}
+            isAdmin={'role' in session.user && session.user.role === 'admin'}
             busy={busy}
             onSignOut={() => void signOut()}
           />

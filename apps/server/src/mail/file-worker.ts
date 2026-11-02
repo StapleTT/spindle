@@ -17,7 +17,7 @@ export async function scanUpload(
   const claimed = await pool.query(
     `UPDATE mail_uploads f SET state='scanning',token=$3,lease_until=clock_timestamp()+interval '90 seconds'
     WHERE user_id=$1 AND id=$2 AND (state='pending_scan' OR (state='scanning' AND lease_until<clock_timestamp()))
-    AND EXISTS(SELECT 1 FROM users WHERE id=$1 AND email_verified) RETURNING id`,
+    AND EXISTS(SELECT 1 FROM users WHERE id=$1 AND email_verified AND NOT suspended) RETURNING id`,
     [owner, id, token],
   );
   if (!claimed.rowCount) return;
@@ -35,7 +35,7 @@ export async function scanUpload(
     const updated = await db.query(
       `UPDATE mail_uploads SET state=$4,error_code=$5,token=NULL,lease_until=NULL,
       reserved_bytes=CASE WHEN $4='quarantined' THEN 0 ELSE reserved_bytes END WHERE user_id=$1 AND id=$2 AND token=$3 AND state='scanning'
-      AND EXISTS(SELECT 1 FROM users WHERE id=$1 AND email_verified) RETURNING id`,
+      AND EXISTS(SELECT 1 FROM users WHERE id=$1 AND email_verified AND NOT suspended) RETURNING id`,
       [owner, id, token, state, code],
     );
     if (updated.rowCount && state === 'quarantined')

@@ -2,6 +2,7 @@ import { type FormEvent, lazy, Suspense, useState } from 'react';
 import { AccountColorPicker } from './account-color-picker.js';
 import { AccountOrderHandle } from './account-order-handle.js';
 import { AccountSecurity } from './account-security.js';
+import { AdminSettings } from './admin-settings.js';
 import { accountColorStyle, Icon, initials, ThemeChoice } from './brand.js';
 import type { Signature } from './draft-api.js';
 import {
@@ -65,6 +66,7 @@ const tabs = [
   ['signatures', 'Signatures', signature],
   ['security', 'Security', shieldLock],
   ['shortcuts', 'Shortcuts', keyboard],
+  ['admin', 'Admin', shieldLock],
 ] as const;
 type Tab = (typeof tabs)[number][0];
 
@@ -79,6 +81,7 @@ const protections = [
 
 export function Settings({
   accounts,
+  isAdmin,
   configured,
   density,
   onDensity,
@@ -91,6 +94,7 @@ export function Settings({
   notificationsSlot,
 }: {
   accounts: Account[];
+  isAdmin: boolean;
   configured: boolean;
   density: Density;
   onDensity: (density: Density) => void;
@@ -105,7 +109,9 @@ export function Settings({
   const [tab, setTab] = useState<Tab>(() => {
     try {
       const saved = sessionStorage.getItem('spindle-settings-tab');
-      return tabs.some(([id]) => id === saved) ? (saved as Tab) : 'accounts';
+      return tabs.some(([id]) => id === saved && (id !== 'admin' || isAdmin))
+        ? (saved as Tab)
+        : 'accounts';
     } catch {
       return 'accounts';
     }
@@ -221,24 +227,26 @@ export function Settings({
     <section className="pane settings" aria-labelledby="settings-title">
       <nav className="settings-tabs" aria-label="Settings sections">
         <h2 id="settings-title">Settings</h2>
-        {tabs.map(([id, label, icon]) => (
-          <button
-            key={id}
-            type="button"
-            aria-pressed={tab === id}
-            onClick={() => {
-              setTab(id);
-              try {
-                sessionStorage.setItem('spindle-settings-tab', id);
-              } catch {
-                /* The section still opens without storage. */
-              }
-            }}
-          >
-            <Icon src={icon} />
-            {label}
-          </button>
-        ))}
+        {tabs
+          .filter(([id]) => id !== 'admin' || isAdmin)
+          .map(([id, label, icon]) => (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={tab === id}
+              onClick={() => {
+                setTab(id);
+                try {
+                  sessionStorage.setItem('spindle-settings-tab', id);
+                } catch {
+                  /* The section still opens without storage. */
+                }
+              }}
+            >
+              <Icon src={icon} />
+              {label}
+            </button>
+          ))}
       </nav>
       <div className="settings-body">
         {tab === 'accounts' && (
@@ -704,6 +712,7 @@ export function Settings({
             </div>
           </>
         )}
+        {tab === 'admin' && isAdmin && <AdminSettings />}
         {tab === 'shortcuts' && (
           <>
             <h3>Keyboard shortcuts</h3>

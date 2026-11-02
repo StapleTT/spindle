@@ -43,6 +43,9 @@ export function createAuth(
               role: { type: ['user', 'admin'], required: true },
               expiresAt: { type: 'date', required: true },
               createdAt: { type: 'date', required: true },
+              revokedAt: { type: 'date', required: false },
+              acceptedAt: { type: 'date', required: false },
+              acceptedUserId: { type: 'string', required: false },
             },
           },
         },
@@ -52,6 +55,7 @@ export function createAuth(
     user: {
       additionalFields: {
         role: { type: ['user', 'admin'], input: false, defaultValue: 'user' },
+        suspended: { type: 'boolean', input: false, defaultValue: false },
       },
     },
     session: {
@@ -126,6 +130,22 @@ export function createAuth(
       ipAddress: { ipAddressHeaders: ['x-spindle-client-ip'] },
     },
     databaseHooks: {
+      session: {
+        create: {
+          before: async (session, context) => {
+            if (!context) return;
+            const adapter = await getCurrentAdapter(context.context.adapter);
+            const owner = await adapter.findOne<{ suspended: boolean }>({
+              model: 'user',
+              where: [{ field: 'id', value: session.userId }],
+            });
+            if (!owner || owner.suspended)
+              throw new APIError('FORBIDDEN', {
+                message: 'This account is suspended. Contact the operator.',
+              });
+          },
+        },
+      },
       user: {
         create: {
           before: async (newUser, context) => {
@@ -134,13 +154,30 @@ export function createAuth(
                 message: 'Registration requires a request.',
               });
             const adapter = await getCurrentAdapter(context.context.adapter);
-            const invite = await adapter.findOne<{ role: 'user' | 'admin' }>({
+            const candidate = await adapter.findOne<{
+              id: string;
+              expiresAt: Date;
+            }>({
               model: 'invite',
               where: [
                 { field: 'email', value: newUser.email },
                 { field: 'expiresAt', value: new Date(), operator: 'gt' },
+                { field: 'revokedAt', value: null },
+                { field: 'acceptedAt', value: null },
               ],
             });
+            const invite = candidate
+              ? await adapter.update<{ role: 'user' | 'admin' }>({
+                  model: 'invite',
+                  where: [
+                    { field: 'id', value: candidate.id },
+                    { field: 'revokedAt', value: null },
+                    { field: 'acceptedAt', value: null },
+                    { field: 'expiresAt', value: new Date(), operator: 'gt' },
+                  ],
+                  update: { expiresAt: candidate.expiresAt },
+                })
+              : null;
             if (config.registrationMode === 'invite' && !invite) {
               throw new APIError('FORBIDDEN', {
                 message:
@@ -154,6 +191,19 @@ export function createAuth(
                 role: invite?.role ?? 'user',
               },
             };
+          },
+          after: async (newUser, context) => {
+            if (!context) return;
+            const adapter = await getCurrentAdapter(context.context.adapter);
+            await adapter.update({
+              model: 'invite',
+              where: [
+                { field: 'email', value: newUser.email },
+                { field: 'revokedAt', value: null },
+                { field: 'acceptedAt', value: null },
+              ],
+              update: { acceptedAt: new Date(), acceptedUserId: newUser.id },
+            });
           },
         },
       },

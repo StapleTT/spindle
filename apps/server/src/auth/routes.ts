@@ -98,7 +98,7 @@ export function registerAuthRoutes(
     });
     if (!current)
       return reply.code(401).send({ message: 'Sign in to continue.' });
-    if (!current.user.emailVerified)
+    if (!current.user.emailVerified || current.user.suspended)
       return reply
         .code(403)
         .send({ message: 'Verify your email to continue.' });

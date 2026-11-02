@@ -61,13 +61,13 @@ export async function reconcileConversationState(
 export async function wakeSnoozedConversations(pool: Pool) {
   const due =
     await pool.query(`SELECT DISTINCT m.user_id,m.account_id FROM mail_messages m
-    JOIN users u ON u.id=m.user_id WHERE u.email_verified AND m.local_snoozed_until<=clock_timestamp() LIMIT 100`);
+    JOIN users u ON u.id=m.user_id WHERE u.email_verified AND NOT u.suspended AND m.local_snoozed_until<=clock_timestamp() LIMIT 100`);
   for (const row of due.rows)
     await transaction(pool, async (db) => {
       if (
         !(
           await db.query(
-            'SELECT id FROM users WHERE id=$1 AND email_verified FOR UPDATE',
+            'SELECT id FROM users WHERE id=$1 AND email_verified AND NOT suspended FOR UPDATE',
             [row.user_id],
           )
         ).rowCount
@@ -156,7 +156,7 @@ export function registerConversationStateRoutes(
           if (
             !(
               await db.query(
-                'SELECT id FROM users WHERE id=$1 AND email_verified FOR UPDATE',
+                'SELECT id FROM users WHERE id=$1 AND email_verified AND NOT suspended FOR UPDATE',
                 [owner],
               )
             ).rowCount

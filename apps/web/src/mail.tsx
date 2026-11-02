@@ -103,12 +103,14 @@ export function Mail({
   userId,
   email,
   name,
+  isAdmin,
   busy,
   onSignOut,
 }: {
   userId: string;
   email: string;
   name: string;
+  isAdmin: boolean;
   busy: boolean;
   onSignOut: () => void;
 }) {
@@ -1107,6 +1109,7 @@ export function Mail({
           {inSettings ? (
             <Settings
               accounts={accounts}
+              isAdmin={isAdmin}
               configured={configured}
               density={density}
               onDensity={(value) => {

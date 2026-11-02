@@ -15,6 +15,8 @@ export const user = pgTable('users', {
   email: text('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
+  suspended: boolean('suspended').notNull().default(false),
+  adminRevision: integer('admin_revision').notNull().default(0),
   role: text('role', { enum: ['user', 'admin'] })
     .notNull()
     .default('user'),
@@ -35,6 +37,7 @@ export const session = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    adminUnlockedAt: timestamp('admin_unlocked_at', { withTimezone: true }),
     ipAddress: text('ip_address'),
     userAgent: text('user_agent'),
     createdAt: timestamp('created_at', { withTimezone: true })
@@ -128,6 +131,12 @@ export const emailChange = pgTable('auth_email_changes', {
 export const invites = pgTable('invites', {
   id: text('id').primaryKey().default(sql`gen_random_uuid()::text`),
   email: text('email').notNull().unique(),
+  revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  acceptedUserId: text('accepted_user_id').references(() => user.id, {
+    onDelete: 'set null',
+  }),
+  deliveryState: text('delivery_state').notNull().default('unknown'),
   role: text('role', { enum: ['user', 'admin'] })
     .notNull()
     .default('user'),

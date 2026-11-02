@@ -30,6 +30,7 @@ export function testApp(
     config,
     mailKeys,
     content,
+    mailer,
   );
   app.log.level = 'silent';
   return app;
@@ -44,7 +45,7 @@ export async function createTestUser(
 ) {
   const password = 'synthetic reader password 123!';
   await pool.query(
-    "INSERT INTO invites(email,expires_at) VALUES($1,now()+interval '1 day') ON CONFLICT(email) DO NOTHING",
+    "INSERT INTO invites(email,expires_at) VALUES($1,now()+interval '1 day') ON CONFLICT(email) DO UPDATE SET expires_at=excluded.expires_at,accepted_at=NULL,accepted_user_id=NULL,revoked_at=NULL",
     [email],
   );
   const signed = await app.inject({

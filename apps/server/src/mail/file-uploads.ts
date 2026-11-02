@@ -256,7 +256,7 @@ export function registerUploadRoutes(app: FastifyInstance, pool: Pool) {
               );
             const inserted = await pool.query(
               `WITH current AS (SELECT f.id FROM mail_uploads f JOIN users u ON u.id=f.user_id
-              WHERE f.user_id=$1 AND f.id=$2 AND f.token=$3 AND f.state='uploading' AND f.lease_until>clock_timestamp() AND u.email_verified FOR UPDATE OF f)
+              WHERE f.user_id=$1 AND f.id=$2 AND f.token=$3 AND f.state='uploading' AND f.lease_until>clock_timestamp() AND u.email_verified AND NOT u.suspended FOR UPDATE OF f)
             INSERT INTO mail_upload_chunks(user_id,file_id,position,data) SELECT $1,$2,$4,$5 FROM current RETURNING position`,
               [owner, id, token, position++, data],
             );
@@ -268,7 +268,7 @@ export function registerUploadRoutes(app: FastifyInstance, pool: Pool) {
               'Upload was interrupted. Select the file again.',
             );
           const completed = await pool.query(
-            `UPDATE mail_uploads f SET state='pending_scan',token=NULL,lease_until=NULL WHERE f.user_id=$1 AND f.id=$2 AND f.token=$3 AND f.state='uploading' AND EXISTS(SELECT 1 FROM users WHERE id=$1 AND email_verified) RETURNING ${uploadFields}`,
+            `UPDATE mail_uploads f SET state='pending_scan',token=NULL,lease_until=NULL WHERE f.user_id=$1 AND f.id=$2 AND f.token=$3 AND f.state='uploading' AND EXISTS(SELECT 1 FROM users WHERE id=$1 AND email_verified AND NOT suspended) RETURNING ${uploadFields}`,
             [owner, id, token],
           );
           if (!completed.rowCount)

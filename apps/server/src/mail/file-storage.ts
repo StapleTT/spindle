@@ -62,7 +62,7 @@ export function fileStream(db: Database, owner: string, file: string) {
         const rows = (
           await db.query(
             `SELECT c.position,c.data FROM mail_upload_chunks c JOIN users u ON u.id=c.user_id
-        WHERE c.user_id=$1 AND c.file_id=$2 AND c.position>=$3 AND u.email_verified ORDER BY c.position LIMIT 4`,
+        WHERE c.user_id=$1 AND c.file_id=$2 AND c.position>=$3 AND u.email_verified AND NOT u.suspended ORDER BY c.position LIMIT 4`,
             [owner, file, position],
           )
         ).rows;
@@ -98,7 +98,7 @@ export function outboxStream(
           await pool.query(
             `SELECT c.position,c.data FROM mail_outbox_chunks c JOIN mail_outbox o ON o.user_id=c.user_id AND o.id=c.outbox_id
         JOIN users u ON u.id=c.user_id JOIN mail_accounts a ON a.user_id=o.user_id AND a.id=o.account_id
-        WHERE c.user_id=$1 AND c.outbox_id=$2 AND c.position>=$3 AND u.email_verified AND a.id=$4 AND a.lease_token=$5 AND a.lease_until>clock_timestamp()
+        WHERE c.user_id=$1 AND c.outbox_id=$2 AND c.position>=$3 AND u.email_verified AND NOT u.suspended AND a.id=$4 AND a.lease_token=$5 AND a.lease_until>clock_timestamp()
         ORDER BY c.position LIMIT 4`,
             [owner, id, position, account.id, account.lease_token],
           )

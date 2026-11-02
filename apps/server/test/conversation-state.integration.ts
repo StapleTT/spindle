@@ -581,7 +581,7 @@ test('private conversation pin/mute/snooze, inheritance and durable due-time rec
           await db.query('SELECT pg_stat_clear_snapshot()');
           waiting = !!(
             await db.query(
-              "SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT id FROM users WHERE id=%email_verified FOR UPDATE' AND pid<>pg_backend_pid()",
+              "SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query LIKE 'SELECT id FROM users WHERE id=%email_verified%FOR UPDATE' AND pid<>pg_backend_pid()",
             )
           ).rowCount;
           if (waiting) break;

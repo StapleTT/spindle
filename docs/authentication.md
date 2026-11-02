@@ -19,7 +19,7 @@ Use the same email throughout. With the example Mailpit settings, development em
 
 Issue another invitation with `npm run auth:invite -- friend@example.com`. Invitations expire after seven days and are tied to the normalized email address; there is no transferable invite code. Reissuing the command renews a pending invitation. To renew the initial admin invitation, include `--admin` again. Existing accounts use verification resend or password recovery instead of re-registration.
 
-The admin flag designates one initial admin explicitly. A transaction/advisory lock prevents simultaneous initial-admin commands from designating different addresses. Subsequent admin management is future scope. No HTTP request can set its own role, and an admin role grants no access to another user's mailbox.
+The admin flag designates one initial admin explicitly. A transaction/advisory lock prevents simultaneous initial-admin commands from designating different addresses. Subsequent admin management is available in [Settings → Admin](admin.md). No HTTP request can set its own role, and an admin role grants no access to another user's mailbox.
 
 ## Configuration
 
@@ -63,11 +63,11 @@ Only these auth routes are exposed:
 | POST   | `/api/auth/sign-out`                                                    | Current session, exact trusted Origin required                                       |
 | GET    | `/api/me`                                                               | Current verified user's ID/email/role only; 401 without a session, 403 if unverified |
 
-Private account/security routes are documented in [account and security](account-security.md#api-and-security). Unused native Better Auth update/change/list/revoke routes remain unexposed. There are no user-by-ID lookup, admin management, social-login or passkey endpoints in this slice.
+Admin-only `/api/admin/*` routes are documented in [administration](admin.md). Private account/security routes are documented in [account and security](account-security.md#api-and-security). Unused native Better Auth update/change/list/revoke routes remain unexposed. There are no user-by-ID lookup, social-login or passkey endpoints in this slice.
 
 ## Storage, migrations and proof
 
-Tables are `users`, `auth_sessions`, `auth_accounts`, `auth_verifications`, `auth_rate_limits`, `invites`, and `auth_email_changes`. `auth_accounts` contains login credential records; it is not a connected-mailbox table. Foreign keys and unique constraints protect user/session/credential relationships. Existing pg-boss tables are separate and preserved.
+Tables are `users`, `auth_sessions`, `auth_accounts`, `auth_verifications`, `auth_rate_limits`, `invites`, `auth_email_changes`, and `admin_audit`. `auth_accounts` contains login credential records; it is not a connected-mailbox table. Foreign keys and unique constraints protect user/session/credential relationships. Existing pg-boss tables are separate and preserved.
 
 Versioned SQL lives in `apps/server/drizzle`. Drizzle's migrator applies it transactionally under an advisory lock. Run `npm run db:migrate` explicitly before API startup; do not edit an applied migration, delete its history or drop user tables to upgrade. Future changes must append migrations. Production rollback/restore still needs its own release proof.
 
@@ -75,7 +75,7 @@ Versioned SQL lives in `apps/server/drizzle`. Drizzle's migrator applies it tran
 
 Install Chromium once with `npm exec -- playwright install chromium`, then run `npm run test:browser` for the full form/verification/login/reload/reset/logout journey and phone-width layout check. It also uses a disposable database and temporary servers. Browser/API tests capture synthetic email via a test transport; live relay connectivity is checked separately. CI runs both suites with Postgres and Chromium.
 
-The UI uses the imported Claude Design tokens and components; see [design guidelines](design.md). Mail connections and account/security controls are implemented; platform-admin management remains future scope.
+The UI uses the imported Claude Design tokens and components; see [design guidelines](design.md). Mail connections and account/security controls are implemented; administrator access/invitation/role controls are available under Settings → Admin; user deletion remains future scope.
 
 
 ## Browser routes

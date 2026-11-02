@@ -26,7 +26,7 @@ export async function watchInbox(
     SET lease_token=gen_random_uuid(),lease_until=clock_timestamp()+interval '90 seconds',next_idle_at=clock_timestamp()+interval '1 minute'
     WHERE a.user_id=$1 AND a.id=$2 AND a.status='ready' AND a.next_sync_at>clock_timestamp() AND a.next_idle_at<=clock_timestamp()
     AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())
-    AND EXISTS(SELECT 1 FROM users u WHERE u.id=a.user_id AND u.email_verified)
+    AND EXISTS(SELECT 1 FROM users u WHERE u.id=a.user_id AND u.email_verified AND NOT u.suspended)
     AND EXISTS(SELECT 1 FROM mailboxes b WHERE b.user_id=a.user_id AND b.account_id=a.id AND b.role='inbox' AND b.initial_complete)
     RETURNING a.*`,
       [owner, id],
@@ -71,8 +71,8 @@ export async function watchInbox(
           await pool.query(
             `SELECT EXISTS(SELECT 1 FROM mail_accounts a JOIN users u ON u.id=a.user_id
           WHERE a.user_id=$1 AND a.id=$2 AND a.lease_token=$3 AND a.lease_until>clock_timestamp() AND a.next_sync_at>clock_timestamp()
-          AND a.sync_request=$4 AND u.email_verified) AS active,
-          EXISTS(SELECT 1 FROM mail_accounts a JOIN users u ON u.id=a.user_id WHERE u.email_verified AND a.next_sync_at<=clock_timestamp()
+          AND a.sync_request=$4 AND u.email_verified AND NOT u.suspended) AS active,
+          EXISTS(SELECT 1 FROM mail_accounts a JOIN users u ON u.id=a.user_id WHERE u.email_verified AND NOT u.suspended AND a.next_sync_at<=clock_timestamp()
           AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())) AS "syncDue"`,
             [owner, id, leaseToken, requestId],
           )
