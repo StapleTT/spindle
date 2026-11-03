@@ -81,6 +81,11 @@ button.outlined {
 button.outlined:hover {
   background: var(--hover);
 }
+button.danger,
+button.danger:hover {
+  background: var(--error-c);
+  color: var(--on-error-c);
+}
 .text-button,
 .text-link {
   border-color: transparent;

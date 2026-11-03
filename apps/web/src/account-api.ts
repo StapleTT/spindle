@@ -21,3 +21,21 @@ export async function accountApi<T>(
     );
   return data as T;
 }
+
+export const securityEventLabels: Record<string, string> = {
+  'account.created': 'Account created',
+  'sign_in.succeeded': 'Signed in',
+  'sign_in.failed': 'Failed sign-in attempt',
+  sign_out: 'Signed out',
+  'password.changed': 'Password changed',
+  'password.reset': 'Password reset by email',
+  'email.change_requested': 'Sign-in email change requested',
+  'email.change_cancelled': 'Sign-in email change cancelled',
+  'email.changed': 'Sign-in email changed',
+  'session.revoked': 'Signed out another device',
+  'sessions.revoked_others': 'Signed out all other devices',
+  'export.created': 'Data export downloaded',
+  'deletion.scheduled': 'Account deletion scheduled',
+  'deletion.cancelled': 'Account deletion cancelled',
+  'account.deleted': 'Account deleted',
+};

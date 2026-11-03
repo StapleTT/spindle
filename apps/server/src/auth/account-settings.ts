@@ -16,9 +16,15 @@ import { deleteSessionCookie } from 'better-auth/cookies';
 import type { Transporter } from 'nodemailer';
 import type { Pool } from 'pg';
 import { z } from 'zod';
+import { logger } from '../logger.js';
 import { consumeLimit } from '../mail/store.js';
+import { DELETION_GRACE_MS, recordSecurityEvent } from './account-lifecycle.js';
 import type { AuthConfig } from './config.js';
-import { emailChangeEmail, sendAuthEmail } from './email.js';
+import {
+  deletionScheduledEmail,
+  emailChangeEmail,
+  sendAuthEmail,
+} from './email.js';
 
 const password = z.string().min(1).max(128);
 const confirmed = z.object({ currentPassword: password });
@@ -39,6 +45,14 @@ type PendingEmail = {
   expiresAt: Date;
 };
 type Adapter = Awaited<ReturnType<typeof getCurrentAdapter>>;
+const databaseCode = (error: unknown) =>
+  error instanceof Error &&
+  'cause' in error &&
+  typeof error.cause === 'object' &&
+  error.cause &&
+  'code' in error.cause
+    ? error.cause.code
+    : undefined;
 
 // Serialize account changes through the existing transactional auth adapter.
 async function lockOwner(ctx: GenericEndpointContext, userId: string) {
@@ -187,6 +201,16 @@ export function accountSettings(
           expiresAt: { type: 'date', required: true },
         },
       },
+      securityEvent: {
+        modelName: 'securityEvent',
+        fields: {
+          userId: { type: 'string', required: true },
+          type: { type: 'string', required: true },
+          ipAddress: { type: 'string', required: false },
+          userAgent: { type: 'string', required: false },
+          createdAt: { type: 'date', required: true },
+        },
+      },
     },
     endpoints: {
       accountDetails: createAuthEndpoint(
@@ -259,7 +283,7 @@ export function accountSettings(
           await withConfirmedSession(
             ctx,
             ctx.body.currentPassword,
-            async (_adapter, user) => {
+            async (adapter, user) => {
               const credential =
                 await ctx.context.internalAdapter.findCredentialAccount(
                   user.id,
@@ -268,6 +292,12 @@ export function accountSettings(
               await ctx.context.internalAdapter.updateAccount(credential.id, {
                 password: hash,
               });
+              await recordSecurityEvent(
+                adapter,
+                user.id,
+                'password.changed',
+                ctx.headers,
+              );
             },
           );
           deleteSessionCookie(ctx);
@@ -296,6 +326,12 @@ export function accountSettings(
                   message: 'Enter a different email address.',
                 });
               await clearEmailChange(adapter, user.id);
+              await recordSecurityEvent(
+                adapter,
+                user.id,
+                'email.change_requested',
+                ctx.headers,
+              );
               if (
                 await ctx.context.internalAdapter.findUserByEmail(
                   ctx.body.newEmail,
@@ -355,7 +391,15 @@ export function accountSettings(
           await withConfirmedSession(
             ctx,
             ctx.body.currentPassword,
-            async (adapter, user) => clearEmailChange(adapter, user.id),
+            async (adapter, user) => {
+              await clearEmailChange(adapter, user.id);
+              await recordSecurityEvent(
+                adapter,
+                user.id,
+                'email.change_cancelled',
+                ctx.headers,
+              );
+            },
           );
           return ctx.json({ status: true });
         },
@@ -410,19 +454,17 @@ export function accountSettings(
                 email: pending.newEmail,
                 emailVerified: true,
               });
+              await recordSecurityEvent(
+                adapter,
+                user.id,
+                'email.changed',
+                ctx.headers,
+              );
             });
           } catch (error) {
             if (error instanceof APIError && error.status === 'UNAUTHORIZED')
               throw invalidLink();
-            if (
-              error instanceof Error &&
-              'cause' in error &&
-              typeof error.cause === 'object' &&
-              error.cause &&
-              'code' in error.cause &&
-              error.cause.code === '23505'
-            )
-              throw invalidLink();
+            if (databaseCode(error) === '23505') throw invalidLink();
             throw error;
           }
           deleteSessionCookie(ctx);
@@ -499,6 +541,12 @@ export function accountSettings(
                   message: 'Use Sign out to leave this device.',
                 });
               await ctx.context.internalAdapter.deleteSession(session.token);
+              await recordSecurityEvent(
+                adapter,
+                user.id,
+                'session.revoked',
+                ctx.headers,
+              );
             },
           );
           return ctx.json({ status: true });
@@ -526,8 +574,175 @@ export function accountSettings(
                   },
                 ],
               });
+              await recordSecurityEvent(
+                adapter,
+                user.id,
+                'sessions.revoked_others',
+                ctx.headers,
+              );
             },
           );
+          return ctx.json({ status: true });
+        },
+      ),
+      accountActivity: createAuthEndpoint(
+        '/account/activity',
+        {
+          method: 'GET',
+          use: access,
+          query: z
+            .object({ cursor: z.string().min(1).max(128).optional() })
+            .strict(),
+        },
+        async (ctx) => {
+          const current = ctx.context.session;
+          if (!current) throw new APIError('UNAUTHORIZED');
+          const rows = (
+            await pool.query(
+              `SELECT id,type,ip_address AS "ipAddress",user_agent AS "userAgent",created_at AS "createdAt"
+           FROM security_events WHERE user_id=$1
+           AND ($2::text IS NULL OR (created_at,id)<(SELECT created_at,id FROM security_events WHERE user_id=$1 AND id=$2))
+           ORDER BY created_at DESC,id DESC LIMIT 26`,
+              [current.user.id, ctx.query?.cursor ?? null],
+            )
+          ).rows;
+          return ctx.json({
+            events: rows.slice(0, 25),
+            nextCursor: rows.length > 25 ? rows[24]?.id : null,
+          });
+        },
+      ),
+      accountDeletion: createAuthEndpoint(
+        '/account/deletion',
+        { method: 'POST', use: confirmAccess, body: confirmed.strict() },
+        async (ctx) => {
+          const dueAt = new Date(Date.now() + DELETION_GRACE_MS);
+          let email = '';
+          try {
+            await withConfirmedSession(
+              ctx,
+              ctx.body.currentPassword,
+              async (adapter, user) => {
+                email = user.email;
+                // Suspension fences sessions, links and provider work at the database.
+                await adapter.update({
+                  model: 'user',
+                  where: [{ field: 'id', value: user.id }],
+                  update: { suspended: true, deletionDueAt: dueAt },
+                });
+                await recordSecurityEvent(
+                  adapter,
+                  user.id,
+                  'deletion.scheduled',
+                  ctx.headers,
+                );
+              },
+            );
+          } catch (error) {
+            if (databaseCode(error) === '23514')
+              throw new APIError('BAD_REQUEST', {
+                message:
+                  'Make another administrator active before deleting the last administrator account.',
+              });
+            throw error;
+          }
+          deleteSessionCookie(ctx);
+          try {
+            await sendAuthEmail(
+              mailer,
+              config,
+              email,
+              deletionScheduledEmail(config, dueAt),
+            );
+          } catch {
+            logger.error('Account deletion notice delivery failed');
+          }
+          return ctx.json({
+            status: true,
+            deletionDueAt: dueAt,
+            signInRequired: true,
+          });
+        },
+      ),
+      accountCancelDeletion: createAuthEndpoint(
+        '/account/deletion/cancel',
+        {
+          method: 'POST',
+          body: z
+            .object({
+              email: z.string().trim().toLowerCase().email().max(254),
+              password,
+            })
+            .strict(),
+        },
+        async (ctx) => {
+          const denied = () =>
+            new APIError('UNAUTHORIZED', {
+              message: 'Unable to sign in. Check your email and password.',
+            });
+          const found = await ctx.context.internalAdapter.findUserByEmail(
+            ctx.body.email,
+            { includeAccounts: true },
+          );
+          const hash = found?.accounts.find(
+            (account) => account.providerId === 'credential',
+          )?.password;
+          if (!found || !hash) {
+            // Spend comparable time for unknown addresses.
+            await ctx.context.password.hash(ctx.body.password);
+            throw denied();
+          }
+          if (
+            !(await ctx.context.password.verify({
+              hash,
+              password: ctx.body.password,
+            }))
+          )
+            throw denied();
+          const cancelled = await runWithTransaction(
+            ctx.context.adapter,
+            async () => {
+              const adapter = await getCurrentAdapter(ctx.context.adapter);
+              // Lock the verified credential so a concurrent reset cannot slip between.
+              if (
+                !(await adapter.update({
+                  model: 'account',
+                  where: [
+                    { field: 'userId', value: found.user.id },
+                    { field: 'providerId', value: 'credential' },
+                    { field: 'password', value: hash },
+                  ],
+                  update: { password: hash },
+                }))
+              )
+                throw denied();
+              const restored = await adapter.update({
+                model: 'user',
+                where: [
+                  { field: 'id', value: found.user.id },
+                  {
+                    field: 'deletionDueAt',
+                    value: new Date(),
+                    operator: 'gt',
+                  },
+                ],
+                update: { suspended: false, deletionDueAt: null },
+              });
+              if (restored)
+                await recordSecurityEvent(
+                  adapter,
+                  found.user.id,
+                  'deletion.cancelled',
+                  ctx.headers,
+                );
+              return Boolean(restored);
+            },
+          );
+          if (!cancelled)
+            throw new APIError('BAD_REQUEST', {
+              message:
+                'This account has no pending deletion. Sign in normally.',
+            });
           return ctx.json({ status: true });
         },
       ),

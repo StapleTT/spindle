@@ -1,5 +1,9 @@
 import type { Pool } from 'pg';
 import type { PgBoss } from 'pg-boss';
+import {
+  deleteUserData,
+  SECURITY_EVENT_RETENTION,
+} from '../auth/account-lifecycle.js';
 import { logger } from '../logger.js';
 import { applyMailActions } from './actions.js';
 import { type ContentJob, fetchMessageContent } from './content-worker.js';
@@ -10,6 +14,7 @@ import { watchInbox } from './idle.js';
 import { MAX_ATTACHMENTS } from './media.js';
 import { processOutgoing } from './outgoing-worker.js';
 import { syncProviderDrafts } from './provider-drafts.js';
+import { transaction } from './store.js';
 import { syncAccount } from './sync.js';
 import { contentPending } from './work-pending.js';
 
@@ -55,6 +60,19 @@ export async function startMailWorker(
   // next_sync_at is a transactional outbox: committed connect/sync requests survive
   // API/queue outages. The dispatcher can safely replay them after a restart.
   async function dispatch() {
+    // Expired self-service grace periods; each user commits independently.
+    // One failing deletion must not starve sync/send dispatch; it retries next tick.
+    for (const row of (
+      await pool.query(
+        'SELECT id FROM users WHERE deletion_due_at<=clock_timestamp() ORDER BY deletion_due_at LIMIT 20',
+      )
+    ).rows)
+      await transaction(pool, (client) =>
+        deleteUserData(client, row.id, true),
+      ).catch(() => logger.error('Scheduled account deletion failed'));
+    await pool.query(
+      `DELETE FROM security_events WHERE created_at<clock_timestamp()-interval '${SECURITY_EVENT_RETENTION}'`,
+    );
     await wakeSnoozedConversations(pool);
     await cleanupUploads(pool);
     await pool.query(`UPDATE mail_uploads f SET state='failed',error_code='source_unavailable',reserved_bytes=0

@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Transporter } from 'nodemailer';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
+import { deleteUserData } from '../auth/account-lifecycle.js';
 import type { Auth } from '../auth/auth.js';
 import type { AuthConfig } from '../auth/config.js';
 import { deliverInvitation, saveInvitation } from '../auth/invitations.js';
@@ -22,7 +23,7 @@ const identifier = z.string().min(1).max(128);
 const confirmation = z.object({ operationId: z.uuid() });
 const userAction = confirmation
   .extend({
-    action: z.enum(['suspend', 'resume', 'role', 'sessions']),
+    action: z.enum(['suspend', 'resume', 'role', 'sessions', 'delete']),
     expectedRevision: z.number().int().min(0),
     role: z.enum(['user', 'admin']).optional(),
   })
@@ -46,7 +47,7 @@ function parse<T>(schema: z.ZodType<T>, input: unknown) {
     throw new AdminError(400, 'Invalid request. Check the supplied fields.');
   return result.data;
 }
-const userFields = `u.id,u.name,u.email,u.role,u.email_verified AS "emailVerified",u.suspended,
+const userFields = `u.id,u.name,u.email,u.role,u.email_verified AS "emailVerified",u.suspended,u.deletion_due_at AS "deletionDueAt",
  u.admin_revision AS revision,u.created_at AS "createdAt",
  (SELECT count(*)::int FROM mail_accounts a WHERE a.user_id=u.id) AS "accountCount",
  (SELECT count(*)::int FROM auth_sessions s WHERE s.user_id=u.id AND s.expires_at>clock_timestamp()) AS "sessionCount"`;
@@ -274,6 +275,7 @@ export function registerAdminRoutes(
     return (
       await pool.query(`SELECT (SELECT count(*)::int FROM users) AS users,
       (SELECT count(*)::int FROM users WHERE suspended) AS suspended,
+      (SELECT count(*)::int FROM users WHERE deletion_due_at IS NOT NULL) AS deletions,
       (SELECT count(*)::int FROM invites WHERE accepted_at IS NULL AND revoked_at IS NULL AND expires_at>clock_timestamp()) AS invitations`)
     ).rows[0];
   });
@@ -337,6 +339,25 @@ export function registerAdminRoutes(
       nextCursor: rows.length > 25 ? rows[24].id : null,
     };
   });
+  app.get('/api/admin/security', async (request) => {
+    const query = parse(
+      z.object({ cursor: identifier.optional() }).strict(),
+      request.query,
+    );
+    const rows = (
+      await pool.query(
+        `SELECT e.id,e.type,e.user_id AS "userId",u.email,e.ip_address AS "ipAddress",e.created_at AS "createdAt"
+      FROM security_events e LEFT JOIN users u ON u.id=e.user_id
+      WHERE ($1::text IS NULL OR (e.created_at,e.id)<(SELECT created_at,id FROM security_events WHERE id=$1))
+      ORDER BY e.created_at DESC,e.id DESC LIMIT 26`,
+        [query.cursor ?? null],
+      )
+    ).rows;
+    return {
+      events: rows.slice(0, 25),
+      nextCursor: rows.length > 25 ? rows[24].id : null,
+    };
+  });
   app.post('/api/admin/users/:id', async (request) => {
     const { id } = parse(z.object({ id: identifier }).strict(), request.params);
     const body = parse(userAction, request.body);
@@ -360,7 +381,7 @@ export function registerAdminRoutes(
           );
         const target = (
           await client.query(
-            'SELECT id,email,role,suspended,admin_revision FROM users WHERE id=$1 FOR UPDATE',
+            'SELECT id,email,role,suspended,admin_revision,deletion_due_at FROM users WHERE id=$1 FOR UPDATE',
             [id],
           )
         ).rows[0];
@@ -369,6 +390,23 @@ export function registerAdminRoutes(
           throw new AdminError(
             409,
             'This user changed. Refresh before trying again.',
+          );
+        if (body.action === 'delete') {
+          if (!target.suspended)
+            throw new AdminError(
+              409,
+              'Suspend this user before deleting their account.',
+            );
+          await deleteUserData(client, id, false);
+          return { deleted: true };
+        }
+        if (
+          target.deletion_due_at &&
+          (body.action === 'suspend' || body.action === 'resume')
+        )
+          throw new AdminError(
+            409,
+            'This user scheduled account deletion. They can cancel it by signing in, or you can delete the account now.',
           );
         const suspended =
           body.action === 'suspend'

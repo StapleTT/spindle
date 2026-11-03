@@ -220,6 +220,37 @@ export function emailChangeEmail(
   };
 }
 
+export function deletionScheduledEmail(
+  config: AuthConfig,
+  dueAt: Date,
+): AuthEmail {
+  const url = new URL('/login', config.appUrl).href;
+  const when = dueAt.toUTCString();
+  return {
+    subject: 'Your Spindle account is scheduled for deletion',
+    text: `Your Spindle account and its saved data will be permanently deleted after ${when}.\n\nTo keep your account, sign in before then and choose Cancel deletion:\n\n${url}\n\nMail stored with your email providers is not affected. If you did not request this, sign in to cancel and change your password.`,
+    html: layout(config, {
+      title: 'Your account is scheduled for deletion',
+      preheader: 'Sign in within seven days to keep your Spindle account.',
+      body: [
+        heading('Account deletion scheduled'),
+        paragraph(
+          `Your Spindle account and its saved data will be permanently deleted after ${strong(when)}. You have been signed out on every device.`,
+        ),
+        button(url, 'Sign in to cancel'),
+        divider,
+        paragraph(
+          'Mail stored with your email providers is not affected. If you didn’t request this, sign in to cancel and change your password.',
+          14,
+        ),
+        fallbackLink(url),
+      ].join('\n'),
+      footer:
+        'You’re getting this because account deletion was requested from Spindle settings.',
+    }),
+  };
+}
+
 export function invitationEmail(
   config: AuthConfig,
   email: string,

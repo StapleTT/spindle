@@ -387,3 +387,14 @@ Status: explicitly requested by the user on 2026-11-01; supersedes D035's passwo
 Hide all administration content and data behind one current-password gate. After a successful unlock, further administration actions do not ask for a password. Keep normal action confirmation, authorization, self/last-admin protection, audit and replay safety.
 
 Implementation: store the unlock on the current Better Auth database session, with no separate bearer token or client-storage flag. It persists across tabs/reloads/server restarts for that sign-in session, and a new device/sign-in starts locked. Require the unlock for all admin reads and writes; recheck it inside mutation transactions. Role/verification changes clear it; password/email changes, suspension, sign-out and session expiry/revocation invalidate it with the session. Before unlocking, request only the access boolean and render only the gate; mount the management component afterward. Personal Account & security controls keep their existing password confirmations. Append migration 0033. See [administration](admin.md).
+
+
+## D037 — account export, scheduled deletion and security activity
+
+Status: requested by the user on 2026-11-03 ("add the rest of the account/admin work"); scope choices confirmed by the user the same day: seven-day grace period for self-deletion, admin deletion of suspended users only, export of Spindle-owned data (not cached bodies), security activity visible to the owner and to administrators.
+
+Self-service deletion requires the current password and typed confirmation, then suspends the account immediately (reusing the D035 suspension fence) and deletes it after seven days unless the user signs in and cancels. Sign-in during the grace period reveals the pending state only after password verification. The last active administrator cannot schedule deletion. Administrators may delete suspended, non-self users immediately through the audited admin mutation path; they cannot suspend/resume a pending self-deletion. Deletion removes all owned rows by cascade, invitations and the user's security events, scrubs the address from admin audit and keeps one `account.deleted` event keyed by user ID for 180 days. Provider mail is never touched.
+
+The export is an on-request gzipped JSON stream from one database snapshot with explicit columns: profile, preferences, connected-account settings (no secrets), folders, message headers/flags/local state, drafts with attachments, outbox MIME, signatures, saved searches and security activity. Cached bodies and all credentials/tokens are excluded.
+
+Security activity records sign-ins (including failures for known accounts), sign-outs, password/email changes and resets, session revocations, export and deletion lifecycle with IP and user agent only, retained 180 days. Append migration 0034. See [account lifecycle](account-lifecycle.md).

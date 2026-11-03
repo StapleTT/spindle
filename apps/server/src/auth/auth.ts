@@ -1,12 +1,20 @@
 import { getCurrentAdapter } from '@better-auth/core/context';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { APIError } from 'better-auth/api';
+import {
+  APIError,
+  createAuthMiddleware,
+  getSessionFromCtx,
+} from 'better-auth/api';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import type { Transporter } from 'nodemailer';
 import type { Pool } from 'pg';
 import * as schema from '../db/schema.js';
 import { logger } from '../logger.js';
+import {
+  insertSecurityEvent,
+  recordSecurityEvent,
+} from './account-lifecycle.js';
 import { accountSettings } from './account-settings.js';
 import type { AuthConfig } from './config.js';
 import {
@@ -56,6 +64,7 @@ export function createAuth(
       additionalFields: {
         role: { type: ['user', 'admin'], input: false, defaultValue: 'user' },
         suspended: { type: 'boolean', input: false, defaultValue: false },
+        deletionDueAt: { type: 'date', input: false, required: false },
       },
     },
     session: {
@@ -72,6 +81,14 @@ export function createAuth(
       autoSignIn: false,
       resetPasswordTokenExpiresIn: 3600,
       revokeSessionsOnPasswordReset: true,
+      onPasswordReset: async ({ user }, request) => {
+        await insertSecurityEvent(
+          pool,
+          user.id,
+          'password.reset',
+          request?.headers,
+        );
+      },
       sendResetPassword: async ({ user, url }) => {
         try {
           await sendAuthEmail(
@@ -111,6 +128,7 @@ export function createAuth(
         '/send-verification-email': { window: 60, max: 3 },
         '/account/*': { window: 60, max: 30 },
         '/account/email/confirm': { window: 60, max: 10 },
+        '/account/deletion/cancel': { window: 60, max: 5 },
       },
     },
     advanced: {
@@ -129,16 +147,69 @@ export function createAuth(
       },
       ipAddress: { ipAddressHeaders: ['x-spindle-client-ip'] },
     },
+    hooks: {
+      before: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/sign-out') return;
+        const current = await getSessionFromCtx(ctx);
+        if (current)
+          await recordSecurityEvent(
+            ctx.context.adapter,
+            current.user.id,
+            'sign_out',
+            ctx.headers,
+          );
+      }),
+      after: createAuthMiddleware(async (ctx) => {
+        if (ctx.path !== '/sign-in/email') return;
+        const created = ctx.context.newSession;
+        if (created) {
+          await recordSecurityEvent(
+            ctx.context.adapter,
+            created.user.id,
+            'sign_in.succeeded',
+            ctx.headers,
+          );
+          return;
+        }
+        const email: unknown = ctx.body?.email;
+        if (
+          !(ctx.context.returned instanceof APIError) ||
+          typeof email !== 'string'
+        )
+          return;
+        // Only known accounts are recorded; unknown addresses leave no trace.
+        const found = await ctx.context.internalAdapter.findUserByEmail(
+          email.trim().toLowerCase(),
+        );
+        if (found)
+          await recordSecurityEvent(
+            ctx.context.adapter,
+            found.user.id,
+            'sign_in.failed',
+            ctx.headers,
+          );
+      }),
+    },
     databaseHooks: {
       session: {
         create: {
           before: async (session, context) => {
             if (!context) return;
             const adapter = await getCurrentAdapter(context.context.adapter);
-            const owner = await adapter.findOne<{ suspended: boolean }>({
+            const owner = await adapter.findOne<{
+              suspended: boolean;
+              deletionDueAt: Date | null;
+            }>({
               model: 'user',
               where: [{ field: 'id', value: session.userId }],
             });
+            if (owner?.deletionDueAt)
+              throw new APIError('FORBIDDEN', {
+                code: 'ACCOUNT_DELETION_PENDING',
+                message:
+                  'This account is scheduled for deletion. Cancel the deletion to sign in.',
+                deletionDueAt: owner.deletionDueAt.toISOString(),
+              });
             if (!owner || owner.suspended)
               throw new APIError('FORBIDDEN', {
                 message: 'This account is suspended. Contact the operator.',
@@ -195,6 +266,12 @@ export function createAuth(
           after: async (newUser, context) => {
             if (!context) return;
             const adapter = await getCurrentAdapter(context.context.adapter);
+            await recordSecurityEvent(
+              adapter,
+              newUser.id,
+              'account.created',
+              context.headers,
+            );
             await adapter.update({
               model: 'invite',
               where: [

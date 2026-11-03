@@ -31,6 +31,7 @@ export { default as formatQuote } from '@material-symbols/svg-400/rounded/format
 export { default as formatStrikethrough } from '@material-symbols/svg-400/rounded/format_strikethrough.svg';
 export { default as forward } from '@material-symbols/svg-400/rounded/forward.svg';
 export { default as hideImage } from '@material-symbols/svg-400/rounded/hide_image.svg';
+export { default as history } from '@material-symbols/svg-400/rounded/history.svg';
 export { default as home } from '@material-symbols/svg-400/rounded/home.svg';
 export { default as inbox } from '@material-symbols/svg-400/rounded/inbox.svg';
 export { default as keep } from '@material-symbols/svg-400/rounded/keep.svg';

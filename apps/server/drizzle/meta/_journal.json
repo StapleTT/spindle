@@ -239,6 +239,13 @@
       "when": 1793550000002,
       "tag": "0033_admin_unlock",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1793550000003,
+      "tag": "0034_account_lifecycle",
+      "breakpoints": true
     }
   ]
 }

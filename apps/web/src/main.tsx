@@ -38,13 +38,16 @@ function App() {
       ? 'This email link is invalid or expired. Request a new one.'
       : params.has('passwordChanged')
         ? 'Password changed. Sign in with your new password.'
-        : params.has('emailChanged')
-          ? 'Sign-in email updated. Sign in with your new email and existing password.'
-          : params.has('verified')
-            ? 'Email verified. You can now sign in.'
-            : '',
+        : params.has('deletionScheduled')
+          ? 'Your account is scheduled for deletion in seven days and you’ve been signed out. To keep it, sign in before then and cancel the deletion.'
+          : params.has('emailChanged')
+            ? 'Sign-in email updated. Sign in with your new email and existing password.'
+            : params.has('verified')
+              ? 'Email verified. You can now sign in.'
+              : '',
   );
   const [error, setError] = useState(false);
+  const [deletionPending, setDeletionPending] = useState(false);
   const feedback = useRef<HTMLParagraphElement>(null);
 
   useEffect(() => {
@@ -93,6 +96,7 @@ function App() {
     setConfirmation('');
     setMessage('');
     setError(false);
+    setDeletionPending(false);
     window.history.replaceState(
       null,
       '',
@@ -132,11 +136,14 @@ function App() {
           email: address,
           password,
         });
+        setDeletionPending(result.error?.code === 'ACCOUNT_DELETION_PENDING');
         if (result.error)
           notify(
             result.error.code === 'EMAIL_NOT_VERIFIED'
               ? 'Verify your email before signing in. You can resend the verification email below.'
-              : 'Unable to sign in. Check your email and password.',
+              : result.error.code === 'ACCOUNT_DELETION_PENDING'
+                ? 'This account is scheduled for deletion. Cancel the deletion to keep your account and sign in.'
+                : 'Unable to sign in. Check your email and password.',
             true,
           );
         else {
@@ -222,6 +229,35 @@ function App() {
       );
     } catch {
       notify('Unable to reach Spindle. Please try again.', true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cancelDeletion() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const address = email.trim().toLowerCase();
+      await accountApi('/deletion/cancel', { email: address, password });
+      setDeletionPending(false);
+      const result = await authClient.signIn.email({
+        email: address,
+        password,
+      });
+      if (result.error)
+        notify('Deletion cancelled. Sign in to continue.', false);
+      else {
+        setPassword('');
+        await refetch();
+      }
+    } catch (failure) {
+      notify(
+        failure instanceof Error
+          ? failure.message
+          : 'Unable to reach Spindle. Please try again.',
+        true,
+      );
     } finally {
       setBusy(false);
     }
@@ -392,6 +428,16 @@ function App() {
                 onChange={(event) => setPassword(event.target.value)}
               />
             </div>
+          )}
+          {view === 'login' && deletionPending && (
+            <button
+              type="button"
+              className="outlined"
+              disabled={busy}
+              onClick={() => void cancelDeletion()}
+            >
+              Cancel deletion and sign in
+            </button>
           )}
           {view === 'signup' && (
             <p id="password-hint" className="field-hint">

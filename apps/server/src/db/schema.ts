@@ -17,6 +17,7 @@ export const user = pgTable('users', {
   image: text('image'),
   suspended: boolean('suspended').notNull().default(false),
   adminRevision: integer('admin_revision').notNull().default(0),
+  deletionDueAt: timestamp('deletion_due_at', { withTimezone: true }),
   role: text('role', { enum: ['user', 'admin'] })
     .notNull()
     .default('user'),
@@ -126,6 +127,17 @@ export const emailChange = pgTable('auth_email_changes', {
   oldEmail: text('old_email').notNull(),
   newEmail: text('new_email').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
+export const securityEvent = pgTable('security_events', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').notNull(),
+  type: text('type').notNull(),
+  ipAddress: text('ip_address'),
+  userAgent: text('user_agent'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 export const invites = pgTable('invites', {

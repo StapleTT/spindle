@@ -1,6 +1,7 @@
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { securityEventLabels } from './account-api.js';
 import { Icon } from './brand.js';
-import { mail, manageAccounts, shieldLock } from './icons.js';
+import { history, mail, manageAccounts, shieldLock } from './icons.js';
 
 type User = {
   id: string;
@@ -9,6 +10,7 @@ type User = {
   role: 'admin' | 'user';
   emailVerified: boolean;
   suspended: boolean;
+  deletionDueAt: string | null;
   revision: number;
   createdAt: string;
   accountCount: number;
@@ -32,7 +34,15 @@ type Audit = {
   createdAt: string;
   details: { email?: string; role?: string; suspended?: boolean };
 };
-type Tab = 'users' | 'invites' | 'audit';
+type SecurityEvent = {
+  id: string;
+  type: string;
+  userId: string;
+  email: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+};
+type Tab = 'users' | 'invites' | 'audit' | 'security';
 type Change = {
   title: string;
   description: string;
@@ -73,6 +83,7 @@ const actions: Record<string, string> = {
   'user.resume': 'Resumed user',
   'user.role': 'Changed role',
   'user.sessions': 'Signed out user devices',
+  'user.delete': 'Deleted user',
   'invite.send': 'Issued invitation',
   'invite.revoke': 'Revoked invitation',
 };
@@ -201,9 +212,11 @@ function AdminPanel() {
   const [users, setUsers] = useState<User[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [audit, setAudit] = useState<Audit[]>([]);
+  const [security, setSecurity] = useState<SecurityEvent[]>([]);
   const [overview, setOverview] = useState<{
     users: number;
     suspended: number;
+    deletions: number;
     invitations: number;
   } | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -224,18 +237,20 @@ function AdminPanel() {
     setLoading(true);
     try {
       const query = new URLSearchParams();
-      if (search && tab !== 'audit') query.set('search', search);
+      if (search && (tab === 'users' || tab === 'invites'))
+        query.set('search', search);
       if (next) query.set('cursor', next);
       const [summary, page] = await Promise.all([
-        adminApi<{ users: number; suspended: number; invitations: number }>(
-          'overview',
-          undefined,
-          signal,
-        ),
+        adminApi<{
+          users: number;
+          suspended: number;
+          deletions: number;
+          invitations: number;
+        }>('overview', undefined, signal),
         adminApi<{
           users?: User[];
           invites?: Invite[];
-          events?: Audit[];
+          events?: Audit[] & SecurityEvent[];
           nextCursor: string | null;
         }>(`${tab}?${query}`, undefined, signal),
       ]);
@@ -252,6 +267,10 @@ function AdminPanel() {
         );
       if (tab === 'audit')
         setAudit((current) =>
+          next ? [...current, ...(page.events ?? [])] : (page.events ?? []),
+        );
+      if (tab === 'security')
+        setSecurity((current) =>
           next ? [...current, ...(page.events ?? [])] : (page.events ?? []),
         );
       setError('');
@@ -339,26 +358,30 @@ function AdminPanel() {
   }
   function userChange(
     user: User,
-    action: 'suspend' | 'resume' | 'sessions' | 'role',
+    action: 'suspend' | 'resume' | 'sessions' | 'role' | 'delete',
   ) {
     const role = user.role === 'admin' ? 'user' : 'admin';
     const title =
-      action === 'role'
-        ? `Make ${role}`
-        : action === 'sessions'
-          ? 'Sign out devices'
-          : action === 'suspend'
-            ? 'Suspend user'
-            : 'Resume user';
+      action === 'delete'
+        ? 'Delete user'
+        : action === 'role'
+          ? `Make ${role}`
+          : action === 'sessions'
+            ? 'Sign out devices'
+            : action === 'suspend'
+              ? 'Suspend user'
+              : 'Resume user';
     prepare(
       title,
-      action === 'suspend'
-        ? `Suspend ${user.email}. Their sessions and background account leases will be revoked. Mail and drafts are retained. Queued sends are held until access is resumed. Work already submitted to a provider may still complete.`
-        : action === 'role'
-          ? `Set ${user.email} to ${role}. Their current sessions will be revoked.`
-          : action === 'sessions'
-            ? `Sign ${user.email} out on every device. Their data stays saved.`
-            : `Allow ${user.email} to sign in and resume background sync. Queued mail and overdue scheduled messages may send.`,
+      action === 'delete'
+        ? `Permanently delete ${user.email} and all of their Spindle data: connected accounts, synchronized mail, drafts, outbox and settings. Mail at their providers is not affected. This cannot be undone.`
+        : action === 'suspend'
+          ? `Suspend ${user.email}. Their sessions and background account leases will be revoked. Mail and drafts are retained. Queued sends are held until access is resumed. Work already submitted to a provider may still complete.`
+          : action === 'role'
+            ? `Set ${user.email} to ${role}. Their current sessions will be revoked.`
+            : action === 'sessions'
+              ? `Sign ${user.email} out on every device. Their data stays saved.`
+              : `Allow ${user.email} to sign in and resume background sync. Queued mail and overdue scheduled messages may send.`,
       `users/${encodeURIComponent(user.id)}`,
       {
         action,
@@ -384,13 +407,17 @@ function AdminPanel() {
             <dd>{overview.suspended}</dd>
           </div>
           <div>
+            <dt>Pending deletion</dt>
+            <dd>{overview.deletions}</dd>
+          </div>
+          <div>
             <dt>Pending invites</dt>
             <dd>{overview.invitations}</dd>
           </div>
         </dl>
       )}
       <nav className="admin-toolbar" aria-label="Administration sections">
-        {(['users', 'invites', 'audit'] as const).map((item) => (
+        {(['users', 'invites', 'audit', 'security'] as const).map((item) => (
           <button
             key={item}
             type="button"
@@ -409,14 +436,18 @@ function AdminPanel() {
                   ? manageAccounts
                   : item === 'invites'
                     ? mail
-                    : shieldLock
+                    : item === 'audit'
+                      ? shieldLock
+                      : history
               }
             />
             {item === 'users'
               ? 'Users'
               : item === 'invites'
                 ? 'Invitations'
-                : 'Activity'}
+                : item === 'audit'
+                  ? 'Activity'
+                  : 'Sign-ins'}
           </button>
         ))}
         <button
@@ -438,7 +469,7 @@ function AdminPanel() {
           {error}
         </p>
       )}
-      {tab !== 'audit' && (
+      {(tab === 'users' || tab === 'invites') && (
         <form
           key={tab}
           className="admin-toolbar"
@@ -526,11 +557,13 @@ function AdminPanel() {
                     {user.role === 'admin' ? 'Admin' : 'User'}
                   </span>
                   <span className="badge">
-                    {user.suspended
-                      ? 'Suspended'
-                      : user.emailVerified
-                        ? 'Verified'
-                        : 'Unverified'}
+                    {user.deletionDueAt
+                      ? `Deletion scheduled ${new Date(user.deletionDueAt).toLocaleDateString()}`
+                      : user.suspended
+                        ? 'Suspended'
+                        : user.emailVerified
+                          ? 'Verified'
+                          : 'Unverified'}
                   </span>
                 </div>
                 <p className="muted small">
@@ -540,16 +573,18 @@ function AdminPanel() {
                 </p>
               </div>
               <div className="admin-row-actions">
-                <button
-                  type="button"
-                  className="outlined"
-                  disabled={user.current}
-                  onClick={() =>
-                    userChange(user, user.suspended ? 'resume' : 'suspend')
-                  }
-                >
-                  {user.suspended ? 'Resume' : 'Suspend'}
-                </button>
+                {!user.deletionDueAt && (
+                  <button
+                    type="button"
+                    className="outlined"
+                    disabled={user.current}
+                    onClick={() =>
+                      userChange(user, user.suspended ? 'resume' : 'suspend')
+                    }
+                  >
+                    {user.suspended ? 'Resume' : 'Suspend'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="outlined"
@@ -566,6 +601,15 @@ function AdminPanel() {
                 >
                   {user.role === 'admin' ? 'Make user' : 'Make admin'}
                 </button>
+                {user.suspended && !user.current && (
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={() => userChange(user, 'delete')}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </li>
           ))}
@@ -642,17 +686,37 @@ function AdminPanel() {
           ))}
         </ul>
       )}
+      {tab === 'security' && (
+        <ul className="admin-list" aria-label="Sign-in and account events">
+          {security.map((event) => (
+            <li className="settings-panel admin-row" key={event.id}>
+              <div className="admin-row-text">
+                <h4>{securityEventLabels[event.type] ?? event.type}</h4>
+                <p>{event.email ?? `Deleted user ${event.userId}`}</p>
+                <p className="muted small">
+                  {event.ipAddress || 'Network address unavailable'} ·{' '}
+                  {new Date(event.createdAt).toLocaleString()}
+                </p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
       {!loading &&
         !error &&
         (tab === 'users'
           ? users.length === 0
           : tab === 'invites'
             ? invites.length === 0
-            : audit.length === 0) && (
+            : tab === 'audit'
+              ? audit.length === 0
+              : security.length === 0) && (
           <p className="muted">
             {tab === 'audit'
               ? 'No administration activity yet.'
-              : 'No matches found.'}
+              : tab === 'security'
+                ? 'No sign-in or account events yet.'
+                : 'No matches found.'}
           </p>
         )}
       {cursor && (
@@ -662,7 +726,7 @@ function AdminPanel() {
           onClick={() => void load(undefined, cursor)}
         >
           Show more{' '}
-          {tab === 'audit'
+          {tab === 'audit' || tab === 'security'
             ? 'activity'
             : tab === 'invites'
               ? 'invitations'

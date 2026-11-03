@@ -5,6 +5,7 @@ import type { Pool } from 'pg';
 import { registerAdminRoutes } from './admin/routes.js';
 import type { Auth } from './auth/auth.js';
 import type { AuthConfig } from './auth/config.js';
+import { registerDataExport } from './auth/data-export.js';
 import { createMailer } from './auth/email.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { loggerOptions } from './logger.js';
@@ -32,6 +33,7 @@ export function buildApp(
     },
   });
   registerAuthRoutes(app, auth, config);
+  registerDataExport(app, database, auth, config);
   app.register(async (admin) =>
     registerAdminRoutes(admin, database, auth, config, mailer),
   );
