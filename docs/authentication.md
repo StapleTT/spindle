@@ -81,3 +81,18 @@ The UI uses the imported Claude Design tokens and components; see [design guidel
 ## Browser routes
 
 The public landing page is `/`. Signup, sign-in, verification callbacks and password recovery use `/login` (with existing `view`, `email` and verification/reset query parameters); signed-in mail uses `/inbox` with its existing hash navigation. Signed-out inbox visits retain their mail fragment through sign-in. Signed-in login visits switch to `/inbox`, except explicit password-reset and email-change confirmation flows. Sign-out and revoked sessions return to `/login`. Old root auth/mail links remain compatible. `APP_URL`, Better Auth's `/api/auth` path and origin/ownership checks are unchanged. See [static hosting routes](network-access.md#static-build-routing).
+
+## Route authorization matrix
+
+`apps/server/test/authorization.integration.ts` classifies every API route as public, session, admin or admin-gate. Mail and admin routes are discovered with Fastify's `onRoute` hook. Root routes are counted from `printRoutes`, and the `/api/auth/*` proxy paths come from the exported `authProxyPaths` allowlist. An unclassified or stale route fails the suite, so a new route needs a matrix entry with a valid request body. Fastify validates bodies before the auth `preHandler`, so an invalid body would otherwise hide the guard behind a 400.
+
+For each class, the suite checks:
+
+- **Anonymous, forged-cookie and expired sessions:** 401. Suspended and pending-deletion users also get 401, because Postgres deletes and refuses their sessions. Unverified users get 403.
+- **Admin routes:** regular users get 403, and locked admin sessions get `ADMIN_LOCKED`.
+- **Writes:** cross-site or origin-less writes get 403.
+- **Foreign callers:** another user and an unlocked administrator call each owner-resource route with valid bodies. The owner's rows in every `user_id` table must stay byte-identical, and responses must not contain owner sentinels.
+- **Malformed input:** arrays, objects and NUL strings in body fields, repeated query keys and invalid path IDs must get a 4xx, never a 500.
+- **Content grants:** tokens that are missing, forged, tampered, of the wrong kind or borrowed from another session are refused. Tokens also stop working after session expiry, email unverification or suspension.
+
+The auth proxy rejects NUL in proxied bodies or URLs, and admin identifiers refuse control characters. Without those checks, Postgres text errors surfaced as 500s.

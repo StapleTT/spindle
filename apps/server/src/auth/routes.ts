@@ -12,6 +12,43 @@ export function authHeaders(request: FastifyRequest) {
   return headers;
 }
 
+function containsNul(value: unknown): boolean {
+  if (typeof value === 'string') return value.includes('\u0000');
+  if (value && typeof value === 'object')
+    return Object.entries(value).some(
+      ([key, item]) => key.includes('\u0000') || containsNul(item),
+    );
+  return false;
+}
+
+// Better Auth endpoints reachable through /api/auth/*; everything else is 404.
+export const authProxyPaths = {
+  POST: [
+    '/sign-up/email',
+    '/sign-in/email',
+    '/sign-out',
+    '/send-verification-email',
+    '/request-password-reset',
+    '/reset-password',
+    '/account/profile',
+    '/account/password',
+    '/account/email',
+    '/account/email/cancel',
+    '/account/email/confirm',
+    '/account/sessions/revoke',
+    '/account/sessions/revoke-others',
+    '/account/deletion',
+    '/account/deletion/cancel',
+  ],
+  GET: [
+    '/get-session',
+    '/verify-email',
+    '/account',
+    '/account/sessions',
+    '/account/activity',
+  ],
+};
+
 export function registerAuthRoutes(
   app: FastifyInstance,
   auth: Auth,
@@ -32,31 +69,13 @@ export function registerAuthRoutes(
       );
       const allowed =
         request.method === 'POST'
-          ? [
-              '/sign-up/email',
-              '/sign-in/email',
-              '/sign-out',
-              '/send-verification-email',
-              '/request-password-reset',
-              '/reset-password',
-              '/account/profile',
-              '/account/password',
-              '/account/email',
-              '/account/email/cancel',
-              '/account/email/confirm',
-              '/account/sessions/revoke',
-              '/account/sessions/revoke-others',
-              '/account/deletion',
-              '/account/deletion/cancel',
-            ].includes(path)
-          : [
-              '/get-session',
-              '/verify-email',
-              '/account',
-              '/account/sessions',
-              '/account/activity',
-            ].includes(path) || /^\/reset-password\/[^/]+$/.test(path);
+          ? authProxyPaths.POST.includes(path)
+          : authProxyPaths.GET.includes(path) ||
+            /^\/reset-password\/[^/]+$/.test(path);
       if (!allowed) return reply.code(404).send({ message: 'Not found.' });
+      // Postgres text cannot hold NUL; refuse it before Better Auth queries.
+      if (/%00/.test(request.url) || containsNul(request.body))
+        return reply.code(400).send({ message: 'Invalid request.' });
       if (
         request.method === 'POST' &&
         request.headers.origin !== config.appUrl

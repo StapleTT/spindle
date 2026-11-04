@@ -237,8 +237,10 @@ export function buildContentApp(
       'content-security-policy': contentPolicy(),
     });
   });
-  app.setErrorHandler((_error, _request, reply) =>
-    reply.code(500).type('text/plain').send('Content unavailable.'),
+  app.setErrorHandler((error: { statusCode?: number }, _request, reply) =>
+    error.statusCode && error.statusCode >= 400 && error.statusCode < 500
+      ? reply.code(error.statusCode).type('text/plain').send('Invalid request.')
+      : reply.code(500).type('text/plain').send('Content unavailable.'),
   );
   const query = {
     type: 'object',

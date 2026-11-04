@@ -19,7 +19,12 @@ class AdminError extends Error {
     super(message);
   }
 }
-const identifier = z.string().min(1).max(128);
+// Postgres text rejects NUL; refuse control characters before any query.
+const identifier = z
+  .string()
+  .min(1)
+  .max(128)
+  .refine((value) => ![...value].some((c) => c < ' ' || c === '\u007f'));
 const confirmation = z.object({ operationId: z.uuid() });
 const userAction = confirmation
   .extend({
@@ -37,7 +42,12 @@ const inviteAction = confirmation
 const revokeInvite = confirmation.extend({ inviteId: identifier }).strict();
 const listing = z
   .object({
-    search: z.string().trim().max(100).optional(),
+    search: z
+      .string()
+      .trim()
+      .max(100)
+      .refine((value) => !value.includes('\u0000'))
+      .optional(),
     cursor: identifier.optional(),
   })
   .strict();

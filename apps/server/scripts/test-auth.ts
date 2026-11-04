@@ -52,6 +52,7 @@ try {
             'apps/server/test/account-security.integration.ts',
             'apps/server/test/admin.integration.ts',
             'apps/server/test/account-lifecycle.integration.ts',
+            'apps/server/test/authorization.integration.ts',
             'apps/server/test/mail.integration.ts',
             'apps/server/test/idle.integration.ts',
             'apps/server/test/events.integration.ts',
