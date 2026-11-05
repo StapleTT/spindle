@@ -139,6 +139,23 @@ test('Gmail connects through Google consent and shows honest read-only mail', {
         true,
       );
       await rename.click();
+      // The inline form stays one compact row (it once inherited the global
+      // column form layout and opened a ~200px gap).
+      for (const width of [1280, 375]) {
+        await page.setViewportSize({ width, height: 800 });
+        const form = await page.locator('.rename-form').boundingBox();
+        const field = await input.boundingBox();
+        assert.ok(form && field);
+        assert.ok(
+          form.height < (width < 600 ? 110 : 60),
+          `${width}: ${form.height}`,
+        );
+        await page.screenshot({
+          path: `/tmp/spindle-rename-open-${width}.png`,
+          animations: 'disabled',
+        });
+      }
+      await page.setViewportSize({ width: 1280, height: 720 });
       await input.fill('Personal Gmail');
       await input.press('Enter');
       const renamed = page.getByRole('button', {
