@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import { Client, type Pool } from 'pg';
 import type { PgBoss } from 'pg-boss';
 import {
   deleteUserData,
@@ -57,6 +57,17 @@ export async function startMailWorker(
     retryBackoff: true,
     expireInSeconds: 120,
   });
+  // User-facing latency: a sent dispatch or content job wakes its worker over
+  // LISTEN/NOTIFY instead of waiting for the next poll (polling remains the
+  // fallback). Updated in place so existing queues opt in too.
+  for (const name of ['mail-dispatch', 'mail-content'])
+    await boss.updateQueue(name, { notify: true });
+  // Dispatch as soon as a lease holder steps aside for user work, instead of
+  // waiting for the next timer tick.
+  const kick = () =>
+    void boss
+      .send('mail-dispatch')
+      .catch(() => logger.error('Mail dispatch unavailable'));
   await boss.createQueue('mail-file', {
     policy: 'exclusive',
     retryLimit: 2,
@@ -225,8 +236,10 @@ export async function startMailWorker(
         { singletonKey: `idle:${account.id}` },
       );
   }
-  await boss.work('mail-dispatch', { pollingIntervalSeconds: 1 }, async () =>
-    dispatch(),
+  await boss.work(
+    'mail-dispatch',
+    { pollingIntervalSeconds: 1, notifyPollingIntervalSeconds: 1 },
+    async () => dispatch(),
   );
   await boss.work<{ accountId: string; userId: string; kind?: 'idle' }>(
     'mail-sync',
@@ -246,6 +259,24 @@ export async function startMailWorker(
       )
         throw new Error('Invalid mail job');
       if (shutdown.signal.aborted) return;
+      try {
+        await metadata(data);
+      } finally {
+        // A watch or sync that yielded left user work waiting on its lease.
+        if (
+          (await pool.query(contentPending, [data.userId, data.accountId]))
+            .rowCount
+        )
+          kick();
+      }
+    },
+  );
+  async function metadata(data: {
+    accountId: string;
+    userId: string;
+    kind?: 'idle';
+  }) {
+    {
       const provider = (
         await pool.query(
           'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
@@ -287,11 +318,15 @@ export async function startMailWorker(
           return;
       }
       await syncAccount(pool, keys, data.userId, data.accountId);
-    },
-  );
+    }
+  }
   await boss.work<ContentJob | ActionJob>(
     'mail-content',
-    { localConcurrency: 1, pollingIntervalSeconds: 1 },
+    {
+      localConcurrency: 1,
+      pollingIntervalSeconds: 1,
+      notifyPollingIntervalSeconds: 1,
+    },
     async ([job]) => {
       const uuid =
         /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -380,6 +415,31 @@ export async function startMailWorker(
       await scanUpload(pool, job.data.userId, job.data.fileId);
     },
   );
+  // New body/attachment requests (0037 trigger) dispatch at once. One
+  // session-persistent connection, re-established after failures; the timer
+  // below remains the fallback.
+  // Its own client, not a pool checkout, so pool shutdown never waits on it.
+  let listener: Client | undefined;
+  const listen = async () => {
+    if (shutdown.signal.aborted) return;
+    const client = new Client({ ...pool.options, keepAlive: true });
+    const retry = () => {
+      if (listener === client) listener = undefined;
+      void client.end().catch(() => undefined);
+      if (!shutdown.signal.aborted)
+        setTimeout(() => void listen(), 5000).unref();
+    };
+    client.on('notification', kick);
+    client.on('error', retry);
+    try {
+      listener = client;
+      await client.connect();
+      await client.query('LISTEN spindle_mail_work');
+    } catch {
+      retry();
+    }
+  };
+  await listen();
   await boss.schedule('mail-dispatch', '* * * * *');
   await boss.send('mail-dispatch');
   // Fast local feedback; the durable schedule above recovers missed timer ticks.
@@ -392,5 +452,7 @@ export async function startMailWorker(
   return () => {
     clearInterval(timer);
     shutdown.abort();
+    void listener?.end().catch(() => undefined);
+    listener = undefined;
   };
 }

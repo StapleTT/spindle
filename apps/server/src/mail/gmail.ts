@@ -280,6 +280,14 @@ export async function applyLabelDeltas(
   return rows.map((row) => row.id);
 }
 
+// Access tokens (about one hour) are reused across jobs in this worker's
+// memory only, never stored; a reconnect's new credential invalidates them.
+// ponytail: per-process cache; each worker refreshes independently.
+const accessTokens = new Map<
+  string,
+  { credential: string; token: string; until: number }
+>();
+
 export type GmailApi = <T>(
   path: string,
   query?: Record<string, string> | URLSearchParams,
@@ -299,10 +307,22 @@ export async function openGmail(
   hardDeadline: number,
 ): Promise<GmailApi> {
   if (!google) throw new Error('Gmail is not configured');
-  const token = await refreshAccessToken(
-    google,
-    decryptCredential(account.credential, account.user_id, account.id, keys),
-  );
+  const fresh = async () => {
+    const { token, expiresIn } = await refreshAccessToken(
+      google,
+      decryptCredential(account.credential, account.user_id, account.id, keys),
+    );
+    accessTokens.set(account.id, {
+      credential: account.credential,
+      token,
+      until: Date.now() + (expiresIn - 300) * 1000,
+    });
+    return token;
+  };
+  const cached = accessTokens.get(account.id);
+  let reused =
+    cached?.credential === account.credential && cached.until > Date.now();
+  let token = reused && cached ? cached.token : await fresh();
   let slot = 0;
   return async (path, query = {}, request = {}) => {
     const { once, ...init } = request;
@@ -322,6 +342,15 @@ export async function openGmail(
           token,
         });
       } catch (error) {
+        // A reused token may have been revoked; Google rejected the request
+        // without acting on it, so one retry with a fresh token is safe even
+        // for a send. A 401 with a fresh token still means reconnect.
+        if (reused && error instanceof GoogleError && error.status === 401) {
+          accessTokens.delete(account.id);
+          reused = false;
+          token = await fresh();
+          continue;
+        }
         if (once || !(error instanceof GoogleError) || !retryable(error))
           throw error;
         // Exponential backoff with jitter, or Google's Retry-After.

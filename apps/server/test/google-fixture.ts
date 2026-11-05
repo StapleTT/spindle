@@ -21,7 +21,13 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     { identity: Identity; scope: string; refresh?: string; challenge: string }
   >();
   const refreshTokens = new Map<string, Identity>();
-  const accessTokens = new Map<string, Identity>();
+  // Access token -> identity and the refresh token it came from. As at
+  // Google, revoking that refresh token invalidates its access tokens.
+  const accessTokens = new Map<
+    string,
+    { identity: Identity; refresh?: string | undefined }
+  >();
+  let refreshes = 0;
   const revoked: string[] = [];
   const listCalls: { pageToken?: string; q?: string }[] = [];
   const messages = new Map<string, FakeMessage>();
@@ -92,7 +98,10 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
         )
           return reply.code(400).send({ error: 'invalid_grant' });
         const access = `access-${randomUUID()}`;
-        accessTokens.set(access, code.identity);
+        accessTokens.set(access, {
+          identity: code.identity,
+          refresh: code.refresh,
+        });
         if (code.refresh) refreshTokens.set(code.refresh, code.identity);
         return {
           access_token: access,
@@ -104,8 +113,9 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
       if (body.grant_type !== 'refresh_token' || !identity)
         return reply.code(400).send({ error: 'invalid_grant' });
       const access = `access-${randomUUID()}`;
-      accessTokens.set(access, identity);
-      return { access_token: access };
+      accessTokens.set(access, { identity, refresh: body.refresh_token });
+      refreshes++;
+      return { access_token: access, expires_in: 3599 };
     },
   );
   app.post<{ Body: Record<string, string> }>('/revoke', async (request) => {
@@ -113,8 +123,14 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     refreshTokens.delete(request.body.token ?? '');
     return {};
   });
-  const identity = (authorization?: string) =>
-    accessTokens.get((authorization ?? '').replace(/^Bearer /, ''));
+  const identity = (authorization?: string) => {
+    const entry = accessTokens.get(
+      (authorization ?? '').replace(/^Bearer /, ''),
+    );
+    return entry && (!entry.refresh || refreshTokens.has(entry.refresh))
+      ? entry.identity
+      : undefined;
+  };
   app.get('/userinfo', async (request, reply) => {
     const user = identity(request.headers.authorization);
     if (!user) return reply.code(401).send({ error: 'invalid_token' });
@@ -367,6 +383,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     config,
     consent,
     sent,
+    refreshCount: () => refreshes,
     codes,
     refreshTokens,
     revoked,

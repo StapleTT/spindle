@@ -820,6 +820,8 @@ test('Gmail OAuth connection, sync, reader, actions and sending', {
     'actions change Gmail labels and local folders through durable intents',
     async () => {
       const applied = { state: 'applied', error_code: null };
+      // Every job below reuses the worker's cached access token.
+      const refreshes = google.refreshCount();
       assert.deepEqual(await act(rich, { kind: 'read' }), applied);
       assert.deepEqual(labels('rich'), ['INBOX']);
       assert.deepEqual((await local('rich')).flags, ['\\Seen']);
@@ -859,6 +861,7 @@ test('Gmail OAuth connection, sync, reader, actions and sending', {
         state: 'conflict',
         error_code: 'message_missing',
       });
+      assert.equal(google.refreshCount(), refreshes);
     },
   );
 

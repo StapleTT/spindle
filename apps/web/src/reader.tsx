@@ -25,7 +25,7 @@ import {
   requestAction,
   type Undoable,
 } from './mail-api.js';
-import { useMailRevision } from './mail-events.js';
+import { subscribeMailChanges, useMailRevision } from './mail-events.js';
 import { mailHref, navigateMail } from './mail-navigation.js';
 import { useThemedContentUrl } from './use-themed-content.js';
 
@@ -287,6 +287,16 @@ export function Reader({
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     let requested = false;
+    // While the body is being fetched, a committed content change (SSE) reloads
+    // at once; the 1.5-second poll remains the fallback when SSE is down.
+    let waiting = false;
+    const wake = () => {
+      if (!waiting) return;
+      waiting = false;
+      if (timer) clearTimeout(timer);
+      void load();
+    };
+    const unsubscribe = subscribeMailChanges(['mail'], wake);
     setDetail(null);
     setError('');
     setImages(false);
@@ -318,9 +328,10 @@ export function Reader({
         if (
           current.content.state === 'missing' ||
           current.content.state === 'pending'
-        )
-          timer = setTimeout(() => void load(), 1500);
-        else setHtmlUrl(current.content.htmlUrl ?? null);
+        ) {
+          waiting = true;
+          timer = setTimeout(wake, 1500);
+        } else setHtmlUrl(current.content.htmlUrl ?? null);
       } catch (failure) {
         if (!controller.signal.aborted)
           setError(
@@ -333,6 +344,7 @@ export function Reader({
     void load();
     return () => {
       controller.abort();
+      unsubscribe();
       imageRequest.current?.abort();
       if (timer) clearTimeout(timer);
     };

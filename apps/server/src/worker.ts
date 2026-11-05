@@ -7,7 +7,11 @@ import { readGoogleConfig } from './mail/google.js';
 import { startMailWorker } from './mail/worker.js';
 
 const { databaseUrl } = readConfig();
-const boss = new PgBoss({ connectionString: databaseUrl });
+// LISTEN/NOTIFY wakes notify-enabled queues (dispatch, content) immediately.
+const boss = new PgBoss({
+  connectionString: databaseUrl,
+  useListenNotify: true,
+});
 const keys = readMailKeys();
 const google = readGoogleConfig();
 const pool = new Pool({

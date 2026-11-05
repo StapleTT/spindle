@@ -112,17 +112,26 @@ export async function googleJson<T>(
 }
 
 export function refreshAccessToken(google: GoogleConfig, refresh: string) {
-  return googleJson<{ access_token?: unknown }>(google.tokenUrl, {
-    form: {
-      grant_type: 'refresh_token',
-      refresh_token: refresh,
-      client_id: google.clientId,
-      client_secret: google.clientSecret,
+  return googleJson<{ access_token?: unknown; expires_in?: unknown }>(
+    google.tokenUrl,
+    {
+      form: {
+        grant_type: 'refresh_token',
+        refresh_token: refresh,
+        client_id: google.clientId,
+        client_secret: google.clientSecret,
+      },
     },
-  }).then(({ access_token }) => {
+  ).then(({ access_token, expires_in }) => {
     if (typeof access_token !== 'string' || !access_token)
       throw new GoogleError(502, 'invalid_response');
-    return access_token;
+    return {
+      token: access_token,
+      expiresIn:
+        typeof expires_in === 'number' && Number.isFinite(expires_in)
+          ? expires_in
+          : 0,
+    };
   });
 }
 

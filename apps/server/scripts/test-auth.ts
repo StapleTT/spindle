@@ -55,6 +55,7 @@ try {
             'apps/server/test/account-lifecycle.integration.ts',
             'apps/server/test/authorization.integration.ts',
             'apps/server/test/gmail.integration.ts',
+            'apps/server/test/content-latency.integration.ts',
             'apps/server/test/mail.integration.ts',
             'apps/server/test/idle.integration.ts',
             'apps/server/test/events.integration.ts',

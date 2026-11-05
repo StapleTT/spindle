@@ -453,3 +453,23 @@ Folder model:
 Sender identity: the sender is the connected address, and the display name comes from Gmail's default "Send mail as" (`users.settings.sendAs`, covered by `gmail.modify`), falling back to the Spindle profile name. Append additive migration 0036 for that name.
 
 Gmail sync, like IMAP, yields to pending user work. Old (D038-only) workers never touch Gmail mail but leave queued Gmail work pending. See [Gmail](gmail.md).
+
+## D041 — prompt message content fetching
+
+Status: requested by the user on 2026-11-05 ("Fetching message content (all providers) is incredibly slow").
+
+Measured with synthetic local IMAP: a requested body took about 5 s on a quiet account and 8.8 s during a large sync. Causes:
+
+- An IMAP IDLE watch usually held the account lease, so the body job could not claim it. The watch yielded within a second, but nothing redispatched the job until the next 5-second dispatcher tick.
+- IMAP sync did not yield between folder batches.
+- The reader rechecked only every 1.5 s.
+
+Fix, without new dependencies:
+
+- Append migration 0037: a `spindle_mail_work` NOTIFY fires when a body or attachment is newly requested or retried. The worker LISTENs on its own connection (one per worker process, re-established after errors) and dispatches.
+- pg-boss `useListenNotify` and per-queue `notify` wake the dispatch and content queues.
+- A metadata job that yields to user work dispatches again at once, and IMAP sync now yields between batches.
+- The reader reloads on the committed SSE content change.
+- Gmail access tokens are reused from worker memory until five minutes before expiry. They are never stored, a reconnect invalidates them, and a 401 retries once with a fresh token.
+
+The timer, polling and the minute schedule remain fallbacks. Result: about 0.4 s quiet and 1.2–1.8 s during a 4,000-message sync, plus provider fetch time. The IMAP TLS connection per body job is unchanged; reuse it if login time dominates. A per-worker body concurrency of one also stays unchanged, to preserve the two-connection budget.

@@ -260,6 +260,13 @@
       "when": 1793550000005,
       "tag": "0036_gmail_mail",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1793550000006,
+      "tag": "0037_mail_work_notify",
+      "breakpoints": true
     }
   ]
 }
