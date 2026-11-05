@@ -28,9 +28,15 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     historyId: 1000,
     minHistoryId: 0,
     failPageToken: false,
+    // Gmail's per-user quota: 250 units/s, messages.get costs 5 units.
+    getsPerSecond: 50,
+    exhausted: false,
+    gets: 0,
+    peakPerSecond: 0,
   };
   // Browser consent: approves as `state.consent` and returns to Spindle.
   const consent: { identity: Identity | null } = { identity: null };
+  const window = { second: 0, count: 0 };
   const app = Fastify();
   app.get<{ Querystring: Record<string, string> }>(
     '/auth',
@@ -151,15 +157,16 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
   }));
   app.get<{
     Querystring: { pageToken?: string; q?: string; maxResults?: string };
-  }>('/gmail/messages', async (request, reply) => {
+  }>('/gmail/messages', async (request) => {
     const { pageToken, q } = request.query;
     listCalls.push({
       ...(pageToken ? { pageToken } : {}),
       ...(q ? { q } : {}),
     });
     if (pageToken && state.failPageToken) {
+      // A non-retryable failure mid-listing stands in for a worker crash.
       state.failPageToken = false;
-      return reply.code(503).send({ error: { code: 503 } });
+      return { messages: 'malformed' };
     }
     const after = Number(q?.match(/^after:(\d+)$/)?.[1] ?? 0) * 1000;
     const ids = [...messages.entries()]
@@ -180,6 +187,23 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     '/gmail/messages/:id',
     async (request, reply) => {
       assert.equal(request.query.format, 'metadata');
+      const second = Math.floor(Date.now() / 1000);
+      if (second !== window.second) Object.assign(window, { second, count: 0 });
+      window.count++;
+      state.peakPerSecond = Math.max(state.peakPerSecond, window.count);
+      if (state.exhausted || window.count > state.getsPerSecond)
+        return reply
+          .code(429)
+          .header('retry-after', '1')
+          .send({
+            error: {
+              code: 429,
+              status: 'RESOURCE_EXHAUSTED',
+              message: 'User-rate limit exceeded. Synthetic detail text.',
+              errors: [{ reason: 'rateLimitExceeded' }],
+            },
+          });
+      state.gets++;
       const message = messages.get(request.params.id);
       if (!message) return reply.code(404).send({ error: { code: 404 } });
       return resource(request.params.id, message);

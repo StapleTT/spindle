@@ -3,14 +3,14 @@ import { AccountColorPicker } from './account-color-picker.js';
 import { AccountOrderHandle } from './account-order-handle.js';
 import { AccountSecurity } from './account-security.js';
 import { AdminSettings } from './admin-settings.js';
+import gmailLogo from './assets/gmail.svg';
+import outlookLogo from './assets/outlook.svg';
 import { accountColorStyle, Icon, initials, ThemeChoice } from './brand.js';
 import type { Signature } from './draft-api.js';
 import {
-  businessCenter,
   dns,
   keyboard,
   lock,
-  mail,
   manageAccounts,
   notifications,
   palette,
@@ -146,6 +146,7 @@ export function Settings({
   const [showGmail, setShowGmail] = useState(false);
   const [disconnect, setDisconnect] = useState<Account | null>(null);
   const [smtpAccount, setSmtpAccount] = useState<Account | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
   const [signatureAccount, setSignatureAccount] = useState<Account | null>(
     null,
   );
@@ -179,6 +180,35 @@ export function Settings({
           ? error.message
           : 'Unable to start Gmail sign-in.',
       );
+    }
+  }
+
+  // Focus returns to the row's Rename button after saving or cancelling.
+  function stopRenaming(id: string) {
+    setRenaming(null);
+    requestAnimationFrame(() =>
+      document.querySelector<HTMLElement>(`[data-rename="${id}"]`)?.focus(),
+    );
+  }
+
+  async function rename(event: FormEvent<HTMLFormElement>, account: Account) {
+    event.preventDefault();
+    const name = String(new FormData(event.currentTarget).get('name')).trim();
+    if (name === account.name) return stopRenaming(account.id);
+    setBusy(true);
+    try {
+      await api(`accounts/${account.id}/name`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name }),
+      });
+      onReload();
+      stopRenaming(account.id);
+    } catch (error) {
+      onNotify(
+        error instanceof Error ? error.message : 'Unable to rename account.',
+      );
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -348,12 +378,49 @@ export function Settings({
                       {initials(item.name)}
                     </span>
                     <div className="account-row-text">
-                      <p>
-                        <strong>{item.name}</strong>
-                        <span className="badge">
-                          {item.provider === 'gmail' ? 'Gmail' : 'IMAP'}
-                        </span>
-                      </p>
+                      {renaming === item.id ? (
+                        <form
+                          className="rename-form"
+                          aria-busy={busy}
+                          onSubmit={(event) => void rename(event, item)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Escape') stopRenaming(item.id);
+                          }}
+                        >
+                          <label>
+                            <span className="visually-hidden">
+                              Display name for {item.username}
+                            </span>
+                            <input
+                              name="name"
+                              required
+                              maxLength={100}
+                              pattern=".*\S.*"
+                              defaultValue={item.name}
+                              // biome-ignore lint/a11y/noAutofocus: opened by an explicit Rename action
+                              autoFocus
+                            />
+                          </label>
+                          <button type="submit" disabled={busy}>
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            className="text-button"
+                            disabled={busy}
+                            onClick={() => stopRenaming(item.id)}
+                          >
+                            Cancel
+                          </button>
+                        </form>
+                      ) : (
+                        <p>
+                          <strong>{item.name}</strong>
+                          <span className="badge">
+                            {item.provider === 'gmail' ? 'Gmail' : 'IMAP'}
+                          </span>
+                        </p>
+                      )}
                       <p className="muted">
                         {item.username}
                         {item.host && ` · ${item.host}`}
@@ -386,6 +453,16 @@ export function Settings({
                           onClick={() => void sync(item.id)}
                         >
                           Sync now
+                        </button>
+                        <button
+                          type="button"
+                          className="text-button"
+                          data-rename={item.id}
+                          aria-label={`Rename ${item.name}`}
+                          disabled={busy || renaming === item.id}
+                          onClick={() => setRenaming(item.id)}
+                        >
+                          Rename
                         </button>
                         {item.provider === 'imap' && (
                           <button
@@ -507,7 +584,7 @@ export function Settings({
                     setDisconnect(null);
                   }}
                 >
-                  <Icon src={mail} />
+                  <img className="provider-logo" src={gmailLogo} alt="" />
                   <strong>Google</strong>
                   <span>
                     {gmailAvailable
@@ -516,7 +593,7 @@ export function Settings({
                   </span>
                 </button>
                 <button type="button" className="provider-card" disabled>
-                  <Icon src={businessCenter} />
+                  <img className="provider-logo" src={outlookLogo} alt="" />
                   <strong>Microsoft</strong>
                   <span>Coming soon</span>
                 </button>

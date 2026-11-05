@@ -76,12 +76,14 @@ A message has one `mail_messages` row (`remote_key` is the Gmail message ID) and
 
 The checkpoint is `mail_gmail_sync(history_id, page_token, initial_complete)`:
 
-- **Initial sync** records the `getProfile` historyId first. It then pages `messages.list` (100 per page, `includeSpamTrash`, `q=after:<epoch>` for the 90-day horizon) and fetches `format=metadata` headers (From/To/Cc/Subject/Date/Message-ID/In-Reply-To/References) with concurrency 10. Every committed page persists `page_token`, so a crash resumes from the last page. Listed IDs go to `mail_gmail_listed`; when the listing completes, local messages that were not listed are removed.
-- **Incremental sync** pages `history.list` from `history_id`. Added and relabelled messages are refetched; deleted ones are removed locally. The new `history_id` is stored after the last page, and page progress persists in the same way.
+- **Initial sync** records the `getProfile` historyId first. It then pages `messages.list` (100 per page, `includeSpamTrash`, `q=after:<epoch>` for the 90-day horizon) and fetches `format=metadata` headers (From/To/Cc/Subject/Date/Message-ID/In-Reply-To/References) through the paced request pool described under Quota. Every committed page persists `page_token`, so a crash resumes from the last page. Listed IDs go to `mail_gmail_listed`; when the listing completes, local messages that were not listed are removed.
+- **Incremental sync** pages `history.list` (100 records per page) from `history_id`. New messages are fetched. Label-only changes are applied as deltas to the local label set, which is recovered from folder paths and the `\Seen`/`\Flagged`/`\Draft` flags, so bulk changes such as "mark all read" or a filter need no refetch and have no size cap. Deleted messages are removed locally. If one page adds more than 1,000 messages, the account switches to a resumable full listing. The new `history_id` is stored after the last page, and page progress persists in the same way.
 - **Expired history** (404) or a stale page token resets the checkpoint for a full resync. Existing local mail stays visible until the new listing replaces it.
-- **Revoked consent** (`invalid_grant`) sets `status='error'`, `error_code='reconnect_required'` and defers sync 30 days or until reconnect. Other failures use the IMAP backoff.
+- **Revoked consent** (`invalid_grant`, a Gmail 401, or 403 `insufficientPermissions`) sets `status='error'`, `error_code='reconnect_required'` and defers sync 30 days or until reconnect. Other failures use the IMAP backoff and log a redacted `Gmail sync failed` line with the account ID, HTTP status and Google's enum-like `code`/`reason`, never message text or tokens.
 
-Limits: 40-second soft and 75-second hard job deadlines inside the 90-second lease; 4 MiB per Google response; 1,000 labels; 500 IDs per list page; 2,000 refetches per history page. Polling uses the existing `next_sync_at` cadence (1 second while syncing, 60 seconds when ready, immediately for Sync now). There is no Gmail IDLE; push is slice 5. Quota: about 5 units per `messages.get`, well under the 250 units per second per-user ceiling at concurrency 10. If HTTP overhead is measured, switch to the batch endpoint (`ponytail:` note in `gmail.ts`).
+Limits: 40-second soft and 75-second hard job deadlines inside the 90-second lease; 4 MiB per Google response; 1,000 labels; 500 IDs per list page; 1,000 new messages per history page. Polling uses the existing `next_sync_at` cadence (1 second while syncing, 60 seconds when ready, immediately for Sync now). There is no Gmail IDLE; push is slice 5.
+
+Quota: Gmail allows 250 units per user per second, and `messages.get` costs 5. A job uses a pool of 5 requests and starts at most one every 25 ms (about 40 requests and 200 units per second). A 429, 5xx, or 403 `rateLimitExceeded`/`userRateLimitExceeded` is retried up to 4 times with exponential backoff or `Retry-After`, and the whole job slows down with it. If retries run out or the hard deadline arrives, the job **pauses**: committed pages stay, the account remains `syncing` with no error, and the next job runs after 60 seconds (rate limit), 30 seconds (server error) or 1 second (deadline). Before 2026-11-05 the job used 10 unpaced requests and turned every rate-limit response into a sync failure, which is why automatic syncs failed after the first. If initial sync speed matters, switch to the batch endpoint (`ponytail:` note in `gmail.ts`).
 
 Committed changes fire the existing SSE triggers; lists, counts and search read only Postgres.
 
@@ -104,6 +106,10 @@ Rollback: keep the migration (never edit or reverse it). Old workers and APIs as
 - PKCE/redirect/scope parameters and the single-use, user/session/expiry-bound state.
 - Denial, missing scope, account substitution, omitted refresh tokens and the five-account limit.
 - Label/flag mapping, the 90-day filter, crash resume from the persisted page, history adds/label changes/deletes, expired-history resync that removes unlisted mail, and `invalid_grant` leading to reconnect required.
+- The fake enforces Gmail's 50 `messages.get` per second; sync must stay under it, and unpaced requests fail the test.
+- A 1,600-entry label record applies with zero fetches.
+- Quota exhaustion pauses without an error state and resumes.
+- Display-name edits survive reconnect.
 - 409 refusals, worker routing that never dispatches IMAP work for Gmail, revocation after scheduled deletion, and disconnect that revokes only unshared grants.
 
-`apps/web/test/gmail.browser.ts` drives Connect Gmail through a fake consent redirect, then checks the read-only reader and the Reconnect status. No real Google accounts, tokens or mail are used. Live acceptance needs the U07 setup above.
+`apps/web/test/gmail.browser.ts` drives Connect Gmail through a fake consent redirect, then checks the provider logos, renaming (Escape cancels and focus returns), the read-only reader and the Reconnect status. No real Google accounts, tokens or mail are used. Live acceptance needs the U07 setup above.

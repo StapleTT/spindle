@@ -287,6 +287,11 @@ test('route-wide authorization matrix', {
       body: { accountIds: [ids.account], expectedAccountIds: [ids.account] },
       foreign: 'deny',
     },
+    'PATCH /api/mail/accounts/:id/name': {
+      guard: 'session',
+      body: { name: 'Renamed synthetic' },
+      foreign: 'deny',
+    },
     'PATCH /api/mail/accounts/:id/color': {
       guard: 'session',
       body: { color: '#123456' },

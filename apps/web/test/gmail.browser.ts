@@ -108,7 +108,57 @@ test('Gmail connects through Google consent and shows honest read-only mail', {
         await row.getByRole('button', { name: /Outgoing SMTP/ }).count(),
         0,
       );
+      // Real provider marks, decorative and self-hosted.
+      const logos = page.locator('img.provider-logo');
+      assert.equal(await logos.count(), 2);
+      for (const logo of await logos.all()) {
+        assert.equal(await logo.getAttribute('alt'), '');
+        assert.ok(
+          await logo.evaluate(
+            (image) => (image as HTMLImageElement).naturalWidth > 0,
+          ),
+        );
+      }
       await page.screenshot({ path: '/tmp/spindle-gmail-settings.png' });
+    });
+
+    await t.test('accounts can be renamed from Settings', async () => {
+      const rename = page.getByRole('button', {
+        name: 'Rename reader@gmail.test',
+      });
+      await rename.click();
+      const input = page.getByRole('textbox', {
+        name: 'Display name for reader@gmail.test',
+      });
+      // Escape cancels without saving.
+      await input.fill('Discarded');
+      await input.press('Escape');
+      await rename.waitFor();
+      assert.equal(
+        await rename.evaluate((el) => el === document.activeElement),
+        true,
+      );
+      await rename.click();
+      await input.fill('Personal Gmail');
+      await input.press('Enter');
+      const renamed = page.getByRole('button', {
+        name: 'Rename Personal Gmail',
+      });
+      await renamed.waitFor();
+      assert.equal(
+        await renamed.evaluate((el) => el === document.activeElement),
+        true,
+      );
+      assert.equal(
+        (
+          await pool.query(
+            "SELECT name FROM mail_accounts WHERE user_id=$1 AND provider='gmail'",
+            [owner.id],
+          )
+        ).rows[0].name,
+        'Personal Gmail',
+      );
+      await page.screenshot({ path: '/tmp/spindle-gmail-renamed.png' });
     });
 
     await t.test('Gmail mail lists, but opening it is honest', async () => {

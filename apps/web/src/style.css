@@ -1676,6 +1676,18 @@ label.avatar:has(:focus-visible) {
 .status-dot.error {
   background: var(--error);
 }
+.rename-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.rename-form label {
+  flex: 1 1 220px;
+}
+.rename-form input {
+  min-height: 40px;
+}
 .account-buttons {
   display: flex;
   flex-wrap: wrap;
@@ -1695,6 +1707,7 @@ label.avatar:has(:focus-visible) {
   height: auto;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: flex-start;
   gap: 12px;
   padding: 20px;
   border-color: var(--outline-var);
@@ -1705,11 +1718,18 @@ label.avatar:has(:focus-visible) {
   font-size: 28px;
   color: var(--a1);
 }
-.provider-card:nth-child(2) .icon {
-  color: var(--a2);
-}
 .provider-card.imap .icon {
   color: var(--a3);
+}
+/* Provider brand marks keep their own colours (docs/design.md#provider-logos). */
+/* Same 35px box as a 28px Material icon (1.25em). */
+.provider-logo {
+  width: 35px;
+  height: 35px;
+  object-fit: contain;
+}
+.provider-card:disabled .provider-logo {
+  filter: grayscale(1);
 }
 .provider-card strong {
   font-size: 15px;
@@ -1719,7 +1739,7 @@ label.avatar:has(:focus-visible) {
   font-size: 13px;
   font-weight: 400;
 }
-.provider-card.imap[aria-expanded="true"] {
+.provider-card[aria-expanded="true"] {
   border-color: var(--primary);
   background: var(--sel);
 }

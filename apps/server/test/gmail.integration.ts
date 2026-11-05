@@ -302,6 +302,33 @@ test('Gmail OAuth connection and read-only metadata sync', {
     },
   );
 
+  await t.test('display names are editable and survive reconnect', async () => {
+    const rename = (cookie: string, name: unknown) =>
+      app.inject({
+        method: 'PATCH',
+        url: `/api/mail/accounts/${accountA}/name`,
+        remoteAddress: '198.51.100.250',
+        headers: { cookie, origin: testConfig.appUrl },
+        payload: { name },
+      });
+    await pool.query('DELETE FROM mail_request_limits');
+    const renamed = await rename(owner.cookie, '  Personal Gmail  ');
+    assert.equal(renamed.statusCode, 200, renamed.body);
+    assert.equal(renamed.json().account.name, 'Personal Gmail');
+    for (const bad of ['   ', '', 'x'.repeat(101), 'tab\there'])
+      assert.equal((await rename(owner.cookie, bad)).statusCode, 400, bad);
+    await pool.query('DELETE FROM mail_request_limits');
+    assert.equal((await rename(other.cookie, 'Hijack')).statusCode, 404);
+    const again = await connect(owner.cookie, subjectA, {
+      refresh: null,
+      body: { history: 'all', accountId: accountA },
+    });
+    assert.equal(again.result, 'connected');
+    const row = await account(owner.id, subjectA.sub);
+    assert.equal(row.name, 'Personal Gmail');
+    assert.equal(row.username, subjectA.email);
+  });
+
   await t.test(
     'the five-account limit covers OAuth and IMAP accounts',
     async () => {
@@ -415,6 +442,11 @@ test('Gmail OAuth connection and read-only metadata sync', {
       ]);
       assert.match(google.listCalls[0]?.q ?? '', /^after:\d+$/);
       assert.equal(await count(), 106);
+      // Paced under Gmail's per-user quota: no request was rate limited.
+      assert.ok(
+        google.state.peakPerSecond <= 50,
+        String(google.state.peakPerSecond),
+      );
       assert.equal(await local('old'), undefined);
       const paths = (
         await pool.query(
@@ -487,14 +519,21 @@ test('Gmail OAuth connection and read-only metadata sync', {
       google.record({
         labelsAdded: [{ message: { id: 'm1' }, labelIds: ['STARRED'] }],
       });
+      google.record({
+        labelsRemoved: [{ message: { id: 'm1' }, labelIds: ['UNREAD'] }],
+      });
       google.messages.delete('m2');
       google.record({ messagesDeleted: [{ message: { id: 'm2' } }] });
       google.messages.get('m4')?.labels.add('TRASH');
       google.messages.get('m4')?.labels.delete('SENT');
       google.record({
         labelsRemoved: [{ message: { id: 'm4' }, labelIds: ['SENT'] }],
+        labelsAdded: [{ message: { id: 'm4' }, labelIds: ['TRASH'] }],
       });
+      const gets = google.state.gets;
       assert.equal((await sync()).status, 'ready');
+      // Only the new message is fetched; label changes apply as deltas.
+      assert.equal(google.state.gets - gets, 1);
       const fresh = await local('new1');
       assert.ok(fresh.notification_at, 'new unread inbox mail notifies');
       assert.deepEqual((await local('m1')).flags, ['\\Seen', '\\Flagged']);
@@ -514,6 +553,53 @@ test('Gmail OAuth connection and read-only metadata sync', {
   );
 
   await t.test(
+    'bulk label changes apply locally without refetching or size caps',
+    async () => {
+      const bulk = Array.from({ length: 100 }, (_, index) => `bulk${index}`);
+      for (const remote of bulk)
+        google.messages.get(remote)?.labels.add('STARRED');
+      // One record far larger than any per-page fetch budget, including
+      // messages outside the 90-day window that are not mirrored locally.
+      google.record({
+        labelsAdded: [
+          ...bulk,
+          ...Array.from({ length: 1500 }, (_, index) => `elsewhere${index}`),
+        ].map((remote) => ({ message: { id: remote }, labelIds: ['STARRED'] })),
+      });
+      const gets = google.state.gets;
+      assert.equal((await sync()).status, 'ready');
+      assert.equal(google.state.gets, gets);
+      assert.deepEqual((await local('bulk7')).flags, ['\\Seen', '\\Flagged']);
+      assert.equal(await local('elsewhere1'), undefined);
+    },
+  );
+
+  await t.test(
+    'quota exhaustion pauses without an error state and then resumes',
+    async () => {
+      add('quota1', ['INBOX'], 'Arrived during quota exhaustion');
+      google.record({ messagesAdded: [{ message: { id: 'quota1' } }] });
+      google.state.exhausted = true;
+      const paused = await sync();
+      assert.equal(paused.status, 'syncing');
+      assert.equal(paused.error_code, null);
+      assert.ok(paused.next_sync_at > new Date(Date.now() + 50000));
+      assert.equal(await local('quota1'), undefined);
+      google.state.exhausted = false;
+      assert.equal((await sync()).status, 'ready');
+      assert.ok(await local('quota1'));
+      assert.equal(
+        (
+          await pool.query('SELECT failures FROM mail_accounts WHERE id=$1', [
+            accountA,
+          ])
+        ).rows[0].failures,
+        0,
+      );
+    },
+  );
+
+  await t.test(
     'expired history triggers a full resync that removes unlisted mail',
     async () => {
       // Deleted while history was unavailable: no history record exists.
@@ -523,7 +609,7 @@ test('Gmail OAuth connection and read-only metadata sync', {
       assert.equal((await sync()).status, 'ready');
       assert.equal(await local('m6'), undefined);
       assert.ok(await local('new1'));
-      assert.equal(await count(), 105);
+      assert.equal(await count(), 106);
       assert.equal(
         (
           await pool.query(

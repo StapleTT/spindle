@@ -24,5 +24,8 @@
         }
       }
     }
-  ]
+  ],
+  "files": {
+    "includes": ["**", "!apps/web/src/assets/*.svg"]
+  }
 }

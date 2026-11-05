@@ -414,3 +414,23 @@ Gmail lands in vertical slices that keep Gmail accounts honest about what works,
 - **Dependencies:** none new. Native `fetch` with timeouts reaches fixed Google hosts.
 
 Until their slices land, IMAP-only routes answer 409 for Gmail resources, the reader disables actions with a stated reason, and every IMAP dispatcher query is limited to `provider='imap'` through one shared fragment. Append migration 0035 (Gmail identity columns, a membership key that no longer needs UIDs, durable checkpoint/listing/OAuth-state tables). Old workers and APIs must stay stopped while Gmail rows exist. See [Gmail](gmail.md) for setup, limits, rollout and proof.
+
+User-reported failure on 2026-11-05: Gmail synced once and then failed on automatic syncs. Two likely causes were found:
+
+- The worker sent 10 unpaced `messages.get` requests and treated every rate-limit response as a sync failure. Gmail's per-user limit is 250 units/s, and each get costs 5 units.
+- History records larger than fixed caps threw on every retry, for example a bulk "mark all read". The account could never pass that history page.
+
+The failing account had already been disconnected and errors were not logged, so neither cause was confirmed from the user's data. Fix:
+
+- Requests are paced (pool of 5, one start per 25 ms).
+- Rate-limit and 5xx responses are retried with backoff or `Retry-After`. Once retries run out, the job pauses without an error state.
+- Label-only history changes apply as local deltas with no refetch or size cap. More than 1,000 additions in one page falls back to a resumable listing.
+- Failures log a redacted status and Google reason code.
+
+## D039 — editable account display names and provider logos
+
+Status: requested by the user on 2026-11-05.
+
+Settings → Accounts adds Rename for every account. `PATCH /api/mail/accounts/:id/name` stores a trimmed, printable, non-blank display name of up to 100 characters for the owner only. It changes only `mail_accounts.name`; the address, provider identity, credentials, sender name and ordering are untouched. Reconnect keeps the chosen name, and the existing accounts SSE topic updates other tabs. No migration is needed.
+
+The Add an account cards use the real Gmail and Outlook marks from Wikimedia Commons, self-hosted under `apps/web/src/assets`, as the documented exception to token-only colours. See [design: provider logos](design.md#provider-logos).

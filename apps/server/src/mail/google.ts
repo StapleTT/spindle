@@ -27,15 +27,21 @@ export function readGoogleConfig(env: NodeJS.ProcessEnv = process.env) {
 
 export type GoogleConfig = NonNullable<ReturnType<typeof readGoogleConfig>>;
 
-// Status and OAuth error code only; provider text never reaches logs or clients.
+// Status plus enum-like codes only (OAuth `error`, Gmail `errors[0].reason`
+// or `status`); provider message text never reaches logs or clients.
 export class GoogleError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
+    readonly reason = '',
+    readonly retryAfter: number | null = null,
   ) {
     super('Google request failed');
   }
 }
+
+const enumLike = (value: unknown) =>
+  typeof value === 'string' && /^[A-Za-z_]{1,64}$/.test(value) ? value : '';
 
 export async function googleJson<T>(
   url: string,
@@ -64,9 +70,16 @@ export async function googleJson<T>(
   }
   if (!response.ok) {
     const error = (body as { error?: unknown } | null)?.error;
+    const detail =
+      error && typeof error === 'object'
+        ? (error as { errors?: { reason?: unknown }[]; status?: unknown })
+        : null;
+    const retry = Number(response.headers.get('retry-after'));
     throw new GoogleError(
       response.status,
-      typeof error === 'string' ? error.slice(0, 64) : '',
+      enumLike(error),
+      enumLike(detail?.errors?.[0]?.reason) || enumLike(detail?.status),
+      Number.isFinite(retry) && retry >= 0 ? Math.min(retry, 60) : null,
     );
   }
   if (!body || typeof body !== 'object')

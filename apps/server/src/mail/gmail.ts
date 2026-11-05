@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import { logger } from '../logger.js';
 import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import {
@@ -18,9 +19,12 @@ type GmailMessage = {
   sizeEstimate?: unknown;
   payload?: { headers?: { name?: unknown; value?: unknown }[] };
 };
-type HistoryRecord = Record<
-  string,
-  { message?: { id?: unknown } }[] | undefined
+type HistoryEntry = { message?: { id?: unknown }; labelIds?: unknown };
+type HistoryRecord = Partial<
+  Record<
+    'messagesAdded' | 'messagesDeleted' | 'labelsAdded' | 'labelsRemoved',
+    HistoryEntry[]
+  >
 >;
 
 // System labels that are folders; other system labels (UNREAD, STARRED,
@@ -46,7 +50,39 @@ const HEADERS = [
   'References',
 ];
 const PAGE = 100;
-const CONCURRENCY = 10;
+// Gmail allows 250 quota units per user per second and messages.get costs 5.
+// Starting at most one request per 25 ms keeps a job near 200 units/s, and a
+// small pool stays under Google's concurrent-request limit.
+const CONCURRENCY = 5;
+const SPACING_MS = 25;
+const RETRIES = 4;
+
+// Quota exhaustion or the job deadline: stop without an error state. Committed
+// pages are kept and the next job resumes from the checkpoint.
+class GmailPause extends Error {
+  constructor(readonly delaySeconds: number) {
+    super('Gmail sync paused');
+  }
+}
+
+const retryable = (error: GoogleError) =>
+  error.status === 429 ||
+  error.status >= 500 ||
+  (error.status === 403 &&
+    [
+      'rateLimitExceeded',
+      'userRateLimitExceeded',
+      'RESOURCE_EXHAUSTED',
+    ].includes(error.reason));
+// Consent revoked or Gmail access unchecked after connecting.
+const needsReconnect = (error: unknown) =>
+  error instanceof GoogleError &&
+  (error.code === 'invalid_grant' ||
+    error.status === 401 ||
+    (error.status === 403 &&
+      ['insufficientPermissions', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT'].includes(
+        error.reason,
+      )));
 const remoteId = /^[0-9A-Za-z_-]{1,64}$/;
 const historyId = /^[0-9]{1,20}$/;
 
@@ -60,6 +96,48 @@ function ids(values: unknown, limit: number) {
       throw new Error('Invalid Gmail response');
     return id;
   });
+}
+
+// Gmail labels as local memberships and flags. Every message maps to Spam,
+// Trash or All Mail, so an empty target list means a system folder is missing.
+function mirror(labels: string[], boxes: Map<string, string>) {
+  const flags = [
+    ...(labels.includes('UNREAD') ? [] : ['\\Seen']),
+    ...(labels.includes('STARRED') ? ['\\Flagged'] : []),
+    ...(labels.includes('DRAFT') ? ['\\Draft'] : []),
+  ];
+  const targets = [
+    ...new Set(
+      [
+        ...labels,
+        ...(labels.includes('SPAM') || labels.includes('TRASH')
+          ? []
+          : [ALL_MAIL]),
+      ]
+        .map((label) => boxes.get(label))
+        .filter((box): box is string => Boolean(box)),
+    ),
+  ];
+  return { flags, targets };
+}
+
+async function writeMemberships(
+  db: PoolClient,
+  account: MailAccount,
+  local: string,
+  { flags, targets }: ReturnType<typeof mirror>,
+) {
+  await db.query(
+    `DELETE FROM mail_memberships WHERE user_id=$1 AND account_id=$2 AND message_id=$3
+     AND NOT(mailbox_id=ANY($4::uuid[]))`,
+    [account.user_id, account.id, local, targets],
+  );
+  await db.query(
+    `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,flags)
+     SELECT $1,$2,box,$3,$5::text[] FROM unnest($4::uuid[]) AS box
+     ON CONFLICT (mailbox_id,message_id) DO UPDATE SET flags=EXCLUDED.flags`,
+    [account.user_id, account.id, local, targets, flags],
+  );
 }
 
 async function saveGmailMessage(
@@ -114,26 +192,8 @@ async function saveGmailMessage(
   } catch {
     // Unparseable headers still leave a listed message.
   }
-  const flags = [
-    ...(labels.includes('UNREAD') ? [] : ['\\Seen']),
-    ...(labels.includes('STARRED') ? ['\\Flagged'] : []),
-    ...(labels.includes('DRAFT') ? ['\\Draft'] : []),
-  ];
-  const targets = [
-    ...new Set(
-      [
-        ...labels,
-        ...(labels.includes('SPAM') || labels.includes('TRASH')
-          ? []
-          : [ALL_MAIL]),
-      ]
-        .map((label) => boxes.get(label))
-        .filter((box): box is string => Boolean(box)),
-    ),
-  ];
-  // Every message maps to Spam, Trash or All Mail; a missing system folder
-  // leaves nothing to mirror.
-  if (!targets.length) return null;
+  const mirrored = mirror(labels, boxes);
+  if (!mirrored.targets.length) return null;
   const local = await upsertMessage(
     db,
     account,
@@ -157,18 +217,50 @@ async function saveGmailMessage(
       labels.includes('UNREAD') &&
       !labels.includes('DRAFT'),
   );
-  await db.query(
-    `DELETE FROM mail_memberships WHERE user_id=$1 AND account_id=$2 AND message_id=$3
-     AND NOT(mailbox_id=ANY($4::uuid[]))`,
-    [account.user_id, account.id, local, targets],
-  );
-  await db.query(
-    `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,flags)
-     SELECT $1,$2,box,$3,$5::text[] FROM unnest($4::uuid[]) AS box
-     ON CONFLICT (mailbox_id,message_id) DO UPDATE SET flags=EXCLUDED.flags`,
-    [account.user_id, account.id, local, targets, flags],
-  );
+  await writeMemberships(db, account, local, mirrored);
   return local;
+}
+
+// Label-only history changes are applied as deltas to the local label set, so
+// bulk changes (mark all read, filters) need no refetch. Mirrored labels are
+// recovered from folder paths and flags; unmirrored ones (IMPORTANT,
+// CATEGORY_*) never affect local state.
+async function applyLabelDeltas(
+  db: PoolClient,
+  account: MailAccount,
+  boxes: Map<string, string>,
+  deltas: Map<string, [add: boolean, labels: string[]][]>,
+) {
+  if (!deltas.size) return [];
+  const rows = (
+    await db.query<{
+      id: string;
+      remote_key: string;
+      paths: string[];
+      flags: string[];
+    }>(
+      `SELECT m.id,m.remote_key,array_agg(b.path) AS paths,
+       (SELECT x.flags FROM mail_memberships x WHERE x.message_id=m.id LIMIT 1) AS flags
+       FROM mail_messages m JOIN mail_memberships mm ON mm.user_id=m.user_id AND mm.message_id=m.id
+       JOIN mailboxes b ON b.user_id=mm.user_id AND b.id=mm.mailbox_id
+       WHERE m.user_id=$1 AND m.account_id=$2 AND m.remote_key=ANY($3::text[]) GROUP BY m.id`,
+      [account.user_id, account.id, [...deltas.keys()]],
+    )
+  ).rows;
+  for (const row of rows) {
+    const labels = new Set(row.paths.filter((path) => path !== ALL_MAIL));
+    if (!row.flags.includes('\\Seen')) labels.add('UNREAD');
+    if (row.flags.includes('\\Flagged')) labels.add('STARRED');
+    if (row.flags.includes('\\Draft')) labels.add('DRAFT');
+    for (const [add, changed] of deltas.get(row.remote_key) ?? [])
+      for (const label of changed)
+        if (add) labels.add(label);
+        else labels.delete(label);
+    const mirrored = mirror([...labels], boxes);
+    if (mirrored.targets.length)
+      await writeMemberships(db, account, row.id, mirrored);
+  }
+  return rows.map((row) => row.id);
 }
 
 export async function syncGmailAccount(
@@ -190,16 +282,39 @@ export async function syncGmailAccount(
       google,
       decryptCredential(account.credential, owner, id, keys),
     );
-    const api = <T>(
+    let slot = 0;
+    const api = async <T>(
       path: string,
       query: Record<string, string> | URLSearchParams = {},
-    ) => {
-      if (Date.now() > hardDeadline) throw new Error('Gmail job deadline');
+    ): Promise<T> => {
       const search = new URLSearchParams(query).toString();
-      return googleJson<T>(
-        `${google.gmailUrl}${path}${search ? `?${search}` : ''}`,
-        { token },
-      );
+      for (let attempt = 0; ; attempt++) {
+        const now = Date.now();
+        slot = Math.max(slot, now) + SPACING_MS;
+        if (slot - SPACING_MS > now)
+          await new Promise((resolve) =>
+            setTimeout(resolve, slot - SPACING_MS - now),
+          );
+        if (Date.now() > hardDeadline) throw new GmailPause(1);
+        try {
+          return await googleJson<T>(
+            `${google.gmailUrl}${path}${search ? `?${search}` : ''}`,
+            { token },
+          );
+        } catch (error) {
+          if (!(error instanceof GoogleError) || !retryable(error)) throw error;
+          // Exponential backoff with jitter, or Google's Retry-After.
+          const wait =
+            (error.retryAfter ?? 2 ** attempt) * 1000 + Math.random() * 250;
+          if (attempt + 1 >= RETRIES || Date.now() + wait > hardDeadline)
+            throw new GmailPause(
+              error.status === 429 || error.status === 403 ? 60 : 30,
+            );
+          // Back off the whole job, not just this request.
+          slot = Math.max(slot, Date.now() + wait);
+          await new Promise((resolve) => setTimeout(resolve, wait));
+        }
+      }
     };
     const fetchOne = async (remote: string) => {
       const query = new URLSearchParams({ format: 'metadata' });
@@ -214,8 +329,7 @@ export async function syncGmailAccount(
         throw error;
       }
     };
-    // Bounded concurrency keeps one account inside the per-user quota.
-    // ponytail: one request per message; use the batch endpoint if HTTP overhead is measured.
+    // ponytail: one paced request per message (~40/s); use the batch endpoint if initial sync speed matters.
     const fetchAll = async (list: string[]) => {
       const results: (GmailMessage | null)[] = [];
       let next = 0;
@@ -284,6 +398,18 @@ export async function syncGmailAccount(
         )
       ).rows.map((row) => [row.path, row.id]),
     );
+    // Full resync: local mail stays visible until the new listing replaces it.
+    const resync = () =>
+      withLease(pool, account, async (db) => {
+        await db.query(
+          'UPDATE mail_gmail_sync SET history_id=NULL,page_token=NULL,initial_complete=false,updated_at=clock_timestamp() WHERE account_id=$1',
+          [id],
+        );
+        await db.query(
+          'UPDATE mailboxes SET initial_complete=false WHERE user_id=$1 AND account_id=$2',
+          [owner, id],
+        );
+      });
     const save = async (
       db: PoolClient,
       messages: (GmailMessage | null)[],
@@ -422,7 +548,7 @@ export async function syncGmailAccount(
       try {
         page = await api('/history', {
           startHistoryId: state.history_id ?? '',
-          maxResults: '500',
+          maxResults: '100',
           ...(state.page_token ? { pageToken: state.page_token } : {}),
         });
       } catch (error) {
@@ -432,45 +558,70 @@ export async function syncGmailAccount(
           error instanceof GoogleError &&
           (error.status === 404 || (error.status === 400 && state.page_token))
         ) {
-          await withLease(pool, account, async (db) => {
-            await db.query(
-              'UPDATE mail_gmail_sync SET history_id=NULL,page_token=NULL,initial_complete=false,updated_at=clock_timestamp() WHERE account_id=$1',
-              [id],
-            );
-            await db.query(
-              'UPDATE mailboxes SET initial_complete=false WHERE user_id=$1 AND account_id=$2',
-              [owner, id],
-            );
-          });
+          await resync();
           continue;
         }
         throw error;
       }
       if (
         (page.history !== undefined &&
-          (!Array.isArray(page.history) || page.history.length > 500)) ||
+          (!Array.isArray(page.history) || page.history.length > 100)) ||
         typeof page.historyId !== 'string' ||
         !historyId.test(page.historyId)
       )
         throw new Error('Invalid Gmail history');
-      const changed = new Set<string>();
+      // Records apply in order: additions are fetched (their current state
+      // already includes later label changes), deletions win, and label-only
+      // changes become deltas on the local label set.
+      const added = new Set<string>();
       const deleted = new Set<string>();
+      const deltas = new Map<string, [boolean, string[]][]>();
+      let entries = 0;
       for (const record of (page.history ?? []) as HistoryRecord[]) {
-        for (const kind of ['messagesAdded', 'labelsAdded', 'labelsRemoved'])
-          for (const remote of ids(
-            record[kind]?.map((entry) => entry.message),
-            1000,
-          ))
-            changed.add(remote);
-        for (const remote of ids(
-          record.messagesDeleted?.map((entry) => entry.message),
-          1000,
-        ))
-          deleted.add(remote);
+        for (const entry of [
+          ...(record.messagesAdded ?? []).map(
+            (item) => ['added', item] as const,
+          ),
+          ...(record.labelsAdded ?? []).map((item) => ['add', item] as const),
+          ...(record.labelsRemoved ?? []).map(
+            (item) => ['remove', item] as const,
+          ),
+          ...(record.messagesDeleted ?? []).map(
+            (item) => ['deleted', item] as const,
+          ),
+        ]) {
+          if (++entries > 50000)
+            throw new Error('Gmail history page too large');
+          const [kind, item] = entry;
+          const [remote] = ids([item.message], 1);
+          if (!remote) continue;
+          if (kind === 'deleted') {
+            deleted.add(remote);
+            added.delete(remote);
+            deltas.delete(remote);
+          } else if (kind === 'added') {
+            added.add(remote);
+            deltas.delete(remote);
+          } else if (!added.has(remote) && !deleted.has(remote)) {
+            const labels = Array.isArray(item.labelIds)
+              ? item.labelIds.filter(
+                  (label): label is string =>
+                    typeof label === 'string' && label.length <= 255,
+                )
+              : [];
+            deltas.set(remote, [
+              ...(deltas.get(remote) ?? []),
+              [kind === 'add', labels],
+            ]);
+          }
+        }
       }
-      const remotes = [...changed].filter((remote) => !deleted.has(remote));
-      if (remotes.length > 2000)
-        throw new Error('Gmail history page too large');
+      // Too many new messages for one job: a resumable listing is cheaper.
+      if (added.size > 1000) {
+        await resync();
+        continue;
+      }
+      const remotes = [...added];
       const messages = await fetchAll(remotes);
       const next =
         typeof page.nextPageToken === 'string' &&
@@ -483,6 +634,12 @@ export async function syncGmailAccount(
           [owner, id, [...deleted]],
         );
         await save(db, messages, remotes, true);
+        await reconcileConversationState(
+          db,
+          owner,
+          id,
+          await applyLabelDeltas(db, account, boxes, deltas),
+        );
         await db.query(
           'UPDATE mail_gmail_sync SET history_id=CASE WHEN $3::text IS NULL THEN $2 ELSE history_id END,page_token=$3,updated_at=clock_timestamp() WHERE account_id=$1',
           [id, page.historyId, next],
@@ -506,9 +663,32 @@ export async function syncGmailAccount(
       );
     });
   } catch (error) {
+    if (error instanceof GmailPause) {
+      await pool.query(
+        `UPDATE mail_accounts SET status='syncing',error_code=NULL,next_sync_at=clock_timestamp()+make_interval(secs=>$4),
+         lease_token=NULL,lease_until=NULL
+         WHERE user_id=$1 AND id=$2 AND lease_token=$3 AND lease_until>clock_timestamp()`,
+        [owner, id, account.lease_token, error.delaySeconds],
+      );
+      return;
+    }
     // Revoked or expired consent needs the user; other failures back off.
-    const reconnect =
-      error instanceof GoogleError && error.code === 'invalid_grant';
+    const reconnect = needsReconnect(error);
+    // Redacted diagnostic: HTTP status and enum-like Google codes only.
+    logger.warn(
+      error instanceof GoogleError
+        ? {
+            account: id,
+            status: error.status,
+            code: error.code,
+            reason: error.reason,
+          }
+        : {
+            account: id,
+            error: error instanceof Error ? error.message : 'unknown',
+          },
+      'Gmail sync failed',
+    );
     await pool.query(
       `UPDATE mail_accounts SET status='error',error_code=$4,failures=LEAST(failures+1,10),
        next_sync_at=clock_timestamp()+make_interval(secs=>$5),lease_token=NULL,lease_until=NULL

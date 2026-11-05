@@ -53,6 +53,13 @@ const accountParams = {
   properties: { id: uuid },
   additionalProperties: false,
 };
+// Printable, not blank, at most 100 characters.
+const accountName = {
+  type: 'string',
+  minLength: 1,
+  maxLength: 100,
+  pattern: '^(?=.*\\S)[^\\u0000-\\u001f\\u007f]+$',
+};
 const accountFields = `id,name,color,provider,host,port,transport,username,status,error_code AS "errorCode",
   last_synced_at AS "lastSyncedAt",history_since AS "historySince"`;
 
@@ -309,6 +316,33 @@ export async function registerMailRoutes(
           request.params.id,
           request.body.color?.toLowerCase() ?? null,
         ],
+      );
+      if (!result.rowCount)
+        return reply.code(404).send({ message: 'Mail account not found.' });
+      return { account: result.rows[0] };
+    },
+  );
+
+  // Display name only: provider identity, address and credentials are untouched,
+  // and reconnecting keeps the chosen name.
+  app.patch<{ Params: { id: string }; Body: { name: string } }>(
+    '/api/mail/accounts/:id/name',
+    {
+      bodyLimit: 1024,
+      schema: {
+        params: accountParams,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['name'],
+          properties: { name: accountName },
+        },
+      },
+    },
+    async (request, reply) => {
+      const result = await pool.query(
+        'UPDATE mail_accounts SET name=$3 WHERE user_id=$1 AND id=$2 RETURNING id,name',
+        [request.mailUser, request.params.id, request.body.name.trim()],
       );
       if (!result.rowCount)
         return reply.code(404).send({ message: 'Mail account not found.' });
