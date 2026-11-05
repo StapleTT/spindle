@@ -398,3 +398,19 @@ Self-service deletion requires the current password and typed confirmation, then
 The export is an on-request gzipped JSON stream from one database snapshot with explicit columns: profile, preferences, connected-account settings (no secrets), folders, message headers/flags/local state, drafts with attachments, outbox MIME, signatures, saved searches and security activity. Cached bodies and all credentials/tokens are excluded.
 
 Security activity records sign-ins (including failures for known accounts), sign-outs, password/email changes and resets, session revocations, export and deletion lifecycle with IP and user agent only, retained 180 days. Append migration 0034. See [account lifecycle](account-lifecycle.md).
+
+## D038 — Gmail via the Gmail API (slice 1)
+
+Status: user chose the Gmail REST API with a proper OAuth flow (option B) and approved the slice-1 plan on 2026-11-04.
+
+Gmail lands in vertical slices that keep Gmail accounts honest about what works, following the D008 precedent: (1) OAuth connect/reconnect/disconnect, labels as folders and a read-only list, counts and search over synced metadata with `history.list` polling; (2) reader; (3) actions; (4) drafts and sending; (5) watch/Pub/Sub push once a public HTTPS domain exists. There is no adapter refactor up front: Gmail has its own functions, the dispatcher branches on `mail_accounts.provider`, and D01's shared contract grows from code that two providers actually share.
+
+- **Scopes:** `openid email https://www.googleapis.com/auth/gmail.modify`. This is the single restricted scope that later slices need (read, labels, drafts and send, but no permanent delete). The callback rejects grants without it.
+- **Who does provider I/O:** the API performs only the code exchange, the userinfo lookup and best-effort revocation. All mailbox I/O stays in the worker.
+- **Identity:** the Google `sub` is the provider identity, and reconnect is keyed by `(user_id, sub)`; a reconnect into another Google account is refused. The address is stored as `username`.
+- **Tokens:** the refresh token is encrypted into `credential` with the existing key ring and AAD. Access tokens are refreshed per job and never stored. Revocation runs after commit and is skipped while another connection uses the same Google account.
+- **History:** the existing 90-day/all choice maps to `q=after:<epoch>`. Spam and Trash are included. A synthetic All Mail folder (`\All`) holds every message outside Spam and Trash.
+- **State:** a sha256-hashed state that is single-use, expires after 10 minutes and is bound to the user, the sign-in session and the target account, with a PKCE S256 verifier.
+- **Dependencies:** none new. Native `fetch` with timeouts reaches fixed Google hosts.
+
+Until their slices land, IMAP-only routes answer 409 for Gmail resources, the reader disables actions with a stated reason, and every IMAP dispatcher query is limited to `provider='imap'` through one shared fragment. Append migration 0035 (Gmail identity columns, a membership key that no longer needs UIDs, durable checkpoint/listing/OAuth-state tables). Old workers and APIs must stay stopped while Gmail rows exist. See [Gmail](gmail.md) for setup, limits, rollout and proof.

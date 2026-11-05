@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from 'pg';
+import type { GmailGrant } from '../mail/google.js';
 
 export type SecurityEventType =
   | 'account.created'
@@ -91,7 +92,14 @@ export async function deleteUserData(
   );
   await client.query('DELETE FROM auth_verifications WHERE value=$1', [userId]);
   await client.query('DELETE FROM security_events WHERE user_id=$1', [userId]);
+  // Gmail grants are returned so the caller can revoke them after commit.
+  const grants = (
+    await client.query<GmailGrant>(
+      "SELECT user_id,id,credential,provider_account FROM mail_accounts WHERE user_id=$1 AND provider='gmail'",
+      [userId],
+    )
+  ).rows;
   await client.query('DELETE FROM users WHERE id=$1', [userId]);
   await insertSecurityEvent(client, userId, 'account.deleted');
-  return true;
+  return grants;
 }

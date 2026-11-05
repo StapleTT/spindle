@@ -12,6 +12,11 @@ export type MailAccount = ImapSettings & {
   sync_completed: string | null;
 };
 
+// Containment for IMAP-only work: rows for other providers never reach an
+// IMAP/SMTP connection. Arguments are SQL expressions for owner and account.
+export const imapAccount = (user: string, account: string) =>
+  `EXISTS(SELECT 1 FROM mail_accounts pa WHERE pa.user_id=${user} AND pa.id::text=(${account})::text AND pa.provider='imap')`;
+
 export type Mailbox = {
   id: string;
   path: string;

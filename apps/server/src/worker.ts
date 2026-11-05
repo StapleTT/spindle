@@ -3,11 +3,13 @@ import { PgBoss } from 'pg-boss';
 import { readConfig } from './config.js';
 import { logger } from './logger.js';
 import { readMailKeys } from './mail/credentials.js';
+import { readGoogleConfig } from './mail/google.js';
 import { startMailWorker } from './mail/worker.js';
 
 const { databaseUrl } = readConfig();
 const boss = new PgBoss({ connectionString: databaseUrl });
 const keys = readMailKeys();
+const google = readGoogleConfig();
 const pool = new Pool({
   connectionString: databaseUrl,
   max: 5,
@@ -34,8 +36,8 @@ try {
   await pool.query('SELECT id FROM mail_accounts LIMIT 0');
   await pool.query('SELECT message_id FROM mail_content LIMIT 0');
   await boss.start();
-  stopMail = await startMailWorker(boss, pool, keys);
-  logger.info('Worker ready for private IMAP synchronization');
+  stopMail = await startMailWorker(boss, pool, keys, google);
+  logger.info('Worker ready for private mail synchronization');
   if (!keys.keys.size)
     logger.warn('Mailbox connections require mail encryption configuration');
 } catch {

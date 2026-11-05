@@ -246,6 +246,13 @@
       "when": 1793550000003,
       "tag": "0034_account_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1793550000004,
+      "tag": "0035_gmail_accounts",
+      "breakpoints": true
     }
   ]
 }

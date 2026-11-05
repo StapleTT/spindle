@@ -11,6 +11,7 @@ import { registerAuthRoutes } from './auth/routes.js';
 import { loggerOptions } from './logger.js';
 import { readContentConfig } from './mail/content-config.js';
 import { type MailKeys, readMailKeys } from './mail/credentials.js';
+import { readGoogleConfig } from './mail/google.js';
 import { registerMailRoutes } from './mail/routes.js';
 
 export function buildApp(
@@ -20,6 +21,7 @@ export function buildApp(
   mailKeys: MailKeys = readMailKeys(),
   content = readContentConfig(config),
   mailer: Transporter = createMailer(config),
+  google = readGoogleConfig(),
 ) {
   const app = Fastify({
     logger: loggerOptions,
@@ -38,7 +40,7 @@ export function buildApp(
     registerAdminRoutes(admin, database, auth, config, mailer),
   );
   app.register(async (mail) =>
-    registerMailRoutes(mail, database, auth, config, mailKeys, content),
+    registerMailRoutes(mail, database, auth, config, mailKeys, content, google),
   );
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     const status =

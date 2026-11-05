@@ -12,6 +12,8 @@ import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
 import { registerMailEvents } from './events.js';
 import { registerUploadRoutes } from './file-uploads.js';
+import { registerGmailOAuthRoutes } from './gmail-oauth.js';
+import { type GoogleConfig, revokeUnusedGrants } from './google.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerPreferenceRoutes } from './preferences.js';
@@ -51,7 +53,7 @@ const accountParams = {
   properties: { id: uuid },
   additionalProperties: false,
 };
-const accountFields = `id,name,color,host,port,transport,username,status,error_code AS "errorCode",
+const accountFields = `id,name,color,provider,host,port,transport,username,status,error_code AS "errorCode",
   last_synced_at AS "lastSyncedAt",history_since AS "historySince"`;
 
 function parseCursor(value: string | undefined, key?: string) {
@@ -94,6 +96,7 @@ export async function registerMailRoutes(
   config: AuthConfig,
   keys: MailKeys,
   content: ContentConfig | null,
+  google: GoogleConfig | null = null,
 ) {
   app.decorateRequest('mailUser', '');
   app.decorateRequest('mailSession', '');
@@ -152,12 +155,61 @@ export async function registerMailRoutes(
         .send({ message: 'Too many requests. Try again in a minute.' });
   });
 
+  // Gmail is read-only metadata until its reader/action/sending slices land;
+  // each slice removes its entries. Unowned IDs fall through to the route's 404.
+  const byMessage =
+    'SELECT a.provider FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id WHERE m.user_id=$1 AND m.id=$2';
+  const imapOnly: Record<string, string> = {
+    '/api/mail/messages/:id/actions': byMessage,
+    '/api/mail/messages/:id/content': byMessage,
+    '/api/mail/messages/:id/attachments/:index': byMessage,
+    '/api/mail/messages/:id/images': byMessage,
+    '/api/mail/messages/:id/compose': byMessage,
+    '/api/mail/accounts/:id/smtp':
+      'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
+    '/api/mail/accounts/:id/smtp/test':
+      'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
+    '/api/mail/drafts/:id/send':
+      'SELECT a.provider FROM mail_drafts d JOIN mail_accounts a ON a.user_id=d.user_id AND a.id=d.account_id WHERE d.user_id=$1 AND d.id=$2',
+  };
+  app.addHook('preHandler', async (request, reply) => {
+    const url = request.routeOptions.url ?? '';
+    const lookup = imapOnly[url];
+    const gmail = lookup
+      ? (
+          await pool.query(lookup, [
+            request.mailUser,
+            (request.params as { id: string }).id,
+          ])
+        ).rows[0]?.provider === 'gmail'
+      : url === '/api/mail/batch-actions' &&
+        Boolean(
+          (
+            await pool.query(
+              `SELECT 1 FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
+               WHERE m.user_id=$1 AND m.id=ANY($2::uuid[]) AND a.provider='gmail' LIMIT 1`,
+              [
+                request.mailUser,
+                (request.body as { items: { messageId: string }[] }).items.map(
+                  (item) => item.messageId,
+                ),
+              ],
+            )
+          ).rowCount,
+        );
+    if (gmail)
+      return reply.code(409).send({
+        message: 'This is not available for Gmail accounts yet.',
+      });
+  });
+
   registerMailEvents(app, pool, config);
   registerNotificationRoutes(app, pool);
   registerPreferenceRoutes(app, pool);
 
   app.get('/api/mail/accounts', async (request) => ({
     configured: keys.keys.has(keys.active),
+    gmail: Boolean(google) && keys.keys.has(keys.active),
     accounts: (
       await pool.query(
         `SELECT ${accountFields},${signatureField},(SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "smtpState",
@@ -445,11 +497,18 @@ export async function registerMailRoutes(
           .code(403)
           .send({ message: 'Confirm your Spindle password to disconnect.' });
       const result = await pool.query(
-        'DELETE FROM mail_accounts WHERE user_id=$1 AND id=$2 RETURNING id',
+        'DELETE FROM mail_accounts WHERE user_id=$1 AND id=$2 RETURNING user_id,id,provider,credential,provider_account',
         [owner, request.params.id],
       );
       if (!result.rowCount)
         return reply.code(404).send({ message: 'Mail account not found.' });
+      // After commit, best effort; failure never blocks disconnect.
+      await revokeUnusedGrants(
+        pool,
+        google,
+        keys,
+        result.rows.filter((row) => row.provider === 'gmail'),
+      );
       return {
         message:
           'Disconnected. The local mirror was removed; mail at your provider is unchanged.',
@@ -582,6 +641,7 @@ export async function registerMailRoutes(
       };
     },
   );
+  registerGmailOAuthRoutes(app, pool, config, keys, google);
   registerTriageRoutes(app, pool);
   registerContactRoutes(app, pool);
   registerReaderRoutes(app, pool, content);

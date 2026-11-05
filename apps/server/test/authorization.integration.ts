@@ -304,6 +304,16 @@ test('route-wide authorization matrix', {
         history: '90d',
       },
     },
+    // Without Google configuration the start route answers 503; ownership of
+    // reconnect targets and state binding are covered in gmail.integration.ts.
+    'POST /api/mail/oauth/google': {
+      guard: 'session',
+      body: { history: 'all' },
+    },
+    'GET /api/mail/oauth/google/callback': {
+      guard: 'session',
+      query: { state: 'c10-state', code: 'c10-code' },
+    },
     'POST /api/mail/accounts/:id/sync': { guard: 'session', foreign: 'deny' },
     'DELETE /api/mail/accounts/:id': {
       guard: 'session',

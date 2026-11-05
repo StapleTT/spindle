@@ -1,4 +1,4 @@
-import { type FormEvent, lazy, Suspense, useState } from 'react';
+import { type FormEvent, lazy, Suspense, useEffect, useState } from 'react';
 import { AccountColorPicker } from './account-color-picker.js';
 import { AccountOrderHandle } from './account-order-handle.js';
 import { AccountSecurity } from './account-security.js';
@@ -35,11 +35,13 @@ export type Account = {
   id: string;
   name: string;
   color: string | null;
-  host: string;
-  port: number;
-  transport: 'tls' | 'starttls';
+  provider: 'imap' | 'gmail';
+  host: string | null;
+  port: number | null;
+  transport: 'tls' | 'starttls' | null;
   username: string;
   status: string;
+  errorCode: string | null;
   lastSyncedAt: string | null;
   foldersRemaining: number;
   historySince: string | null;
@@ -52,13 +54,32 @@ export type Account = {
 export type Density = 'comfortable' | 'compact';
 
 export const accountStatus = (account: Account) =>
-  account.status === 'error'
-    ? 'Sync failed. Check your server settings and app password, then reconnect. Automatic retries continue.'
-    : account.status === 'syncing'
-      ? `Syncing mail${account.foldersRemaining ? ` · ${account.foldersRemaining} folders remaining` : ''}…`
-      : account.status === 'pending'
-        ? 'Waiting for the sync worker…'
-        : 'Up to date at last check.';
+  account.errorCode === 'reconnect_required'
+    ? 'Google access expired or was removed. Reconnect to resume sync.'
+    : account.status === 'error'
+      ? account.provider === 'gmail'
+        ? 'Sync failed. Automatic retries continue.'
+        : 'Sync failed. Check your server settings and app password, then reconnect. Automatic retries continue.'
+      : account.status === 'syncing'
+        ? `Syncing mail${account.foldersRemaining ? ` · ${account.foldersRemaining} folders remaining` : ''}…`
+        : account.status === 'pending'
+          ? 'Waiting for the sync worker…'
+          : 'Up to date at last check.';
+
+// Generic callback results from /api/mail/oauth/google/callback.
+const gmailResults: Record<string, string> = {
+  connected:
+    'Gmail connected. Labels and mail sync in the background; this view updates automatically.',
+  denied: 'Google access was not granted. Nothing was connected.',
+  scope:
+    'Spindle needs permission to read and organize Gmail. Try again and keep the Gmail access box checked.',
+  mismatch:
+    'That Google account is not the one being reconnected. Choose the original account.',
+  limit: 'You can connect up to five mail accounts.',
+  expired:
+    'The Google sign-in expired or was already used. Start again from Settings.',
+  failed: 'Gmail could not be connected. Try again.',
+};
 
 const tabs = [
   ['accounts', 'Accounts', manageAccounts],
@@ -83,6 +104,7 @@ export function Settings({
   accounts,
   isAdmin,
   configured,
+  gmailAvailable,
   density,
   onDensity,
   onNotify,
@@ -96,6 +118,7 @@ export function Settings({
   accounts: Account[];
   isAdmin: boolean;
   configured: boolean;
+  gmailAvailable: boolean;
   density: Density;
   onDensity: (density: Density) => void;
   onNotify: (text: string) => void;
@@ -120,11 +143,44 @@ export function Settings({
   const [orderError, setOrderError] = useState('');
   const [editing, setEditing] = useState<Account | null>(null);
   const [showConnect, setShowConnect] = useState(false);
+  const [showGmail, setShowGmail] = useState(false);
   const [disconnect, setDisconnect] = useState<Account | null>(null);
   const [smtpAccount, setSmtpAccount] = useState<Account | null>(null);
   const [signatureAccount, setSignatureAccount] = useState<Account | null>(
     null,
   );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const result = params.get('gmail');
+    if (result === null) return;
+    params.delete('gmail');
+    window.history.replaceState(null, '', `#${params}`);
+    onNotify(gmailResults[result] ?? gmailResults.failed ?? '');
+  }, [onNotify]);
+
+  // Google returns to the callback, which redirects back to Settings.
+  async function connectGmail(history: string, account?: Account) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const { url } = await api<{ url: string }>('oauth/google', {
+        method: 'POST',
+        body: JSON.stringify({
+          history,
+          ...(account ? { accountId: account.id } : {}),
+        }),
+      });
+      window.location.assign(url);
+    } catch (error) {
+      setBusy(false);
+      onNotify(
+        error instanceof Error
+          ? error.message
+          : 'Unable to start Gmail sign-in.',
+      );
+    }
+  }
 
   async function saveOrder(accountIds: string[], expectedAccountIds: string[]) {
     if (busy) return;
@@ -294,11 +350,21 @@ export function Settings({
                     <div className="account-row-text">
                       <p>
                         <strong>{item.name}</strong>
-                        <span className="badge">IMAP</span>
+                        <span className="badge">
+                          {item.provider === 'gmail' ? 'Gmail' : 'IMAP'}
+                        </span>
                       </p>
                       <p className="muted">
-                        {item.username} · {item.host}
+                        {item.username}
+                        {item.host && ` · ${item.host}`}
                       </p>
+                      {item.provider === 'gmail' && (
+                        <p className="muted">
+                          Gmail shows headers, folders and search for now.
+                          Opening messages, actions and sending arrive in later
+                          updates.
+                        </p>
+                      )}
                       <p className="muted">
                         <span
                           className={`status-dot ${item.status}`}
@@ -321,21 +387,31 @@ export function Settings({
                         >
                           Sync now
                         </button>
-                        <button
-                          type="button"
-                          className="text-button"
-                          aria-label={`Outgoing SMTP for ${item.name}`}
-                          onClick={() => setSmtpAccount(item)}
-                        >
-                          Outgoing SMTP
-                        </button>
+                        {item.provider === 'imap' && (
+                          <button
+                            type="button"
+                            className="text-button"
+                            aria-label={`Outgoing SMTP for ${item.name}`}
+                            onClick={() => setSmtpAccount(item)}
+                          >
+                            Outgoing SMTP
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="text-button"
                           disabled={busy}
                           onClick={() => {
+                            if (item.provider === 'gmail') {
+                              void connectGmail(
+                                item.historySince ? '90d' : 'all',
+                                item,
+                              );
+                              return;
+                            }
                             setEditing(item);
                             setShowConnect(true);
+                            setShowGmail(false);
                             setDisconnect(null);
                           }}
                         >
@@ -418,10 +494,26 @@ export function Settings({
             <div className="settings-group">
               <h4>Add an account</h4>
               <div className="provider-cards">
-                <button type="button" className="provider-card" disabled>
+                <button
+                  type="button"
+                  className="provider-card"
+                  aria-label="Connect Gmail account"
+                  aria-expanded={showGmail}
+                  disabled={!configured || !gmailAvailable || busy}
+                  onClick={() => {
+                    setShowGmail(!showGmail);
+                    setShowConnect(false);
+                    setEditing(null);
+                    setDisconnect(null);
+                  }}
+                >
                   <Icon src={mail} />
                   <strong>Google</strong>
-                  <span>Coming soon</span>
+                  <span>
+                    {gmailAvailable
+                      ? 'Gmail and Google Workspace'
+                      : 'Needs operator setup'}
+                  </span>
                 </button>
                 <button type="button" className="provider-card" disabled>
                   <Icon src={businessCenter} />
@@ -437,6 +529,7 @@ export function Settings({
                   onClick={() => {
                     setEditing(null);
                     setShowConnect(!showConnect || Boolean(editing));
+                    setShowGmail(false);
                     setDisconnect(null);
                   }}
                 >
@@ -445,6 +538,51 @@ export function Settings({
                   <span>Fastmail, iCloud, Yahoo and any IMAP server</span>
                 </button>
               </div>
+              {showGmail && (
+                <section
+                  className="settings-panel connect"
+                  aria-labelledby="gmail-title"
+                >
+                  <h3 id="gmail-title">Connect Gmail</h3>
+                  <form
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void connectGmail(
+                        String(
+                          new FormData(event.currentTarget).get('history'),
+                        ),
+                      );
+                    }}
+                    aria-busy={busy}
+                  >
+                    <label className="wide">
+                      Mail history
+                      <select name="history" defaultValue="90d">
+                        <option value="90d">Last 90 days, then new mail</option>
+                        <option value="all">All available mail</option>
+                      </select>
+                    </label>
+                    <div className="form-actions wide">
+                      <span className="tls-note">
+                        <Icon src={lock} />
+                        You will sign in with Google. Spindle stores an
+                        encrypted access grant, never your Google password.
+                      </span>
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={busy}
+                        onClick={() => setShowGmail(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button type="submit" disabled={busy}>
+                        {busy ? 'Opening Google…' : 'Continue with Google'}
+                      </button>
+                    </div>
+                  </form>
+                </section>
+              )}
               {showConnect && (
                 <section
                   className="settings-panel connect"

@@ -6,6 +6,7 @@ import { createAuth } from '../src/auth/auth.js';
 import { type AuthConfig, readAuthConfig } from '../src/auth/config.js';
 import { readContentConfig } from '../src/mail/content-config.js';
 import type { MailKeys } from '../src/mail/credentials.js';
+import type { GoogleConfig } from '../src/mail/google.js';
 
 export const testConfig = readAuthConfig({
   APP_URL: 'http://127.0.0.1:5173',
@@ -23,6 +24,7 @@ export function testApp(
   mailer = nodemailer.createTransport({ jsonTransport: true }),
   mailKeys?: MailKeys,
   content = readContentConfig(config, {}),
+  google: GoogleConfig | null = null,
 ) {
   const app = buildApp(
     pool,
@@ -31,6 +33,7 @@ export function testApp(
     mailKeys,
     content,
     mailer,
+    google,
   );
   app.log.level = 'silent';
   return app;

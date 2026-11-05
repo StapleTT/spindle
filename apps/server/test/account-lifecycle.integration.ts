@@ -441,11 +441,11 @@ test('security activity, data export, scheduled self-deletion and admin deletion
       "UPDATE users SET deletion_due_at=now()-interval '1 second' WHERE id=$1",
       [owner.id],
     );
-    assert.equal(
+    assert.deepEqual(
       await transaction(pool, (client) =>
         deleteUserData(client, owner.id, true),
       ),
-      true,
+      [], // Gmail grants to revoke after commit; this user has none.
     );
     const counts = await ownedRowCounts(pool, owner.id);
     assert.ok(

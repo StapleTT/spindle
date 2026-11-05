@@ -14,7 +14,7 @@ import {
 
 const UID_BATCH = 500;
 
-function text(value: string | undefined, length = 2000) {
+export function text(value: string | undefined, length = 2000) {
   return (value ?? '').replace(/\0/g, '').slice(0, length);
 }
 
@@ -29,13 +29,61 @@ function participants(
   }));
 }
 
-function validDate(value: unknown) {
+export function validDate(value: unknown) {
   return value instanceof Date &&
     Number.isFinite(value.getTime()) &&
     value.getUTCFullYear() >= 1 &&
     value.getUTCFullYear() <= 9999
     ? value
     : null;
+}
+
+export type MessageMeta = {
+  messageId: string | undefined;
+  subject: string | undefined;
+  from: Parameters<typeof participants>[0];
+  to: Parameters<typeof participants>[0];
+  cc: Parameters<typeof participants>[0];
+  sentAt: Date | null;
+  receivedAt: Date;
+  inReplyTo: string | undefined;
+  size: number;
+  references: string[] | null;
+};
+
+// Shared by IMAP and Gmail: one local message per provider remote key.
+export async function upsertMessage(
+  client: PoolClient,
+  account: Pick<MailAccount, 'user_id' | 'id'>,
+  remoteKey: string,
+  meta: MessageMeta,
+  notify: boolean,
+) {
+  const result = await client.query(
+    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes,reference_ids,notification_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN clock_timestamp() ELSE NULL END)
+     ON CONFLICT (account_id,remote_key) DO UPDATE SET subject=EXCLUDED.subject,
+       sender=EXCLUDED.sender, recipients=EXCLUDED.recipients, sent_at=EXCLUDED.sent_at,
+       received_at=EXCLUDED.received_at, size_bytes=EXCLUDED.size_bytes,
+       reference_ids=COALESCE(EXCLUDED.reference_ids,mail_messages.reference_ids)
+     RETURNING id`,
+    [
+      account.user_id,
+      account.id,
+      remoteKey,
+      text(meta.messageId),
+      text(meta.subject),
+      JSON.stringify(participants(meta.from)),
+      JSON.stringify({ to: participants(meta.to), cc: participants(meta.cc) }),
+      meta.sentAt,
+      meta.receivedAt,
+      text(meta.inReplyTo),
+      meta.size,
+      meta.references,
+      notify,
+    ],
+  );
+  return result.rows[0].id as string;
 }
 
 async function saveMessage(
@@ -49,7 +97,6 @@ async function saveMessage(
   const envelope = mail.envelope;
   const received = validDate(mail.internalDate) ?? new Date(0);
   if (account.history_since && received < account.history_since) return null;
-  const sent = validDate(envelope?.date);
   // Retain bounded References independently of the expiring body cache.
   let references: string[] | null = null;
   if (Buffer.isBuffer(mail.headers) && mail.headers.length <= 64 * 1024) {
@@ -59,35 +106,26 @@ async function saveMessage(
       // Invalid reply headers cannot prevent ordinary metadata synchronization.
     }
   }
-  const result = await client.query(
-    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes,reference_ids,notification_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN clock_timestamp() ELSE NULL END)
-     ON CONFLICT (account_id,remote_key) DO UPDATE SET subject=EXCLUDED.subject,
-       sender=EXCLUDED.sender, recipients=EXCLUDED.recipients, sent_at=EXCLUDED.sent_at,
-       received_at=EXCLUDED.received_at, size_bytes=EXCLUDED.size_bytes,
-       reference_ids=COALESCE(EXCLUDED.reference_ids,mail_messages.reference_ids)
-     RETURNING id`,
-    [
-      account.user_id,
-      account.id,
-      `${box.id}:${validity}:${mail.uid}`,
-      text(envelope?.messageId),
-      text(envelope?.subject),
-      JSON.stringify(participants(envelope?.from)),
-      JSON.stringify({
-        to: participants(envelope?.to),
-        cc: participants(envelope?.cc),
-      }),
-      sent,
-      received,
-      text(envelope?.inReplyTo),
-      mail.size ?? 0,
+  const id = await upsertMessage(
+    client,
+    account,
+    `${box.id}:${validity}:${mail.uid}`,
+    {
+      messageId: envelope?.messageId,
+      subject: envelope?.subject,
+      from: envelope?.from,
+      to: envelope?.to,
+      cc: envelope?.cc,
+      sentAt: validDate(envelope?.date),
+      receivedAt: received,
+      inReplyTo: envelope?.inReplyTo,
+      size: mail.size ?? 0,
       references,
-      arrival &&
-        !mail.flags?.has('\\Seen') &&
-        !mail.flags?.has('\\Deleted') &&
-        !mail.flags?.has('\\Draft'),
-    ],
+    },
+    arrival &&
+      !mail.flags?.has('\\Seen') &&
+      !mail.flags?.has('\\Deleted') &&
+      !mail.flags?.has('\\Draft'),
   );
   await client.query(
     `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,uid_validity,uid,flags)
@@ -97,13 +135,13 @@ async function saveMessage(
       account.user_id,
       account.id,
       box.id,
-      result.rows[0].id,
+      id,
       validity,
       mail.uid,
       [...(mail.flags ?? [])].slice(0, 100).map((flag) => text(flag, 200)),
     ],
   );
-  return { uid: mail.uid, id: result.rows[0].id as string };
+  return { uid: mail.uid, id };
 }
 
 export async function syncAccount(

@@ -38,7 +38,7 @@ const sections: [
     'accounts',
     'array',
     100,
-    `SELECT json_build_object('id',a.id,'name',a.name,'color',a.color,'host',a.host,'port',a.port,'transport',a.transport,
+    `SELECT json_build_object('id',a.id,'name',a.name,'color',a.color,'provider',a.provider,'host',a.host,'port',a.port,'transport',a.transport,
       'username',a.username,'status',a.status,'historySince',a.history_since,'lastSyncedAt',a.last_synced_at,
       'createdAt',a.created_at,'sortOrder',a.sort_order,
       'smtp',(SELECT json_build_object('host',s.host,'port',s.port,'transport',s.transport,'username',s.username,
