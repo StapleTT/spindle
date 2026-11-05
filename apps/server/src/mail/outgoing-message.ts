@@ -20,6 +20,9 @@ export function composeOutgoing(
   forward?: ForwardContent | null,
   files: { filename: string; content: Readable; contentType: string }[] = [],
   displayName = '',
+  // Gmail's messages.send reads recipients from headers and strips Bcc from
+  // delivered copies; SMTP takes them from the envelope (D040).
+  keepBcc = false,
 ) {
   if (!emailAddress(sender))
     throw new Error('Configure an SMTP login email before sending.');
@@ -84,6 +87,7 @@ export function composeOutgoing(
     disableFileAccess: true,
     disableUrlAccess: true,
   }).compile();
+  compiled.keepBcc = keepBcc;
   return { compiled, messageId, recipients };
 }
 
@@ -94,6 +98,7 @@ export async function outgoingMessage(
   context?: ReplyContext | null,
   forward?: ForwardContent | null,
   displayName = '',
+  keepBcc = false,
 ) {
   const { compiled, messageId, recipients } = composeOutgoing(
     id,
@@ -103,6 +108,7 @@ export async function outgoingMessage(
     forward,
     [],
     displayName,
+    keepBcc,
   );
   const raw = await compiled.build();
   if (raw.length > 512 * 1024)

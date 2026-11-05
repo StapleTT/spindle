@@ -4,13 +4,18 @@ import { test } from 'node:test';
 import { Pool } from 'pg';
 import { PgBoss } from 'pg-boss';
 import { migrateDatabase } from '../src/db/migrate.js';
+import { fetchMessageContent } from '../src/mail/content-worker.js';
 import { decryptCredential, readMailKeys } from '../src/mail/credentials.js';
 import { syncGmailAccount } from '../src/mail/gmail.js';
+import { applyGmailActions } from '../src/mail/gmail-mail.js';
+import { connectImap } from '../src/mail/imap.js';
+import { processOutgoing } from '../src/mail/outgoing-worker.js';
+import { connectSmtp } from '../src/mail/smtp.js';
 import { startMailWorker } from '../src/mail/worker.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
 import { fakeGoogle, type Identity } from './google-fixture.js';
 
-test('Gmail OAuth connection and read-only metadata sync', {
+test('Gmail OAuth connection, sync, reader, actions and sending', {
   skip: !process.env.TEST_DATABASE_URL,
   timeout: 180000,
 }, async (t) => {
@@ -463,13 +468,13 @@ test('Gmail OAuth connection and read-only metadata sync', {
           ['SENT', 'Sent', '\\Sent'],
           ['SPAM', 'Spam', '\\Junk'],
           ['TRASH', 'Trash', '\\Trash'],
-          ['[All Mail]', 'All Mail', '\\All'],
+          ['[All Mail]', 'Archive', '\\Archive'],
         ],
       );
       assert.ok(paths.every((row) => row.initial_complete));
       const m1 = await local('m1');
       assert.equal(m1.subject, 'Ünicode receipt');
-      assert.deepEqual(m1.paths, ['INBOX', 'Label_1', '[All Mail]']);
+      assert.deepEqual(m1.paths, ['INBOX', 'Label_1']);
       assert.deepEqual(m1.flags, []);
       assert.equal(m1.notification_at, null, 'initial sync never notifies');
       assert.deepEqual((await local('m2')).flags, ['\\Seen', '\\Flagged']);
@@ -623,62 +628,456 @@ test('Gmail OAuth connection and read-only metadata sync', {
   );
 
   await t.test(
-    'Gmail messages are read-only until their slices land',
+    'pre-D040 All Mail is recomputed locally; leaving Trash refetches labels',
     async () => {
-      const message = (await local('m1')).id;
-      for (const [url, body] of [
-        [`/api/mail/messages/${message}/content`, {}],
-        [
-          `/api/mail/messages/${message}/actions`,
-          { id: randomUUID(), kind: 'read' },
-        ],
-        [
-          `/api/mail/messages/${message}/compose`,
-          { id: randomUUID(), kind: 'reply' },
-        ],
-        [
-          '/api/mail/batch-actions',
-          { kind: 'read', items: [{ id: randomUUID(), messageId: message }] },
-        ],
-        [`/api/mail/accounts/${accountA}/smtp/test`, undefined],
-      ] as const) {
-        const response = await call(owner.cookie, 'POST', url, body);
-        assert.equal(response.statusCode, 409, `${url}: ${response.body}`);
-      }
+      // Simulate the slice-1 folder: inbox mail also had an All Mail copy.
+      const m1 = (await local('m1')).id;
+      await pool.query(
+        "UPDATE mailboxes SET role='\\All',name='All Mail' WHERE account_id=$1 AND path='[All Mail]'",
+        [accountA],
+      );
+      await pool.query(
+        `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,flags)
+         SELECT $1,$2,b.id,$3,'{\\Seen}' FROM mailboxes b WHERE b.account_id=$2 AND b.path='[All Mail]'`,
+        [owner.id, accountA, m1],
+      );
+      const gets = google.state.gets;
+      assert.equal((await sync()).status, 'ready');
+      assert.equal(google.state.gets, gets, 'no refetch for the recompute');
+      assert.deepEqual((await local('m1')).paths, ['INBOX', 'Label_1']);
+      assert.ok(await local('bulk3'));
+      // Trashed elsewhere with its labels kept; restored elsewhere later.
+      google.messages.get('bulk3')?.labels.add('TRASH');
+      google.record({
+        labelsAdded: [{ message: { id: 'bulk3' }, labelIds: ['TRASH'] }],
+      });
+      assert.equal((await sync()).status, 'ready');
+      assert.deepEqual((await local('bulk3')).paths, ['TRASH']);
+      google.messages.get('bulk3')?.labels.delete('TRASH');
+      google.record({
+        labelsRemoved: [{ message: { id: 'bulk3' }, labelIds: ['TRASH'] }],
+      });
+      assert.equal((await sync()).status, 'ready');
+      assert.deepEqual((await local('bulk3')).paths, ['INBOX']);
+    },
+  );
+
+  const cleared = () =>
+    pool.query(
+      'UPDATE mail_accounts SET lease_token=NULL,lease_until=NULL WHERE id=$1',
+      [accountA],
+    );
+  let rich = '';
+  await t.test(
+    'the reader caches sanitized Gmail bodies and attachments without changing flags',
+    async () => {
+      add('rich', ['INBOX', 'UNREAD'], 'Rich message');
+      const message = google.messages.get('rich');
+      assert.ok(message);
+      message.raw = [
+        'From: Rich Sender <rich@example.test>',
+        'To: owner@gmail.test',
+        'Subject: Rich message',
+        'Message-ID: <rich@example.test>',
+        'MIME-Version: 1.0',
+        'Content-Type: multipart/mixed; boundary="b1"',
+        '',
+        '--b1',
+        'Content-Type: text/html; charset=utf-8',
+        '',
+        '<p>Gmail body</p><script>alert(1)</script>',
+        '--b1',
+        'Content-Type: text/plain; name="report.txt"',
+        'Content-Disposition: attachment; filename="report.txt"',
+        '',
+        'Synthetic attachment',
+        '--b1--',
+        '',
+      ].join('\r\n');
+      google.record({ messagesAdded: [{ message: { id: 'rich' } }] });
+      assert.equal((await sync()).status, 'ready');
+      rich = (await local('rich')).id;
+      const opened = await call(
+        owner.cookie,
+        'POST',
+        `/api/mail/messages/${rich}/content`,
+        {},
+      );
+      assert.ok(opened.statusCode < 300, opened.body);
+      const version = (
+        await pool.query(
+          'SELECT version FROM mail_content WHERE message_id=$1',
+          [rich],
+        )
+      ).rows[0].version;
+      await cleared();
+      await fetchMessageContent(
+        pool,
+        keys,
+        { userId: owner.id, accountId: accountA, messageId: rich, version },
+        connectImap,
+        google.config,
+      );
+      const cached = (
+        await pool.query(
+          'SELECT state,html,attachments FROM mail_content WHERE message_id=$1',
+          [rich],
+        )
+      ).rows[0];
+      assert.equal(cached.state, 'ready');
+      assert.match(cached.html, /Gmail body/);
+      assert.doesNotMatch(cached.html, /<script/);
+      assert.deepEqual(cached.attachments, [
+        {
+          part: '0',
+          filename: 'report.txt',
+          contentType: 'text/plain',
+          size: 20,
+        },
+      ]);
+      const detail = (
+        await call(owner.cookie, 'GET', `/api/mail/messages/${rich}`)
+      ).json();
+      assert.equal(detail.content.state, 'ready');
+      assert.equal(detail.content.attachments[0].state, 'missing');
+      const download = await call(
+        owner.cookie,
+        'POST',
+        `/api/mail/messages/${rich}/attachments/0`,
+        {},
+      );
+      assert.ok(download.statusCode < 300, download.body);
+      await cleared();
+      await fetchMessageContent(
+        pool,
+        keys,
+        {
+          userId: owner.id,
+          accountId: accountA,
+          messageId: rich,
+          version,
+          attachment: 0,
+        },
+        connectImap,
+        google.config,
+      );
+      const file = (
+        await pool.query(
+          'SELECT state,data FROM mail_content_attachments WHERE message_id=$1',
+          [rich],
+        )
+      ).rows[0];
+      assert.equal(file.state, 'ready');
+      assert.equal(file.data.toString(), 'Synthetic attachment');
+      // Opening and downloading never mark mail read at Gmail.
+      assert.ok(google.messages.get('rich')?.labels.has('UNREAD'));
+      assert.deepEqual(google.state.modifies, []);
+      // Replies work from the cached reply headers.
+      const reply = await call(
+        owner.cookie,
+        'POST',
+        `/api/mail/messages/${rich}/compose`,
+        { id: randomUUID(), kind: 'reply' },
+      );
+      assert.equal(reply.statusCode, 201, reply.body);
+    },
+  );
+
+  // Queues an action, skips its five-second undo grace and applies it.
+  const act = async (message: string, body: object) => {
+    const id = randomUUID();
+    const queued = await call(
+      owner.cookie,
+      'POST',
+      `/api/mail/messages/${message}/actions`,
+      { id, ...body },
+    );
+    assert.ok(queued.statusCode < 300, queued.body);
+    await pool.query(
+      "UPDATE mail_actions SET next_attempt_at=now() WHERE id=$1 AND state='pending'",
+      [id],
+    );
+    await cleared();
+    await applyGmailActions(pool, keys, google.config, owner.id, accountA);
+    return (
+      await pool.query(
+        'SELECT state,error_code FROM mail_actions WHERE id=$1',
+        [id],
+      )
+    ).rows[0];
+  };
+  const box = async (path: string) =>
+    (
+      await pool.query(
+        'SELECT id FROM mailboxes WHERE account_id=$1 AND path=$2',
+        [accountA, path],
+      )
+    ).rows[0].id;
+  const labels = (remote: string) =>
+    [...(google.messages.get(remote)?.labels ?? [])].sort();
+
+  await t.test(
+    'actions change Gmail labels and local folders through durable intents',
+    async () => {
+      const applied = { state: 'applied', error_code: null };
+      assert.deepEqual(await act(rich, { kind: 'read' }), applied);
+      assert.deepEqual(labels('rich'), ['INBOX']);
+      assert.deepEqual((await local('rich')).flags, ['\\Seen']);
+      assert.deepEqual(await act(rich, { kind: 'unread' }), applied);
+      assert.deepEqual(labels('rich'), ['INBOX', 'UNREAD']);
+      assert.deepEqual(await act(rich, { kind: 'archive' }), applied);
+      assert.deepEqual(labels('rich'), ['UNREAD']);
+      assert.deepEqual((await local('rich')).paths, ['[All Mail]']);
+      assert.deepEqual(await act(rich, { kind: 'restore' }), applied);
+      assert.deepEqual(labels('rich'), ['INBOX', 'UNREAD']);
+      assert.deepEqual((await local('rich')).paths, ['INBOX']);
+      assert.deepEqual(await act(rich, { kind: 'trash' }), applied);
+      assert.deepEqual((await local('rich')).paths, ['TRASH']);
+      // Restoring from Trash untrashes and returns to the original folder.
+      assert.deepEqual(await act(rich, { kind: 'restore' }), applied);
+      assert.deepEqual(labels('rich'), ['INBOX', 'UNREAD']);
+      assert.deepEqual((await local('rich')).paths, ['INBOX']);
+      // Moving out of the inbox into a label, as Gmail's "Move to" does.
+      assert.deepEqual(
+        await act(rich, { kind: 'move', mailbox: await box('Label_1') }),
+        applied,
+      );
+      assert.deepEqual(labels('rich'), ['Label_1', 'UNREAD']);
+      assert.deepEqual((await local('rich')).paths, ['Label_1', '[All Mail]']);
+      assert.deepEqual(
+        await act(rich, { kind: 'move', mailbox: await box('SENT') }),
+        { state: 'failed', error_code: 'label_unsupported' },
+      );
+      assert.deepEqual(labels('rich'), ['Label_1', 'UNREAD']);
+      // Mail deleted in Gmail is a conflict, never a blind retry.
+      add('gone', ['INBOX'], 'Deleted elsewhere');
+      google.record({ messagesAdded: [{ message: { id: 'gone' } }] });
+      await sync();
+      const gone = (await local('gone')).id;
+      google.messages.delete('gone');
+      assert.deepEqual(await act(gone, { kind: 'archive' }), {
+        state: 'conflict',
+        error_code: 'message_missing',
+      });
+    },
+  );
+
+  await t.test(
+    'undo inside the grace period never reaches Gmail; quota pauses keep attempts',
+    async () => {
+      const before = google.state.modifies.length;
+      const id = randomUUID();
+      const queued = await call(
+        owner.cookie,
+        'POST',
+        `/api/mail/messages/${rich}/actions`,
+        { id, kind: 'trash' },
+      );
+      assert.ok(queued.statusCode < 300, queued.body);
+      const undone = await call(
+        owner.cookie,
+        'POST',
+        `/api/mail/actions/${id}/undo`,
+        {},
+      );
+      assert.equal(undone.statusCode, 200, undone.body);
+      await cleared();
+      await applyGmailActions(pool, keys, google.config, owner.id, accountA);
+      assert.equal(google.state.modifies.length, before);
+      assert.deepEqual((await local('rich')).paths, ['Label_1', '[All Mail]']);
+      // Rate-limited actions wait without spending an attempt.
+      google.state.exhausted = true;
+      const pausedId = randomUUID();
+      await call(owner.cookie, 'POST', `/api/mail/messages/${rich}/actions`, {
+        id: pausedId,
+        kind: 'read',
+      });
+      await pool.query(
+        'UPDATE mail_actions SET next_attempt_at=now() WHERE id=$1',
+        [pausedId],
+      );
+      await cleared();
+      await applyGmailActions(pool, keys, google.config, owner.id, accountA);
+      const paused = (
+        await pool.query(
+          "SELECT state,attempts,next_attempt_at>now()+interval '50 seconds' AS deferred FROM mail_actions WHERE id=$1",
+          [pausedId],
+        )
+      ).rows[0];
+      assert.deepEqual(paused, {
+        state: 'pending',
+        attempts: 0,
+        deferred: true,
+      });
+      // Until applied, the optimistic read state stays local.
+      assert.deepEqual((await local('rich')).flags, ['\\Seen']);
+      google.state.exhausted = false;
+      await pool.query(
+        'UPDATE mail_actions SET next_attempt_at=now() WHERE id=$1',
+        [pausedId],
+      );
+      await cleared();
+      await applyGmailActions(pool, keys, google.config, owner.id, accountA);
+      assert.deepEqual(
+        (
+          await pool.query(
+            'SELECT state,attempts FROM mail_actions WHERE id=$1',
+            [pausedId],
+          )
+        ).rows[0],
+        { state: 'applied', attempts: 0 },
+      );
+      assert.deepEqual(labels('rich'), ['Label_1']);
+    },
+  );
+
+  await t.test(
+    'sending uses messages.send with the Gmail sender name, Bcc and outcome rules',
+    async () => {
+      const accounts = (await call(owner.cookie, 'GET', '/api/mail/accounts'))
+        .json()
+        .accounts.find((item: { id: string }) => item.id === accountA);
+      assert.equal(accounts.smtpState, 'ready');
+      assert.equal(accounts.sender, subjectA.email);
+      assert.equal(accounts.senderName, 'Synthetic Owner');
+      const draft = async (subject: string) => {
+        const id = randomUUID();
+        const saved = await app.inject({
+          method: 'PUT',
+          url: `/api/mail/drafts/${id}`,
+          remoteAddress: '198.51.100.251',
+          headers: { cookie: owner.cookie, origin: testConfig.appUrl },
+          payload: {
+            revision: 0,
+            saveId: randomUUID(),
+            accountId: accountA,
+            content: {
+              to: 'friend@example.test',
+              cc: '',
+              bcc: 'hidden@example.test',
+              subject,
+              format: 'plain',
+              html: '',
+              text: 'Hello from Spindle',
+            },
+          },
+        });
+        assert.equal(saved.statusCode, 200, saved.body);
+        return id;
+      };
+      const send = async (subject: string) => {
+        const id = await draft(subject);
+        const operation = randomUUID();
+        await pool.query('DELETE FROM mail_request_limits');
+        const queued = await call(
+          owner.cookie,
+          'POST',
+          `/api/mail/drafts/${id}/send`,
+          { id: operation, revision: 1 },
+        );
+        assert.equal(queued.statusCode, 202, queued.body);
+        await pool.query(
+          'UPDATE mail_outbox SET next_attempt_at=now() WHERE id=$1',
+          [operation],
+        );
+        await cleared();
+        await processOutgoing(
+          pool,
+          keys,
+          owner.id,
+          accountA,
+          connectSmtp,
+          connectImap,
+          google.config,
+        );
+        return { id, operation };
+      };
+      const outbox = async (id: string) =>
+        (
+          await pool.query(
+            'SELECT state,error_code,sent_copy,attempts FROM mail_outbox WHERE id=$1',
+            [id],
+          )
+        ).rows[0];
+      const sent = await send('Gmail send');
+      assert.deepEqual(await outbox(sent.operation), {
+        state: 'accepted',
+        error_code: null,
+        sent_copy: 'saved',
+        attempts: 1,
+      });
+      const raw = google.sent.at(-1) ?? '';
+      assert.match(raw, /^From: Synthetic Owner <owner@gmail\.test>$/m);
+      assert.match(raw, /^To: friend@example\.test$/m);
+      assert.match(raw, /^Bcc: hidden@example\.test$/m);
+      assert.match(raw, /^Subject: Gmail send$/m);
+      assert.equal(
+        (await pool.query('SELECT 1 FROM mail_drafts WHERE id=$1', [sent.id]))
+          .rowCount,
+        0,
+      );
+      // A 4xx rejection fails and keeps the draft.
+      google.state.send = 'reject';
+      const rejected = await send('Rejected send');
+      assert.deepEqual(await outbox(rejected.operation), {
+        state: 'failed',
+        error_code: 'gmail_rejected',
+        sent_copy: 'pending',
+        attempts: 1,
+      });
+      // Rate limiting is temporary: queued again, nothing sent.
+      google.state.send = 'rate';
+      const limited = await send('Rate limited send');
+      assert.equal((await outbox(limited.operation)).state, 'queued');
+      // A lost response is unknown and never resent; the Sent search confirms it.
+      google.state.send = 'lost';
+      const count = google.sent.length;
+      const lost = await send('Lost response send');
+      assert.equal(google.sent.length, count + 1);
+      assert.equal((await outbox(lost.operation)).state, 'unknown');
+      google.state.send = 'ok';
+      await pool.query(
+        'UPDATE mail_outbox SET next_attempt_at=now() WHERE id=$1',
+        [lost.operation],
+      );
+      await cleared();
+      await processOutgoing(
+        pool,
+        keys,
+        owner.id,
+        accountA,
+        connectSmtp,
+        connectImap,
+        google.config,
+      );
+      assert.deepEqual(await outbox(lost.operation), {
+        state: 'unknown',
+        error_code: 'delivery_unknown',
+        sent_copy: 'saved',
+        attempts: 1,
+      });
+      // The rate-limited send goes out once on its retry; the lost one stays unsent.
+      await pool.query(
+        'UPDATE mail_outbox SET next_attempt_at=now() WHERE id=$1',
+        [limited.operation],
+      );
+      await cleared();
+      await processOutgoing(
+        pool,
+        keys,
+        owner.id,
+        accountA,
+        connectSmtp,
+        connectImap,
+        google.config,
+      );
+      assert.equal((await outbox(limited.operation)).state, 'accepted');
+      assert.equal(google.sent.length, count + 2);
+      // SMTP settings still do not apply to Gmail.
       assert.equal(
         (await call(owner.cookie, 'GET', `/api/mail/accounts/${accountA}/smtp`))
           .statusCode,
         409,
-      );
-      // Another user's ID still receives the ordinary not-found answer.
-      assert.equal(
-        (
-          await call(
-            other.cookie,
-            'POST',
-            `/api/mail/messages/${message}/content`,
-            {},
-          )
-        ).statusCode,
-        404,
-      );
-      assert.equal(
-        (
-          await pool.query(
-            'SELECT count(*)::int AS n FROM mail_content WHERE account_id=$1',
-            [accountA],
-          )
-        ).rows[0].n,
-        0,
-      );
-      assert.equal(
-        (
-          await pool.query(
-            'SELECT count(*)::int AS n FROM mail_actions WHERE account_id=$1',
-            [accountA],
-          )
-        ).rows[0].n,
-        0,
       );
     },
   );
@@ -703,7 +1102,7 @@ test('Gmail OAuth connection and read-only metadata sync', {
   });
 
   await t.test(
-    'the worker routes Gmail to the Gmail sync and never to IMAP jobs',
+    'the worker serves Gmail content before sync and never runs IMAP jobs for it',
     async () => {
       const boss = new PgBoss({ connectionString });
       boss.on('error', () => undefined);
@@ -713,7 +1112,8 @@ test('Gmail OAuth connection and read-only metadata sync', {
         stop();
         await boss.stop({ graceful: false });
       });
-      // IMAP-only work for a Gmail message must never be dispatched.
+      // A requested body is fetched first (user work outranks metadata), then
+      // sync resumes; neither path reaches IMAP code.
       const message = (await local('m1')).id;
       await pool.query(
         'INSERT INTO mail_content(user_id,account_id,message_id) VALUES($1,$2,$3)',
@@ -738,7 +1138,7 @@ test('Gmail OAuth connection and read-only metadata sync', {
           [message],
         )
       ).rows[0];
-      assert.deepEqual(content, { state: 'pending', error_code: null });
+      assert.deepEqual(content, { state: 'ready', error_code: null });
       // No IMAP draft import is created for the synced Gmail draft (m5).
       assert.equal(
         (

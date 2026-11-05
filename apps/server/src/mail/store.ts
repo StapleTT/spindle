@@ -3,6 +3,7 @@ import type { ImapSettings } from './imap.js';
 
 export type MailAccount = ImapSettings & {
   id: string;
+  provider: 'imap' | 'gmail';
   user_id: string;
   credential: string;
   history_since: Date | null;

@@ -434,3 +434,22 @@ Status: requested by the user on 2026-11-05.
 Settings → Accounts adds Rename for every account. `PATCH /api/mail/accounts/:id/name` stores a trimmed, printable, non-blank display name of up to 100 characters for the owner only. It changes only `mail_accounts.name`; the address, provider identity, credentials, sender name and ordering are untouched. Reconnect keeps the chosen name, and the existing accounts SSE topic updates other tabs. No migration is needed.
 
 The Add an account cards use the real Gmail and Outlook marks from Wikimedia Commons, self-hosted under `apps/web/src/assets`, as the documented exception to token-only colours. See [design: provider logos](design.md#provider-logos).
+
+## D040 — Gmail reader, actions and sending
+
+Status: requested by the user on 2026-11-05 ("I actually want to be able to read my emails, mark them as read/unread, archive, send emails, etc."). This implements D038 slices 2–4. Provider draft sync (`users.drafts`) and push remain open.
+
+Gmail plugs into the existing pipelines and replaces only the provider step:
+
+- **Reader:** a small `ContentSource` (reply headers, message with attachment list, one attachment) has IMAP and Gmail implementations behind the shared parse, sanitize, cache and content-origin code. Gmail uses `format=raw`. Attachments are addressed by their position in the parsed raw message, so the list and the download cannot disagree and no unstable Gmail attachment ID is stored.
+- **Actions:** the shared durable intents, undo and ordering map to idempotent `modify`, `trash` and `untrash` calls, and Gmail's returned labels become local truth.
+- **Sending:** the shared Outbox and its unknown-outcome rules call `messages.send` once per claim. The MIME snapshot keeps `Bcc`, and Gmail files the Sent copy itself.
+
+Folder model:
+
+- The synthetic `[All Mail]` folder becomes Archive (`\Archive`): mail with none of Inbox, Spam or Trash, which is Gmail's meaning of archived and gives archive/restore a real target. Existing accounts are recomputed locally on their next sync.
+- Trash and Spam are exclusive in the mirror, as in Gmail's views. Leaving them refetches labels.
+
+Sender identity: the sender is the connected address, and the display name comes from Gmail's default "Send mail as" (`users.settings.sendAs`, covered by `gmail.modify`), falling back to the Spindle profile name. Append additive migration 0036 for that name.
+
+Gmail sync, like IMAP, yields to pending user work. Old (D038-only) workers never touch Gmail mail but leave queued Gmail work pending. See [Gmail](gmail.md).

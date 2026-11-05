@@ -60,6 +60,11 @@ export function safeFilename(value: string | undefined, fallback: string) {
   return name || fallback;
 }
 
+export const safeContentType = (type: string) =>
+  /^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,64}$/.test(type)
+    ? type
+    : 'application/octet-stream';
+
 export function listAttachments(root: MessageStructureObject | undefined) {
   const found: AttachmentInfo[] = [];
   const visit = (node: MessageStructureObject, depth: number) => {
@@ -85,11 +90,7 @@ export function listAttachments(root: MessageStructureObject | undefined) {
         name,
         type === 'message/rfc822' ? 'message.eml' : 'attachment',
       ),
-      contentType: /^[a-z0-9!#$&^_.+-]{1,64}\/[a-z0-9!#$&^_.+-]{1,64}$/.test(
-        type,
-      )
-        ? type
-        : 'application/octet-stream',
+      contentType: safeContentType(type),
       // Base64 is normally wrapped as 76 characters plus CRLF per 57 decoded bytes.
       size:
         node.encoding?.toLowerCase() === 'base64'

@@ -1,6 +1,9 @@
+import type { Readable } from 'node:stream';
 import type { Pool } from 'pg';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { outboxStream } from './file-storage.js';
+import { gmailTransport } from './gmail-mail.js';
+import type { GoogleConfig } from './google.js';
 import { connectImap } from './imap.js';
 import { checkProviderDraftBeforeSend } from './provider-drafts.js';
 import { connectSmtp } from './smtp.js';
@@ -15,10 +18,23 @@ export async function processOutgoing(
   accountId: string,
   connect = connectSmtp,
   imapConnect = connectImap,
+  google: GoogleConfig | null = null,
 ) {
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
-  let smtp: Awaited<ReturnType<typeof connect>> | undefined;
+  // D040: Gmail sends through messages.send; Gmail files the Sent copy itself.
+  const gmail = account.provider === 'gmail';
+  let smtp:
+    | {
+        send: (
+          sender: string,
+          recipients: string[],
+          raw: Buffer | Readable,
+          size?: number,
+        ) => Promise<{ accepted: unknown[]; rejected: unknown[] }>;
+        close: () => void;
+      }
+    | undefined;
   let sending: string | undefined;
   let sendStarted = false;
   try {
@@ -39,12 +55,15 @@ export async function processOutgoing(
         [owner, accountId],
       );
     });
-    const settings = (
-      await pool.query(
-        'SELECT * FROM mail_smtp WHERE user_id=$1 AND account_id=$2',
-        [owner, accountId],
-      )
-    ).rows[0];
+    // Gmail rows carry the account ID as their settings version (send route).
+    const settings = gmail
+      ? { state: 'ready', version: accountId }
+      : (
+          await pool.query(
+            'SELECT * FROM mail_smtp WHERE user_id=$1 AND account_id=$2',
+            [owner, accountId],
+          )
+        ).rows[0];
     if (settings?.state === 'pending') {
       try {
         smtp = await connect(
@@ -101,13 +120,16 @@ export async function processOutgoing(
       } else {
         smtp?.close();
         smtp = undefined;
-        const conflict = await checkProviderDraftBeforeSend(
-          pool,
-          keys,
-          account,
-          row.source_draft_id,
-          imapConnect,
-        );
+        // Provider drafts are not synced for Gmail yet (D040).
+        const conflict = gmail
+          ? null
+          : await checkProviderDraftBeforeSend(
+              pool,
+              keys,
+              account,
+              row.source_draft_id,
+              imapConnect,
+            );
         if (conflict) {
           await withLease(pool, account, (db) =>
             db.query(
@@ -173,19 +195,23 @@ export async function processOutgoing(
         if (claimed.rowCount) {
           sending = row.id;
           if (!smtp)
-            smtp = await connect(
-              settings,
-              decryptCredential(
-                settings.credential,
-                owner,
-                `${accountId}:smtp`,
-                keys,
-              ),
-            );
+            smtp = gmail
+              ? await gmailTransport(account, keys, google)
+              : await connect(
+                  settings,
+                  decryptCredential(
+                    settings.credential,
+                    owner,
+                    `${accountId}:smtp`,
+                    keys,
+                  ),
+                );
           // Recheck ownership, live configuration and the fence immediately before I/O.
           await withLease(pool, account, async (db) => {
             const valid = await db.query(
-              "SELECT account_id FROM mail_smtp WHERE user_id=$1 AND account_id=$2 AND version=$3 AND state='ready'",
+              gmail
+                ? "SELECT id FROM mail_accounts WHERE user_id=$1 AND id=$2 AND id=$3::uuid AND provider='gmail'"
+                : "SELECT account_id FROM mail_smtp WHERE user_id=$1 AND account_id=$2 AND version=$3 AND state='ready'",
               [owner, accountId, row.smtp_version],
             );
             if (!valid.rowCount)
@@ -206,11 +232,13 @@ export async function processOutgoing(
           } finally {
             if (!Buffer.isBuffer(raw)) raw.destroy();
           }
-          const accepted = info.accepted.filter((address) =>
-            row.recipients.includes(address),
+          const accepted = info.accepted.filter(
+            (address): address is string =>
+              typeof address === 'string' && row.recipients.includes(address),
           );
-          const rejected = info.rejected.filter((address) =>
-            row.recipients.includes(address),
+          const rejected = info.rejected.filter(
+            (address): address is string =>
+              typeof address === 'string' && row.recipients.includes(address),
           );
           if (!accepted.length) throw new Error('No acceptance receipt');
           await withLease(pool, account, async (db) => {
@@ -220,7 +248,8 @@ export async function processOutgoing(
               [owner, row.draft_id],
             );
             const result = await db.query(
-              `UPDATE mail_outbox SET state=$3,accepted=$4,rejected=$5,completed_at=clock_timestamp(),error_code=NULL
+              `UPDATE mail_outbox SET state=$3,accepted=$4,rejected=$5,completed_at=clock_timestamp(),error_code=NULL,
+              sent_copy=CASE WHEN $6 THEN 'saved' ELSE sent_copy END
               WHERE user_id=$1 AND id=$2 AND state='sending' RETURNING id`,
               [
                 owner,
@@ -228,6 +257,7 @@ export async function processOutgoing(
                 rejected.length ? 'partial' : 'accepted',
                 JSON.stringify(accepted),
                 JSON.stringify(rejected),
+                gmail,
               ],
             );
             if (result.rowCount && !rejected.length)
@@ -249,7 +279,19 @@ export async function processOutgoing(
         [owner, accountId],
       )
     ).rows[0];
-    if (copy) {
+    if (copy && gmail) {
+      // Unknown delivery: look for it in Gmail, never send again.
+      const found = await (
+        await gmailTransport(account, keys, google)
+      ).sentCopyExists(copy.message_id);
+      await withLease(pool, account, (db) =>
+        db.query(
+          `UPDATE mail_outbox SET sent_copy=CASE WHEN $3 THEN 'saved' WHEN completed_at<clock_timestamp()-interval '1 day' THEN 'failed' ELSE 'unknown' END,
+          next_attempt_at=clock_timestamp()+interval '5 minutes' WHERE user_id=$1 AND id=$2`,
+          [owner, copy.id, found],
+        ),
+      );
+    } else if (copy) {
       // An unknown delivery is only searched, never sent or appended again.
       const client = await imapConnect(
         account,
@@ -391,7 +433,13 @@ export async function processOutgoing(
             sending,
             temporary,
             known,
-            sendStarted ? 'smtp_rejected' : 'smtp_unavailable',
+            gmail
+              ? sendStarted
+                ? 'gmail_rejected'
+                : 'gmail_unavailable'
+              : sendStarted
+                ? 'smtp_rejected'
+                : 'smtp_unavailable',
           ],
         );
       }).catch(() => {});

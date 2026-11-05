@@ -48,7 +48,6 @@ type Detail = {
     messageId: string | null;
     unread: boolean;
     accountId: string;
-    provider: 'imap' | 'gmail';
     lastAction: MailAction | null;
     canMove: { archive: boolean | null; trash: boolean | null } | null;
     folderId: string | null;
@@ -57,7 +56,7 @@ type Detail = {
   previous: string | null;
   next: string | null;
   content: {
-    state: 'missing' | 'pending' | 'ready' | 'failed' | 'unavailable';
+    state: 'missing' | 'pending' | 'ready' | 'failed';
     replyHeaders: 'missing' | 'pending' | 'ready' | 'failed';
     configured: boolean;
     plainText?: string;
@@ -608,11 +607,6 @@ export function Reader({
 
   const sender = detail?.message.sender[0];
   const senderName = sender?.name || sender?.address || 'Unknown sender';
-  // D038 slice 1: Gmail messages are read-only metadata for now.
-  const readOnly = detail?.message.provider === 'gmail';
-  const unavailable = readOnly
-    ? 'Not available for Gmail accounts yet'
-    : undefined;
   return (
     <section className="reader" aria-labelledby="reader-title">
       <div className="reader-toolbar">
@@ -632,10 +626,8 @@ export function Reader({
             <button
               type="button"
               className="icon-button"
-              title={unavailable ?? 'Archive (E)'}
-              disabled={
-                readOnly || pendingAction || !detail.message.canMove?.archive
-              }
+              title="Archive (E)"
+              disabled={pendingAction || !detail.message.canMove?.archive}
               data-mail-command="archive"
               onClick={() => void mark('archive')}
             >
@@ -645,10 +637,8 @@ export function Reader({
             <button
               type="button"
               className="icon-button"
-              title={unavailable ?? 'Delete (#)'}
-              disabled={
-                readOnly || pendingAction || !detail.message.canMove?.trash
-              }
+              title="Delete (#)"
+              disabled={pendingAction || !detail.message.canMove?.trash}
               data-mail-command="trash"
               onClick={() => void mark('trash')}
             >
@@ -660,10 +650,9 @@ export function Reader({
               type="button"
               className="icon-button"
               title={
-                unavailable ??
-                (detail.message.unread ? 'Mark read (M)' : 'Mark unread (M)')
+                detail.message.unread ? 'Mark read (M)' : 'Mark unread (M)'
               }
-              disabled={readOnly || pendingAction}
+              disabled={pendingAction}
               data-mail-command="toggle"
               onClick={() =>
                 void mark(detail.message.unread ? 'read' : 'unread')
@@ -690,14 +679,10 @@ export function Reader({
                 </span>
               </button>
             )}
-            <label
-              className="move-select"
-              title={unavailable ?? 'Move to folder'}
-            >
+            <label className="move-select" title="Move to folder">
               <Icon src={driveFileMove} />
               <span className="visually-hidden">Move to folder</span>
               <select
-                disabled={readOnly}
                 value={destination}
                 onChange={(event) => setDestination(event.target.value)}
               >
@@ -869,10 +854,6 @@ export function Reader({
               <p role="status" className="muted">
                 Fetching message content…
               </p>
-            ) : detail.content.state === 'unavailable' ? (
-              <p role="status" className="muted">
-                {detail.content.message}
-              </p>
             ) : detail.content.state === 'failed' ? (
               <p role="alert" className="error">
                 {detail.content.message}
@@ -983,7 +964,6 @@ export function Reader({
             <button
               type="button"
               className="filled"
-              title={unavailable}
               disabled={responseBusy || detail.content.state !== 'ready'}
               data-mail-command="reply"
               onClick={() => void respond('reply')}
@@ -993,7 +973,6 @@ export function Reader({
             </button>
             <button
               type="button"
-              title={unavailable}
               disabled={responseBusy || detail.content.state !== 'ready'}
               data-mail-command="reply-all"
               onClick={() => void respond('replyAll')}
@@ -1003,7 +982,6 @@ export function Reader({
             </button>
             <button
               type="button"
-              title={unavailable}
               disabled={responseBusy || detail.content.state !== 'ready'}
               data-mail-command="forward"
               onClick={() => void respond('forward')}

@@ -7,8 +7,11 @@ import { Pool } from 'pg';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { migrateDatabase } from '../../server/src/db/migrate.js';
+import { fetchMessageContent } from '../../server/src/mail/content-worker.js';
 import { readMailKeys } from '../../server/src/mail/credentials.js';
 import { syncGmailAccount } from '../../server/src/mail/gmail.js';
+import { applyGmailActions } from '../../server/src/mail/gmail-mail.js';
+import { connectImap } from '../../server/src/mail/imap.js';
 import {
   createTestUser,
   testApp,
@@ -16,7 +19,7 @@ import {
 } from '../../server/test/auth-fixture.js';
 import { fakeGoogle } from '../../server/test/google-fixture.js';
 
-test('Gmail connects through Google consent and shows honest read-only mail', {
+test('Gmail connects through Google consent, then reads and archives mail', {
   timeout: 90000,
 }, async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
@@ -178,52 +181,98 @@ test('Gmail connects through Google consent and shows honest read-only mail', {
       await page.screenshot({ path: '/tmp/spindle-gmail-renamed.png' });
     });
 
-    await t.test('Gmail mail lists, but opening it is honest', async () => {
-      const account = (
-        await pool.query(
-          "SELECT id FROM mail_accounts WHERE user_id=$1 AND provider='gmail'",
-          [owner.id],
-        )
-      ).rows[0].id;
-      await syncGmailAccount(pool, keys, google.config, owner.id, account);
-      await page.goto(`${config.appUrl}/inbox`);
-      await page
-        .getByRole('link', { name: 'Gmail browser message', exact: true })
-        .click();
-      await page
-        .getByText('Opening Gmail messages arrives in the next update.')
-        .waitFor();
-      const reader = page.locator('.reader');
-      const archive = reader.getByRole('button', {
-        name: 'Archive',
-        exact: true,
-      });
-      assert.equal(await archive.isDisabled(), true);
-      assert.equal(
-        await archive.getAttribute('title'),
-        'Not available for Gmail accounts yet',
-      );
-      assert.equal(
+    await t.test(
+      'Gmail mail opens, then archives from the reader',
+      async () => {
+        const account = (
+          await pool.query(
+            "SELECT id FROM mail_accounts WHERE user_id=$1 AND provider='gmail'",
+            [owner.id],
+          )
+        ).rows[0].id;
+        const cleared = () =>
+          pool.query(
+            'UPDATE mail_accounts SET lease_token=NULL,lease_until=NULL WHERE id=$1',
+            [account],
+          );
+        const until = async (check: () => Promise<boolean>) => {
+          for (let attempt = 0; attempt < 40 && !(await check()); attempt++)
+            await new Promise((resolve) => setTimeout(resolve, 250));
+          assert.ok(await check());
+        };
+        await syncGmailAccount(pool, keys, google.config, owner.id, account);
+        await page.goto(`${config.appUrl}/inbox`);
         await page
-          .getByRole('button', { name: 'Reply', exact: true })
-          .isDisabled(),
-        true,
-      );
-      await page.screenshot({ path: '/tmp/spindle-gmail-reader.png' });
-      // Revoked consent surfaces Reconnect guidance in Settings.
-      google.refreshTokens.clear();
-      await pool.query(
-        'UPDATE mail_accounts SET lease_token=NULL,lease_until=NULL WHERE id=$1',
-        [account],
-      );
-      await syncGmailAccount(pool, keys, google.config, owner.id, account);
-      await page.goto(`${config.appUrl}/inbox#view=settings`);
-      await page
-        .getByText(
-          'Google access expired or was removed. Reconnect to resume sync.',
-        )
-        .waitFor();
-    });
+          .getByRole('link', { name: 'Gmail browser message', exact: true })
+          .click();
+        // The reader requests the body; one worker step fetches it from Gmail.
+        const body = async () =>
+          (
+            await pool.query(
+              "SELECT message_id,version FROM mail_content WHERE account_id=$1 AND state='pending'",
+              [account],
+            )
+          ).rows[0];
+        await until(async () => Boolean(await body()));
+        const job = await body();
+        await cleared();
+        await fetchMessageContent(
+          pool,
+          keys,
+          {
+            userId: owner.id,
+            accountId: account,
+            messageId: job.message_id,
+            version: job.version,
+          },
+          connectImap,
+          google.config,
+        );
+        const reader = page.locator('.reader');
+        await reader.getByText('Synthetic body for b1').waitFor();
+        const archive = reader.getByRole('button', {
+          name: 'Archive',
+          exact: true,
+        });
+        assert.equal(await archive.isDisabled(), false);
+        assert.equal(await archive.getAttribute('title'), 'Archive (E)');
+        assert.equal(
+          await reader
+            .getByRole('button', { name: 'Reply', exact: true })
+            .isDisabled(),
+          false,
+        );
+        await page.screenshot({ path: '/tmp/spindle-gmail-reader.png' });
+        await archive.click();
+        // Skip the undo grace, then apply the durable intent at Gmail.
+        await until(async () =>
+          Boolean(
+            (
+              await pool.query(
+                "UPDATE mail_actions SET next_attempt_at=now() WHERE account_id=$1 AND kind='archive' AND state='pending' RETURNING id",
+                [account],
+              )
+            ).rowCount,
+          ),
+        );
+        await cleared();
+        await applyGmailActions(pool, keys, google.config, owner.id, account);
+        assert.equal(google.messages.get('b1')?.labels.has('INBOX'), false);
+        // Revoked consent surfaces Reconnect guidance in Settings.
+        google.refreshTokens.clear();
+        await pool.query(
+          'UPDATE mail_accounts SET lease_token=NULL,lease_until=NULL WHERE id=$1',
+          [account],
+        );
+        await syncGmailAccount(pool, keys, google.config, owner.id, account);
+        await page.goto(`${config.appUrl}/inbox#view=settings`);
+        await page
+          .getByText(
+            'Google access expired or was removed. Reconnect to resume sync.',
+          )
+          .waitFor();
+      },
+    );
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

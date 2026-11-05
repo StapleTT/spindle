@@ -1,16 +1,20 @@
 import type { Pool, PoolClient } from 'pg';
 import { logger } from '../logger.js';
+import { pendingKind, refreshPendingFolder, withSeen } from './actions.js';
 import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import {
   type GoogleConfig,
   GoogleError,
+  type GoogleRequest,
   googleJson,
   refreshAccessToken,
 } from './google.js';
 import { parseReplyHeaders } from './parse.js';
+import { defaultSenderName } from './smtp.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import { text, upsertMessage, validDate } from './sync.js';
+import { contentPending } from './work-pending.js';
 
 type GmailMessage = {
   id?: unknown;
@@ -36,9 +40,10 @@ const SYSTEM_FOLDERS: Record<string, [string, string]> = {
   SPAM: ['Spam', '\\Junk'],
   TRASH: ['Trash', '\\Trash'],
 };
-// Synthetic folder for archived mail: every message outside Spam and Trash.
-// Brackets never occur in Gmail label IDs.
-const ALL_MAIL = '[All Mail]';
+// Synthetic Archive folder: mail with none of INBOX, SPAM or TRASH, which is
+// what Gmail calls archived. Brackets never occur in Gmail label IDs. The path
+// predates D040, when this folder held all mail outside Spam and Trash.
+export const ARCHIVE = '[All Mail]';
 const HEADERS = [
   'From',
   'To',
@@ -59,7 +64,7 @@ const RETRIES = 4;
 
 // Quota exhaustion or the job deadline: stop without an error state. Committed
 // pages are kept and the next job resumes from the checkpoint.
-class GmailPause extends Error {
+export class GmailPause extends Error {
   constructor(readonly delaySeconds: number) {
     super('Gmail sync paused');
   }
@@ -75,7 +80,7 @@ const retryable = (error: GoogleError) =>
       'RESOURCE_EXHAUSTED',
     ].includes(error.reason));
 // Consent revoked or Gmail access unchecked after connecting.
-const needsReconnect = (error: unknown) =>
+export const needsReconnect = (error: unknown) =>
   error instanceof GoogleError &&
   (error.code === 'invalid_grant' ||
     error.status === 401 ||
@@ -98,22 +103,52 @@ function ids(values: unknown, limit: number) {
   });
 }
 
-// Gmail labels as local memberships and flags. Every message maps to Spam,
-// Trash or All Mail, so an empty target list means a system folder is missing.
-function mirror(labels: string[], boxes: Map<string, string>) {
+// Gmail returns header values without folding; re-serialize a bounded block so
+// addresses, encoded words and References follow the IMAP/reader parser rules.
+export function headerBlock(headers: unknown, names: string[]) {
+  const values = new Map<string, string>();
+  for (const header of Array.isArray(headers) ? headers.slice(0, 500) : []) {
+    const name =
+      typeof header?.name === 'string' ? header.name.toLowerCase() : '';
+    if (
+      typeof header?.value === 'string' &&
+      names.some((wanted) => wanted.toLowerCase() === name) &&
+      !values.has(name)
+    )
+      values.set(name, header.value);
+  }
+  const block = Buffer.from(
+    names
+      .flatMap((name) => {
+        const value = values.get(name.toLowerCase());
+        return value === undefined
+          ? []
+          : [`${name}: ${value.replace(/[\r\n\0]+/g, ' ').slice(0, 8192)}`];
+      })
+      .join('\r\n'),
+  );
+  return { values, block };
+}
+
+// Gmail labels as local memberships and flags. Every message maps to Inbox,
+// Spam, Trash or Archive, so an empty target list means a folder is missing.
+export function mirror(labels: string[], boxes: Map<string, string>) {
   const flags = [
     ...(labels.includes('UNREAD') ? [] : ['\\Seen']),
     ...(labels.includes('STARRED') ? ['\\Flagged'] : []),
     ...(labels.includes('DRAFT') ? ['\\Draft'] : []),
   ];
+  // Trash and Spam hide mail from every other view, as in Gmail.
+  const shown = labels.includes('TRASH')
+    ? ['TRASH']
+    : labels.includes('SPAM')
+      ? ['SPAM']
+      : labels.includes('INBOX')
+        ? labels
+        : [...labels, ARCHIVE];
   const targets = [
     ...new Set(
-      [
-        ...labels,
-        ...(labels.includes('SPAM') || labels.includes('TRASH')
-          ? []
-          : [ALL_MAIL]),
-      ]
+      shown
         .map((label) => boxes.get(label))
         .filter((box): box is string => Boolean(box)),
     ),
@@ -121,7 +156,7 @@ function mirror(labels: string[], boxes: Map<string, string>) {
   return { flags, targets };
 }
 
-async function writeMemberships(
+export async function writeMemberships(
   db: PoolClient,
   account: MailAccount,
   local: string,
@@ -132,12 +167,15 @@ async function writeMemberships(
      AND NOT(mailbox_id=ANY($4::uuid[]))`,
     [account.user_id, account.id, local, targets],
   );
+  // A pending read intent and pending move keep their optimistic local state
+  // until the worker applies them, exactly as IMAP sync does.
   await db.query(
     `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,flags)
-     SELECT $1,$2,box,$3,$5::text[] FROM unnest($4::uuid[]) AS box
+     SELECT $1,$2,box,$3,${withSeen('$5::text[]', pendingKind('$1', '$3'))} FROM unnest($4::uuid[]) AS box
      ON CONFLICT (mailbox_id,message_id) DO UPDATE SET flags=EXCLUDED.flags`,
     [account.user_id, account.id, local, targets, flags],
   );
+  await refreshPendingFolder(db, account.user_id, local);
 }
 
 async function saveGmailMessage(
@@ -164,28 +202,7 @@ async function saveGmailMessage(
     );
     return null;
   }
-  const values = new Map<string, string>();
-  const headers = message.payload?.headers;
-  for (const header of Array.isArray(headers) ? headers.slice(0, 500) : []) {
-    const name =
-      typeof header.name === 'string' ? header.name.toLowerCase() : '';
-    if (
-      typeof header.value === 'string' &&
-      HEADERS.some((wanted) => wanted.toLowerCase() === name) &&
-      !values.has(name)
-    )
-      values.set(name, header.value);
-  }
-  // Re-parse a bounded header block so addresses, encoded words and
-  // References follow the same rules as IMAP and the reader.
-  const block = Buffer.from(
-    HEADERS.flatMap((name) => {
-      const value = values.get(name.toLowerCase());
-      return value === undefined
-        ? []
-        : [`${name}: ${value.replace(/[\r\n\0]+/g, ' ').slice(0, 8192)}`];
-    }).join('\r\n'),
-  );
+  const { values, block } = headerBlock(message.payload?.headers, HEADERS);
   let meta: Awaited<ReturnType<typeof parseReplyHeaders>> | null = null;
   try {
     meta = await parseReplyHeaders(block);
@@ -225,7 +242,7 @@ async function saveGmailMessage(
 // bulk changes (mark all read, filters) need no refetch. Mirrored labels are
 // recovered from folder paths and flags; unmirrored ones (IMPORTANT,
 // CATEGORY_*) never affect local state.
-async function applyLabelDeltas(
+export async function applyLabelDeltas(
   db: PoolClient,
   account: MailAccount,
   boxes: Map<string, string>,
@@ -248,7 +265,7 @@ async function applyLabelDeltas(
     )
   ).rows;
   for (const row of rows) {
-    const labels = new Set(row.paths.filter((path) => path !== ALL_MAIL));
+    const labels = new Set(row.paths.filter((path) => path !== ARCHIVE));
     if (!row.flags.includes('\\Seen')) labels.add('UNREAD');
     if (row.flags.includes('\\Flagged')) labels.add('STARRED');
     if (row.flags.includes('\\Draft')) labels.add('DRAFT');
@@ -261,6 +278,65 @@ async function applyLabelDeltas(
       await writeMemberships(db, account, row.id, mirrored);
   }
   return rows.map((row) => row.id);
+}
+
+export type GmailApi = <T>(
+  path: string,
+  query?: Record<string, string> | URLSearchParams,
+  request?: GoogleRequest & {
+    upload?: GoogleRequest['upload'];
+    once?: boolean;
+  },
+) => Promise<T>;
+
+// One job's Gmail client: a fresh access token, request pacing under the
+// per-user quota, and bounded retries for rate limits and server errors.
+// `once` disables retries for non-idempotent calls (send).
+export async function openGmail(
+  google: GoogleConfig | null,
+  keys: MailKeys,
+  account: MailAccount,
+  hardDeadline: number,
+): Promise<GmailApi> {
+  if (!google) throw new Error('Gmail is not configured');
+  const token = await refreshAccessToken(
+    google,
+    decryptCredential(account.credential, account.user_id, account.id, keys),
+  );
+  let slot = 0;
+  return async (path, query = {}, request = {}) => {
+    const { once, ...init } = request;
+    const search = new URLSearchParams(query).toString();
+    const base = init.upload ? google.uploadUrl : google.gmailUrl;
+    for (let attempt = 0; ; attempt++) {
+      const now = Date.now();
+      slot = Math.max(slot, now) + SPACING_MS;
+      if (slot - SPACING_MS > now)
+        await new Promise((resolve) =>
+          setTimeout(resolve, slot - SPACING_MS - now),
+        );
+      if (Date.now() > hardDeadline) throw new GmailPause(1);
+      try {
+        return await googleJson(`${base}${path}${search ? `?${search}` : ''}`, {
+          ...init,
+          token,
+        });
+      } catch (error) {
+        if (once || !(error instanceof GoogleError) || !retryable(error))
+          throw error;
+        // Exponential backoff with jitter, or Google's Retry-After.
+        const wait =
+          (error.retryAfter ?? 2 ** attempt) * 1000 + Math.random() * 250;
+        if (attempt + 1 >= RETRIES || Date.now() + wait > hardDeadline)
+          throw new GmailPause(
+            error.status === 429 || error.status === 403 ? 60 : 30,
+          );
+        // Back off the whole job, not just this request.
+        slot = Math.max(slot, Date.now() + wait);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+    }
+  };
 }
 
 export async function syncGmailAccount(
@@ -277,45 +353,7 @@ export async function syncGmailAccount(
   const deadline = started + 40000;
   const hardDeadline = started + 75000;
   try {
-    if (!google) throw new Error('Gmail is not configured');
-    const token = await refreshAccessToken(
-      google,
-      decryptCredential(account.credential, owner, id, keys),
-    );
-    let slot = 0;
-    const api = async <T>(
-      path: string,
-      query: Record<string, string> | URLSearchParams = {},
-    ): Promise<T> => {
-      const search = new URLSearchParams(query).toString();
-      for (let attempt = 0; ; attempt++) {
-        const now = Date.now();
-        slot = Math.max(slot, now) + SPACING_MS;
-        if (slot - SPACING_MS > now)
-          await new Promise((resolve) =>
-            setTimeout(resolve, slot - SPACING_MS - now),
-          );
-        if (Date.now() > hardDeadline) throw new GmailPause(1);
-        try {
-          return await googleJson<T>(
-            `${google.gmailUrl}${path}${search ? `?${search}` : ''}`,
-            { token },
-          );
-        } catch (error) {
-          if (!(error instanceof GoogleError) || !retryable(error)) throw error;
-          // Exponential backoff with jitter, or Google's Retry-After.
-          const wait =
-            (error.retryAfter ?? 2 ** attempt) * 1000 + Math.random() * 250;
-          if (attempt + 1 >= RETRIES || Date.now() + wait > hardDeadline)
-            throw new GmailPause(
-              error.status === 429 || error.status === 403 ? 60 : 30,
-            );
-          // Back off the whole job, not just this request.
-          slot = Math.max(slot, Date.now() + wait);
-          await new Promise((resolve) => setTimeout(resolve, wait));
-        }
-      }
-    };
+    const api = await openGmail(google, keys, account, hardDeadline);
     const fetchOne = async (remote: string) => {
       const query = new URLSearchParams({ format: 'metadata' });
       for (const name of HEADERS) query.append('metadataHeaders', name);
@@ -348,7 +386,7 @@ export async function syncGmailAccount(
     if (!Array.isArray(labels.labels) || labels.labels.length > 1000)
       throw new Error('Invalid Gmail labels');
     const folders: [string, string, string | null][] = [
-      [ALL_MAIL, 'All Mail', '\\All'],
+      [ARCHIVE, 'Archive', '\\Archive'],
     ];
     for (const label of labels.labels as {
       id?: unknown;
@@ -367,6 +405,7 @@ export async function syncGmailAccount(
       else if (label.type === 'user')
         folders.push([label.id, text(label.name, 1000), null]);
     }
+    let legacyArchive = false;
     await withLease(pool, account, async (db) => {
       await db.query(
         'INSERT INTO mail_gmail_sync(user_id,account_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
@@ -378,6 +417,14 @@ export async function syncGmailAccount(
           [id],
         )
       ).rows[0].initial_complete;
+      legacyArchive = Boolean(
+        (
+          await db.query(
+            "SELECT 1 FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND path=$3 AND role='\\All'",
+            [owner, id, ARCHIVE],
+          )
+        ).rowCount,
+      );
       for (const [path, name, role] of folders)
         await db.query(
           `INSERT INTO mailboxes(user_id,account_id,path,name,role,initial_complete) VALUES ($1,$2,$3,$4,$5,$6)
@@ -398,6 +445,48 @@ export async function syncGmailAccount(
         )
       ).rows.map((row) => [row.path, row.id]),
     );
+    // One-time local recompute for the pre-D040 All Mail folder: inbox mail
+    // leaves it and archived mail stays. No Gmail request is needed.
+    if (legacyArchive) {
+      const remotes = (
+        await pool.query<{ remote_key: string }>(
+          'SELECT remote_key FROM mail_messages WHERE user_id=$1 AND account_id=$2',
+          [owner, id],
+        )
+      ).rows.map((row) => row.remote_key);
+      for (let start = 0; start < remotes.length; start += 500)
+        await withLease(pool, account, (db) =>
+          applyLabelDeltas(
+            db,
+            account,
+            boxes,
+            new Map(remotes.slice(start, start + 500).map((key) => [key, []])),
+          ),
+        );
+    }
+    // Sender name for the From header; optional, so failures are ignored.
+    try {
+      const sendAs = await api<{ sendAs?: unknown }>('/settings/sendAs');
+      const entries = Array.isArray(sendAs.sendAs)
+        ? (sendAs.sendAs as {
+            displayName?: unknown;
+            isDefault?: unknown;
+            isPrimary?: unknown;
+          }[])
+        : [];
+      const chosen =
+        entries.find((entry) => entry.isDefault === true) ??
+        entries.find((entry) => entry.isPrimary === true);
+      if (typeof chosen?.displayName === 'string')
+        await withLease(pool, account, (db) =>
+          db.query(
+            'UPDATE mail_gmail_sync SET display_name=$2 WHERE account_id=$1',
+            [id, defaultSenderName(chosen.displayName as string)],
+          ),
+        );
+    } catch (error) {
+      if (error instanceof GmailPause) throw error;
+    }
     // Full resync: local mail stays visible until the new listing replaces it.
     const resync = () =>
       withLease(pool, account, async (db) => {
@@ -437,6 +526,8 @@ export async function syncGmailAccount(
       await reconcileConversationState(db, owner, id, anchors);
     };
     while (Date.now() < deadline) {
+      // Opening a message or an action outranks another metadata page.
+      if ((await pool.query(contentPending, [owner, id])).rowCount) break;
       const state = (
         await pool.query<{
           history_id: string | null;
@@ -609,14 +700,23 @@ export async function syncGmailAccount(
                     typeof label === 'string' && label.length <= 255,
                 )
               : [];
-            deltas.set(remote, [
-              ...(deltas.get(remote) ?? []),
-              [kind === 'add', labels],
-            ]);
+            // Leaving Trash or Spam restores labels the local mirror hid, so
+            // that message's current labels are fetched instead.
+            if (
+              kind === 'remove' &&
+              labels.some((label) => label === 'TRASH' || label === 'SPAM')
+            ) {
+              added.add(remote);
+              deltas.delete(remote);
+            } else
+              deltas.set(remote, [
+                ...(deltas.get(remote) ?? []),
+                [kind === 'add', labels],
+              ]);
           }
         }
       }
-      // Too many new messages for one job: a resumable listing is cheaper.
+      // Too many fetches for one job: a resumable listing is cheaper.
       if (added.size > 1000) {
         await resync();
         continue;

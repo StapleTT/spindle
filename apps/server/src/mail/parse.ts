@@ -1,5 +1,12 @@
 import { simpleParser } from 'mailparser';
-import { MAX_IMAGE_BYTES, rasterType } from './media.js';
+import {
+  type AttachmentInfo,
+  MAX_ATTACHMENTS,
+  MAX_IMAGE_BYTES,
+  rasterType,
+  safeContentType,
+  safeFilename,
+} from './media.js';
 import { replyMetadata } from './reply.js';
 import { sanitizeMessage } from './sanitize.js';
 
@@ -65,4 +72,39 @@ export async function parseMessage(source: Buffer) {
       imageBytes +
       Buffer.byteLength(JSON.stringify(reply)),
   };
+}
+
+// Attachments of a raw message, with the selection rules listAttachments
+// applies to IMAP body structures: Content-ID parts are embedded resources
+// unless explicitly attached. Providers without part addressing (Gmail)
+// store the position as `part` and re-read the same raw message to download.
+export async function rawAttachments(source: Buffer) {
+  if (source.length > MAX_RAW_BYTES) throw new Error('Message size limit');
+  const parsed = await simpleParser(source, {
+    skipHtmlToText: true,
+    skipTextToHtml: true,
+    skipTextLinks: true,
+    maxHeadSize: 64 * 1024,
+    maxChildNodes: 100,
+  });
+  return parsed.attachments
+    .filter(
+      (file) =>
+        file.contentDisposition === 'attachment' ||
+        file.contentType === 'message/rfc822' ||
+        (file.filename && !file.contentId),
+    )
+    .slice(0, MAX_ATTACHMENTS)
+    .map((file, index) => ({
+      info: {
+        part: String(index),
+        filename: safeFilename(
+          file.filename,
+          file.contentType === 'message/rfc822' ? 'message.eml' : 'attachment',
+        ),
+        contentType: safeContentType(file.contentType.toLowerCase()),
+        size: file.content.length,
+      } satisfies AttachmentInfo,
+      content: file.content,
+    }));
 }

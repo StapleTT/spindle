@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import type { Pool } from 'pg';
-import { withMailbox } from './content-worker.js';
+import { contentSource, withMailbox } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
 import { scanFile } from './file-scanner.js';
 import { FILE_BYTES, fileStream, fixedChunks } from './file-storage.js';
+import type { GoogleConfig } from './google.js';
 import { connectImap } from './imap.js';
 import { claimAccount, releaseLease, transaction, withLease } from './store.js';
 
@@ -53,6 +55,7 @@ export async function fetchForwardFile(
   accountId: string,
   id: string,
   connect = connectImap,
+  google: GoogleConfig | null = null,
 ) {
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
@@ -69,7 +72,8 @@ export async function fetchForwardFile(
     const source = file.source;
     const message = (
       await pool.query(
-        `SELECT mm.uid,mm.uid_validity,b.path,c.attachments FROM mail_content c
+        `SELECT mm.uid,mm.uid_validity,b.path,m.remote_key,c.attachments FROM mail_content c
+      JOIN mail_messages m ON m.user_id=c.user_id AND m.id=c.message_id
       JOIN mail_memberships mm ON mm.user_id=c.user_id AND mm.message_id=c.message_id AND mm.account_id=c.account_id
       JOIN mailboxes b ON b.user_id=mm.user_id AND b.id=mm.mailbox_id AND b.account_id=mm.account_id
       WHERE c.user_id=$1 AND c.account_id=$2 AND c.message_id=$3 AND c.version=$4 AND c.state='ready' LIMIT 1`,
@@ -84,31 +88,45 @@ export async function fetchForwardFile(
     );
     let bytes = 0,
       position = 0;
-    await withMailbox(account, keys, message, connect, async (client) => {
-      const downloaded = await client.download(String(message.uid), part, {
-        uid: true,
-        maxBytes: FILE_BYTES + 1,
-        chunkSize: 64 * 1024,
-      });
-      if (!downloaded.content)
-        throw new Error('Original attachment unavailable');
-      try {
-        for await (const data of fixedChunks(downloaded.content)) {
-          bytes += data.length;
-          if (bytes > FILE_BYTES) throw new Error('Attachment size limit');
-          await withLease(pool, account, async (db) => {
-            const inserted = await db.query(
-              `INSERT INTO mail_upload_chunks(user_id,file_id,position,data)
-              SELECT $1,$2,$4,$5 FROM mail_uploads WHERE user_id=$1 AND id=$2 AND token=$3 AND state='fetching' RETURNING position`,
-              [owner, id, token, position++, data],
-            );
-            if (!inserted.rowCount) throw new Error('Attachment cancelled');
-          });
-        }
-      } finally {
-        downloaded.content.destroy();
+    const store = async (content: AsyncIterable<Buffer | Uint8Array>) => {
+      for await (const data of fixedChunks(content)) {
+        bytes += data.length;
+        if (bytes > FILE_BYTES) throw new Error('Attachment size limit');
+        await withLease(pool, account, async (db) => {
+          const inserted = await db.query(
+            `INSERT INTO mail_upload_chunks(user_id,file_id,position,data)
+            SELECT $1,$2,$4,$5 FROM mail_uploads WHERE user_id=$1 AND id=$2 AND token=$3 AND state='fetching' RETURNING position`,
+            [owner, id, token, position++, data],
+          );
+          if (!inserted.rowCount) throw new Error('Attachment cancelled');
+        });
       }
-    });
+    };
+    if (account.provider === 'gmail')
+      await store(
+        Readable.from([
+          await contentSource(account, keys, connect, google).attachment(
+            message,
+            part,
+            FILE_BYTES,
+          ),
+        ]),
+      );
+    else
+      await withMailbox(account, keys, message, connect, async (client) => {
+        const downloaded = await client.download(String(message.uid), part, {
+          uid: true,
+          maxBytes: FILE_BYTES + 1,
+          chunkSize: 64 * 1024,
+        });
+        if (!downloaded.content)
+          throw new Error('Original attachment unavailable');
+        try {
+          await store(downloaded.content);
+        } finally {
+          downloaded.content.destroy();
+        }
+      });
     await withLease(pool, account, (db) =>
       db.query(
         "UPDATE mail_uploads SET state='pending_scan',size_bytes=$4,reserved_bytes=$4,token=NULL,lease_until=NULL WHERE user_id=$1 AND id=$2 AND token=$3 AND state='fetching'",

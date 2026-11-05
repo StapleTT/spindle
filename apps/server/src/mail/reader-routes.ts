@@ -112,7 +112,7 @@ export function registerReaderRoutes(
       }
       const message = (
         await pool.query(
-          `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",a.provider,m.subject,m.sender,m.recipients,
+          `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
       m.received_at AS "receivedAt",m.sent_at AS "sentAt",m.message_id AS "messageId",m.in_reply_to AS "inReplyTo",
       ${anchor ? "NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id AND '\\Seen'=ANY(seen.flags))" : unreadCondition} AS unread,
       (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state,'code',x.error_code) FROM mail_actions x
@@ -170,13 +170,7 @@ export function registerReaderRoutes(
           [owner, id],
         )
       ).rows[0];
-      // D038 slice 1: Gmail bodies arrive with the Gmail reader slice.
-      const state =
-        message.provider === 'gmail'
-          ? 'unavailable'
-          : !cached?.fresh
-            ? 'missing'
-            : cached.state;
+      const state = !cached?.fresh ? 'missing' : cached.state;
       const preferences = await readMailPreferences(pool, owner);
       const fetched = new Map<number, string>();
       if (state === 'ready')
@@ -230,12 +224,6 @@ export function registerReaderRoutes(
                     state: fetched.get(index) ?? 'missing',
                   }),
                 ),
-              }
-            : {}),
-          ...(state === 'unavailable'
-            ? {
-                message:
-                  'Opening Gmail messages arrives in the next update. Headers, folders and search are available now.',
               }
             : {}),
           ...(state === 'failed'

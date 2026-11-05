@@ -35,6 +35,10 @@ export const smtpErrors: Record<string, string> = {
     'The provider draft could not be checked before sending. Your draft and attachments are safe; retry when the provider is reachable.',
   smtp_unavailable:
     'The SMTP server could not be reached securely. Check the server, encryption and credentials.',
+  gmail_unavailable:
+    'Gmail could not be reached before sending. Your draft is preserved; retry when Gmail is reachable.',
+  gmail_rejected:
+    'Gmail rejected this message. Review its recipients and attachments before retrying.',
   smtp_rejected:
     'The SMTP server rejected this message. Review its recipients and outgoing settings before retrying.',
   settings_changed:

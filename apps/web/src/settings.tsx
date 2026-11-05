@@ -425,13 +425,6 @@ export function Settings({
                         {item.username}
                         {item.host && ` · ${item.host}`}
                       </p>
-                      {item.provider === 'gmail' && (
-                        <p className="muted">
-                          Gmail shows headers, folders and search for now.
-                          Opening messages, actions and sending arrive in later
-                          updates.
-                        </p>
-                      )}
                       <p className="muted">
                         <span
                           className={`status-dot ${item.status}`}

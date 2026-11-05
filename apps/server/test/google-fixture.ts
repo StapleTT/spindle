@@ -8,6 +8,8 @@ export type FakeMessage = {
   labels: Set<string>;
   internalDate: number;
   headers: Record<string, string>;
+  // Full RFC 5322 source for format=raw; defaults to the headers plus a body.
+  raw?: string;
 };
 export type Identity = { sub: string; email: string };
 
@@ -28,6 +30,8 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     historyId: 1000,
     minHistoryId: 0,
     failPageToken: false,
+    send: 'ok' as 'ok' | 'reject' | 'rate' | 'lost',
+    modifies: [] as { id: string; add: string[]; remove: string[] }[],
     // Gmail's per-user quota: 250 units/s, messages.get costs 5 units.
     getsPerSecond: 50,
     exhausted: false,
@@ -37,6 +41,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
   // Browser consent: approves as `state.consent` and returns to Spindle.
   const consent: { identity: Identity | null } = { identity: null };
   const window = { second: 0, count: 0 };
+  const sent: string[] = [];
   const app = Fastify();
   app.get<{ Querystring: Record<string, string> }>(
     '/auth',
@@ -169,8 +174,13 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
       return { messages: 'malformed' };
     }
     const after = Number(q?.match(/^after:(\d+)$/)?.[1] ?? 0) * 1000;
+    const rfc822 = q?.match(/^rfc822msgid:(.+)$/)?.[1];
     const ids = [...messages.entries()]
-      .filter(([, message]) => message.internalDate > after)
+      .filter(([, message]) =>
+        rfc822
+          ? message.headers['Message-Id'] === `<${rfc822}>`
+          : message.internalDate > after,
+      )
       .sort((a, b) => b[1].internalDate - a[1].internalDate)
       .map(([id]) => id);
     const offset = Number(pageToken ?? 0);
@@ -186,7 +196,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
   app.get<{ Params: { id: string }; Querystring: { format?: string } }>(
     '/gmail/messages/:id',
     async (request, reply) => {
-      assert.equal(request.query.format, 'metadata');
+      assert.ok(['metadata', 'raw'].includes(request.query.format ?? ''));
       const second = Math.floor(Date.now() / 1000);
       if (second !== window.second) Object.assign(window, { second, count: 0 });
       window.count++;
@@ -206,7 +216,120 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
       state.gets++;
       const message = messages.get(request.params.id);
       if (!message) return reply.code(404).send({ error: { code: 404 } });
+      if (request.query.format === 'raw')
+        return {
+          id: request.params.id,
+          raw: Buffer.from(
+            message.raw ??
+              `${Object.entries(message.headers)
+                .map(([name, value]) => `${name}: ${value}`)
+                .join(
+                  '\r\n',
+                )}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nSynthetic body for ${request.params.id}\r\n`,
+          ).toString('base64url'),
+        };
       return resource(request.params.id, message);
+    },
+  );
+  const known = new Set([
+    'INBOX',
+    'SENT',
+    'DRAFT',
+    'SPAM',
+    'TRASH',
+    'UNREAD',
+    'STARRED',
+    'IMPORTANT',
+    'CATEGORY_PERSONAL',
+    'Label_1',
+  ]);
+  const modified = (id: string, add: string[], remove: string[]) => {
+    const message = messages.get(id);
+    if (!message) return null;
+    for (const label of remove) message.labels.delete(label);
+    for (const label of add) message.labels.add(label);
+    const entry = { message: { id } };
+    record({
+      ...(add.length ? { labelsAdded: [{ ...entry, labelIds: add }] } : {}),
+      ...(remove.length
+        ? { labelsRemoved: [{ ...entry, labelIds: remove }] }
+        : {}),
+    });
+    state.modifies.push({ id, add, remove });
+    return resource(id, message);
+  };
+  app.post<{
+    Params: { id: string };
+    Body: { addLabelIds?: string[]; removeLabelIds?: string[] };
+  }>('/gmail/messages/:id/modify', async (request, reply) => {
+    if (state.exhausted)
+      return reply
+        .code(429)
+        .header('retry-after', '1')
+        .send({
+          error: { code: 429, errors: [{ reason: 'rateLimitExceeded' }] },
+        });
+    const add = request.body.addLabelIds ?? [];
+    const remove = request.body.removeLabelIds ?? [];
+    if (!add.length && !remove.length)
+      return reply.code(400).send({ error: { code: 400 } });
+    if ([...add, ...remove].some((label) => !known.has(label)))
+      return reply.code(400).send({ error: { code: 400 } });
+    return (
+      modified(request.params.id, add, remove) ??
+      reply.code(404).send({ error: { code: 404 } })
+    );
+  });
+  app.post<{ Params: { id: string } }>(
+    '/gmail/messages/:id/trash',
+    async (request, reply) =>
+      modified(request.params.id, ['TRASH'], ['INBOX']) ??
+      reply.code(404).send({ error: { code: 404 } }),
+  );
+  app.post<{ Params: { id: string } }>(
+    '/gmail/messages/:id/untrash',
+    async (request, reply) =>
+      modified(request.params.id, [], ['TRASH']) ??
+      reply.code(404).send({ error: { code: 404 } }),
+  );
+  app.get('/gmail/settings/sendAs', async () => ({
+    sendAs: [
+      {
+        sendAsEmail: 'owner@gmail.test',
+        displayName: 'Synthetic Owner',
+        isDefault: true,
+        isPrimary: true,
+      },
+    ],
+  }));
+  // Media upload of the exact MIME snapshot. `send` chooses the outcome.
+  app.addContentTypeParser(
+    'message/rfc822',
+    { parseAs: 'buffer', bodyLimit: 40 * 1024 * 1024 },
+    (_request, body, done) => done(null, body),
+  );
+  app.post<{ Body: Buffer; Querystring: { uploadType?: string } }>(
+    '/upload/gmail/messages/send',
+    async (request, reply) => {
+      assert.equal(request.query.uploadType, 'media');
+      const mode = state.send;
+      if (mode === 'reject')
+        return reply.code(400).send({ error: { code: 400 } });
+      if (mode === 'rate')
+        return reply.code(429).send({ error: { code: 429 } });
+      const id = `sent${sent.length}`;
+      sent.push(request.body.toString());
+      const messageId =
+        request.body.toString().match(/^Message-ID: (<[^>]+>)/im)?.[1] ?? '';
+      messages.set(id, {
+        labels: new Set(['SENT']),
+        internalDate: Date.now(),
+        headers: { 'Message-Id': messageId, Subject: 'sent' },
+      });
+      // Sent, but the response is lost: delivery must stay unknown.
+      if (mode === 'lost')
+        return reply.code(503).send({ error: { code: 503 } });
+      return { id, threadId: id, labelIds: ['SENT'] };
     },
   );
   app.get<{ Querystring: { startHistoryId: string } }>(
@@ -233,6 +356,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     revokeUrl: `${base}/revoke`,
     userinfoUrl: `${base}/userinfo`,
     gmailUrl: `${base}/gmail`,
+    uploadUrl: `${base}/upload/gmail`,
   };
   const record = (entry: Record<string, unknown>) => {
     state.historyId += 1;
@@ -242,6 +366,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     app,
     config,
     consent,
+    sent,
     codes,
     refreshTokens,
     revoked,

@@ -55,6 +55,8 @@ export const actionErrors: Record<string, string> = {
     'The original folder no longer exists. Sync will check your mail.',
   flags_changed:
     'Another mail client changed the read state before confirmation. Sync will check your mail.',
+  label_unsupported:
+    'Gmail manages Sent and Drafts itself, so messages cannot be moved there.',
   move_unconfirmed:
     'The provider did not confirm the move. It may already have happened; sync will check your mail. Review its current folder before moving it again.',
 };
@@ -68,7 +70,8 @@ export async function currentFolder(db: Db, owner: string, message: string) {
     await db.query<{ id: string; role: string | null }>(
       `SELECT b.id,b.role FROM mail_memberships mm JOIN mailboxes b
       ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=COALESCE(mm.pending_mailbox_id,mm.mailbox_id)
-      WHERE mm.user_id=$1 AND mm.message_id=$2 LIMIT 1`,
+      WHERE mm.user_id=$1 AND mm.message_id=$2
+      ORDER BY CASE WHEN b.role='inbox' THEN 0 WHEN b.role IS NULL THEN 1 ELSE 2 END,b.path LIMIT 1`,
       [owner, message],
     )
   ).rows[0];

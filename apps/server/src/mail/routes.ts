@@ -12,6 +12,7 @@ import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
 import { registerMailEvents } from './events.js';
 import { registerUploadRoutes } from './file-uploads.js';
+import { gmailSenderName } from './gmail-mail.js';
 import { registerGmailOAuthRoutes } from './gmail-oauth.js';
 import { type GoogleConfig, revokeUnusedGrants } from './google.js';
 import { registerNotificationRoutes } from './notifications.js';
@@ -162,51 +163,25 @@ export async function registerMailRoutes(
         .send({ message: 'Too many requests. Try again in a minute.' });
   });
 
-  // Gmail is read-only metadata until its reader/action/sending slices land;
-  // each slice removes its entries. Unowned IDs fall through to the route's 404.
-  const byMessage =
-    'SELECT a.provider FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id WHERE m.user_id=$1 AND m.id=$2';
-  const imapOnly: Record<string, string> = {
-    '/api/mail/messages/:id/actions': byMessage,
-    '/api/mail/messages/:id/content': byMessage,
-    '/api/mail/messages/:id/attachments/:index': byMessage,
-    '/api/mail/messages/:id/images': byMessage,
-    '/api/mail/messages/:id/compose': byMessage,
-    '/api/mail/accounts/:id/smtp':
-      'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
-    '/api/mail/accounts/:id/smtp/test':
-      'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
-    '/api/mail/drafts/:id/send':
-      'SELECT a.provider FROM mail_drafts d JOIN mail_accounts a ON a.user_id=d.user_id AND a.id=d.account_id WHERE d.user_id=$1 AND d.id=$2',
-  };
+  // Gmail sends through the Gmail API (D040), so SMTP settings do not apply.
+  // Unowned IDs fall through to the route's 404.
+  const imapOnly = new Set([
+    '/api/mail/accounts/:id/smtp',
+    '/api/mail/accounts/:id/smtp/test',
+  ]);
   app.addHook('preHandler', async (request, reply) => {
-    const url = request.routeOptions.url ?? '';
-    const lookup = imapOnly[url];
-    const gmail = lookup
-      ? (
-          await pool.query(lookup, [
-            request.mailUser,
-            (request.params as { id: string }).id,
-          ])
-        ).rows[0]?.provider === 'gmail'
-      : url === '/api/mail/batch-actions' &&
-        Boolean(
-          (
-            await pool.query(
-              `SELECT 1 FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
-               WHERE m.user_id=$1 AND m.id=ANY($2::uuid[]) AND a.provider='gmail' LIMIT 1`,
-              [
-                request.mailUser,
-                (request.body as { items: { messageId: string }[] }).items.map(
-                  (item) => item.messageId,
-                ),
-              ],
-            )
-          ).rowCount,
-        );
-    if (gmail)
+    if (
+      imapOnly.has(request.routeOptions.url ?? '') &&
+      (
+        await pool.query(
+          'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
+          [request.mailUser, (request.params as { id: string }).id],
+        )
+      ).rows[0]?.provider === 'gmail'
+    )
       return reply.code(409).send({
-        message: 'This is not available for Gmail accounts yet.',
+        message:
+          'Gmail accounts send through Gmail; SMTP settings do not apply.',
       });
   });
 
@@ -219,9 +194,10 @@ export async function registerMailRoutes(
     gmail: Boolean(google) && keys.keys.has(keys.active),
     accounts: (
       await pool.query(
-        `SELECT ${accountFields},${signatureField},(SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "smtpState",
-        (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS sender,
-        (SELECT display_name FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) AS "senderName",
+        `SELECT ${accountFields},${signatureField},
+        CASE WHEN a.provider='gmail' THEN 'ready' ELSE (SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS "smtpState",
+        CASE WHEN a.provider='gmail' THEN a.username ELSE (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS sender,
+        CASE WHEN a.provider='gmail' THEN ${gmailSenderName('a')} ELSE (SELECT display_name FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS "senderName",
         (SELECT count(*)::int FROM mailboxes b WHERE b.user_id=$1 AND b.account_id=a.id AND NOT b.initial_complete) AS "foldersRemaining"
        FROM mail_accounts a WHERE user_id=$1 ORDER BY sort_order NULLS LAST,created_at,id`,
         [request.mailUser],

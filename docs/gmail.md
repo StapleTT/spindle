@@ -2,15 +2,16 @@
 
 Gmail accounts connect with Google OAuth and sync through the Gmail REST API. Decision: [D038](decisions.md#d038--gmail-via-the-gmail-api-slice-1). Gmail ships in vertical slices, and each slice says exactly what works:
 
-| Slice               | Scope                                                                                                                                        | Status          |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| 1                   | Connect, reconnect and disconnect; labels as folders; read-only message list, counts and search over synced metadata; `history.list` polling | Implemented     |
-| 2 — reader          | `messages.get?format=raw` into the existing parse/sanitize/cache pipeline, plus attachments                                                  | Not implemented |
-| 3 — actions         | Read/unread, archive, trash, move/restore through `messages.modify` under the existing action/undo model                                     | Not implemented |
-| 4 — drafts, sending | `users.drafts.*` and `messages.send` with immutable-outbox semantics                                                                         | Not implemented |
-| 5 — push            | `users.watch` and Pub/Sub, once a public HTTPS domain exists (U05)                                                                           | Not implemented |
+| Slice                | Scope                                                                                                                              | Status                                        |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| 1                    | Connect, reconnect and disconnect; labels as folders; message list, counts and search over synced metadata; `history.list` polling | Implemented (D038)                            |
+| 2 — reader           | `messages.get?format=raw` into the shared parse/sanitize/cache pipeline, plus attachments and forwarded files                      | Implemented (D040)                            |
+| 3 — actions          | Read/unread, archive, trash, move and restore through `messages.modify`/`trash`/`untrash` under the shared action/undo model       | Implemented (D040)                            |
+| 4 — sending          | `messages.send` with immutable-outbox semantics, scheduling, Undo send and unknown-outcome protection                              | Implemented (D040)                            |
+| 4b — provider drafts | `users.drafts.*`: syncing Spindle drafts to Gmail and importing drafts written in Gmail                                            | Not implemented; drafts stay local in Spindle |
+| 5 — push             | `users.watch` and Pub/Sub, once a public HTTPS domain exists (U05)                                                                 | Not implemented                               |
 
-Until a slice lands, the matching API routes answer `409` with "This is not available for Gmail accounts yet." for Gmail messages and accounts: message content, attachments, images, actions, batch actions, reply/forward compose, SMTP settings/test and draft send. The reader shows "Opening Gmail messages arrives in the next update.", and its action and reply controls are disabled with that reason. Local drafts may still select a Gmail account; the composer explains that sending from Gmail is not available yet.
+Only SMTP settings and the SMTP test answer `409` for Gmail accounts ("Gmail accounts send through Gmail; SMTP settings do not apply."). Drafts written in Gmail's own interface are not imported, and Spindle drafts are not copied to Gmail's Drafts. Sent mail appears in Gmail's Sent label automatically.
 
 ## Google Cloud setup (SET02 checklist)
 
@@ -60,7 +61,7 @@ Google grants are per Google account and OAuth client, so revocation is skipped 
 
 ## Sync
 
-The worker owns all mailbox I/O. The dispatcher sends due Gmail accounts to the existing `mail-sync` queue, and the job branches on `provider`. IMAP-only queries (provider drafts, draft imports, outgoing, actions, content, attachments, forwarded files and IDLE) carry one shared `imapAccount` SQL fragment (`src/mail/store.ts`), so Gmail rows never reach an IMAP/SMTP connection.
+The worker owns all mailbox I/O. The dispatcher sends due Gmail accounts to the existing `mail-sync` queue, and the job branches on `provider`. Like IMAP sync, a Gmail sync job yields to pending user work (opening a message, an action, a send), and it also checks between pages, so an opened message waits at most one page. The IMAP-only queries (provider drafts, draft imports and SMTP checks) carry one shared `imapAccount` SQL fragment (`src/mail/store.ts`), and IDLE selects only IMAP accounts.
 
 Each job claims the account lease, refreshes an access token and lists labels. Label mapping:
 
@@ -68,11 +69,13 @@ Each job claims the account lease, refreshes an access token and lists labels. L
 | ----------------------------------------- | ---------------------------------------------------- | -------------------------------------------- |
 | `INBOX`, `SENT`, `DRAFT`, `SPAM`, `TRASH` | Inbox, Sent, Drafts, Spam, Trash                     | inbox, `\Sent`, `\Drafts`, `\Junk`, `\Trash` |
 | User labels                               | Label name (path is the label ID)                    | none                                         |
-| (synthetic) `[All Mail]`                  | All Mail: every message outside Spam and Trash       | `\All`                                       |
+| (synthetic) `[All Mail]`                  | Archive: mail with none of Inbox, Spam or Trash      | `\Archive`                                   |
 | `UNREAD`, `STARRED`                       | Flags: no `\Seen`, `\Flagged`; `DRAFT` adds `\Draft` | —                                            |
 | `IMPORTANT`, `CATEGORY_*`, `CHAT`         | Not mirrored                                         | —                                            |
 
-A message has one `mail_messages` row (`remote_key` is the Gmail message ID) and one membership per mirrored label. Gmail memberships have no IMAP UID. Removed labels delete only the local folder.
+A message has one `mail_messages` row (`remote_key` is the Gmail message ID) and one membership per mirrored label. Gmail memberships have no IMAP UID. Trash and Spam are exclusive: mail in either appears only there, as in Gmail. A history entry that takes mail out of Trash or Spam therefore refetches that message's labels instead of applying a local delta. Removed labels delete only the local folder.
+
+The `[All Mail]` path predates D040. Slice 1 used it for all mail outside Spam and Trash, which gave Spindle's Archive action no target. The first sync after upgrading recomputes memberships locally, with no Gmail requests, then renames the folder Archive with role `\Archive`. Gmail sync also stores the default "Send mail as" display name (`users.settings.sendAs`).
 
 The checkpoint is `mail_gmail_sync(history_id, page_token, initial_complete)`:
 
@@ -87,6 +90,49 @@ Quota: Gmail allows 250 units per user per second, and `messages.get` costs 5. A
 
 Committed changes fire the existing SSE triggers; lists, counts and search read only Postgres.
 
+## Reader
+
+Opening a message queues the shared `mail_content` row; nothing reaches Gmail from the API. The content job uses `ContentSource` (`content-worker.ts`): IMAP supplies UID-addressed fetches, and Gmail supplies `format=raw` (10 MiB limit, base64url decoded and bounded) plus `format=metadata` reply headers. The parse, sanitizer, isolated content origin, image proxy, 7-day cache and per-user limits are the same code for both.
+
+Attachments are listed from the raw message with the IMAP rules (Content-ID parts are embedded unless explicitly attached). Each attachment's position is stored as its `part`. A download or a forwarded file re-reads the raw message and takes that position, so the list and the download always agree, and Gmail's unstable `attachmentId` values are never stored. A `ponytail:` note covers switching to `attachments.get` if attachments larger than 10 MiB are needed. Reading never changes Gmail labels; the reader's one-second dwell creates an ordinary read action.
+
+## Actions
+
+Read/unread, archive, trash, move and restore use the shared durable intents: optimistic local state, five-second Undo, ordering, batches and keyboard triage. Only the provider step differs (`applyGmailActions` in `gmail-mail.ts`):
+
+| Intent                         | Gmail call                                                                      |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| Read / unread                  | `modify` removes / adds `UNREAD`                                                |
+| Archive                        | `modify` removes `INBOX` (and `SPAM`)                                           |
+| Trash                          | `trash`                                                                         |
+| Move to a label, Inbox or Spam | `modify` adds the target and removes the source label (Spam also removes Inbox) |
+| Restore                        | `untrash` when leaving Trash, then `modify` adds the original folder's label    |
+| Move to Sent or Drafts         | Refused with `label_unsupported`; Gmail manages those labels                    |
+
+Gmail returns the resulting labels, which become local memberships in the same transaction that settles the intent. Label changes, trash and untrash are idempotent, so a redelivered intent cannot duplicate mail; that is why there is no "move unconfirmed" state as there is for IMAP. A 404 means the message was deleted elsewhere (conflict `message_missing`). A 400 means the destination label was deleted (`folder_missing`). Rate limits pause the intent without spending one of its five attempts.
+
+A Gmail message can carry several labels, so the action's source folder is chosen in a fixed order: Inbox, then user labels, then the rest. Moving from a label view while the message is also in the Inbox therefore moves it out of the Inbox, which matches Gmail's "Move to".
+
+## Sending
+
+Composer, Undo send, Send later, attachments, scanning, limits and the immutable Outbox snapshot are unchanged. For a Gmail account, the send route uses fixed settings instead of a `mail_smtp` row:
+
+- The sender is the connected address.
+- The display name is Gmail's default "Send mail as" name, or the Spindle profile name before the first sync.
+- The account ID is the settings version.
+- The MIME snapshot keeps the `Bcc` header, because `messages.send` reads recipients from the headers and removes Bcc from the delivered copies; SMTP takes recipients from the envelope instead.
+
+The worker uploads the snapshot to `upload/.../messages/send?uploadType=media` exactly once (no automatic retry). It opens the Gmail client before marking the send as started, so token failures are known and retryable. Outcomes:
+
+| Gmail response                     | Outbox                                                                                                      |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 200 with a message ID              | `accepted` for every recipient; `sent_copy='saved'` (Gmail files Sent itself); draft removed                |
+| 429, or a pause before the request | Queued again (up to three attempts), nothing sent                                                           |
+| Other 4xx                          | `failed`, `gmail_rejected`; draft kept                                                                      |
+| 5xx, timeout or lost response      | `unknown`, never resent. Later passes search `rfc822msgid:` and record a found copy as `sent_copy='saved'`. |
+
+Gmail threads replies through `In-Reply-To`/`References` and the subject. Sending does not pass a `threadId` yet; a `ponytail:` note marks the multipart-upload upgrade if Gmail misthreads.
+
 ## Schema and rollout
 
 Migration `0035_gmail_accounts.sql` is additive apart from the membership key:
@@ -95,9 +141,11 @@ Migration `0035_gmail_accounts.sql` is additive apart from the membership key:
 - `mail_memberships`: the primary key becomes `(mailbox_id, message_id)`, which was already unique. `UNIQUE (mailbox_id, uid_validity, uid)` remains the IMAP conflict target. UIDs are nullable as a pair.
 - New tables `mail_gmail_sync`, `mail_gmail_listed` and `mail_oauth_states`, all cascading from their owner.
 
+Migration `0036_gmail_mail.sql` (D040) adds the nullable `mail_gmail_sync.display_name`. It is additive; keep it on rollback.
+
 Deploy: stop the old API and workers, run `npm run db:migrate`, then start the new API, worker and web together. Set the Google variables on both API and worker.
 
-Rollback: keep the migration (never edit or reverse it). Old workers and APIs assume a non-null host, so they must stay stopped while any Gmail account exists. Prefer a forward fix; otherwise disconnect the Gmail accounts before running older code. The export includes `provider` but never tokens.
+Rollback: keep the migrations (never edit or reverse them). Old workers and APIs assume a non-null host, so they must stay stopped while any Gmail account exists. A D038-only worker never sends or modifies Gmail mail. Rolling back to it leaves queued Gmail actions and sends pending, and it would keep showing inbox mail in the old All Mail folder until upgraded again. Prefer a forward fix; otherwise disconnect the Gmail accounts before running older code. The export includes `provider` but never tokens.
 
 ## Tests
 
@@ -110,6 +158,11 @@ Rollback: keep the migration (never edit or reverse it). Old workers and APIs as
 - A 1,600-entry label record applies with zero fetches.
 - Quota exhaustion pauses without an error state and resumes.
 - Display-name edits survive reconnect.
-- 409 refusals, worker routing that never dispatches IMAP work for Gmail, revocation after scheduled deletion, and disconnect that revokes only unshared grants.
+- The reader caches sanitized bodies and downloads attachments without changing Gmail labels, and replies compose from cached headers.
+- Read/unread, archive, restore, trash, restore-from-trash and move as label changes; a refused move to Sent; a conflict for mail deleted elsewhere.
+- Undo inside the grace period never reaches Gmail; quota pauses keep the attempt count and the optimistic read state.
+- Sending: sender name, `Bcc` header, Sent copy, rejection, rate limiting, and a lost response that stays unknown, is never resent and is later found in Sent.
+- The pre-D040 All Mail recompute needs no requests; leaving Trash refetches labels.
+- Worker routing (content first, then sync; no IMAP job for Gmail), revocation after scheduled deletion, and disconnect that revokes only unshared grants.
 
-`apps/web/test/gmail.browser.ts` drives Connect Gmail through a fake consent redirect, then checks the provider logos, renaming (Escape cancels and focus returns), the read-only reader and the Reconnect status. No real Google accounts, tokens or mail are used. Live acceptance needs the U07 setup above.
+`apps/web/test/gmail.browser.ts` drives Connect Gmail through a fake consent redirect, then checks the provider logos and renaming (Escape cancels and focus returns). It then opens a Gmail message, shows its fetched body, archives it from the reader and confirms the label change at the fake Gmail, and finally checks the Reconnect status. No real Google accounts, tokens or mail are used. Live acceptance needs the U07 setup above.

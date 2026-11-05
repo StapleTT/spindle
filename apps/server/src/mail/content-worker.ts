@@ -2,9 +2,16 @@ import type { Pool } from 'pg';
 import { trimContentCache } from './content-cache.js';
 import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
+import { gmailContentSource } from './gmail-mail.js';
+import type { GoogleConfig } from './google.js';
 import { connectImap } from './imap.js';
-import { listAttachments, MAX_ATTACHMENT_BYTES } from './media.js';
+import {
+  type AttachmentInfo,
+  listAttachments,
+  MAX_ATTACHMENT_BYTES,
+} from './media.js';
 import { MAX_RAW_BYTES, parseMessage, parseReplyHeaders } from './parse.js';
+import type { ReplyMetadata } from './reply.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import {
   claimAccount,
@@ -21,10 +28,85 @@ export type ContentJob = {
   attachment?: number;
 };
 
-type Located = { uid: string; uid_validity: string; path: string };
+export type Located = {
+  uid: string | null;
+  uid_validity: string | null;
+  path: string;
+  remote_key: string;
+};
 type Client = Awaited<ReturnType<typeof connectImap>>;
 
-const locate = `SELECT m.size_bytes,mm.uid,mm.uid_validity,b.path,c.attachments,c.state,c.reply_headers_pending
+// Provider fetches behind the shared cache, sanitizer and ownership writes.
+// IMAP and Gmail each supply these three reads (D040).
+export type ContentSource = {
+  replyHeaders(message: Located): Promise<ReplyMetadata>;
+  message(
+    message: Located,
+  ): Promise<{ source: Buffer; attachments: AttachmentInfo[] }>;
+  attachment(message: Located, part: string, max: number): Promise<Buffer>;
+};
+
+export function contentSource(
+  account: MailAccount,
+  keys: MailKeys,
+  connect: typeof connectImap,
+  google: GoogleConfig | null,
+): ContentSource {
+  if (account.provider === 'gmail')
+    return gmailContentSource(account, keys, google);
+  const within = <T>(
+    message: Located,
+    operation: (client: Client) => Promise<T>,
+  ) => withMailbox(account, keys, message, connect, operation);
+  return {
+    replyHeaders: (message) =>
+      within(message, async (client) => {
+        const fetched = await client.fetchOne(
+          String(message.uid),
+          {
+            headers: [
+              'from',
+              'to',
+              'cc',
+              'reply-to',
+              'subject',
+              'message-id',
+              'in-reply-to',
+              'references',
+            ],
+          },
+          { uid: true },
+        );
+        if (!fetched || !Buffer.isBuffer(fetched.headers))
+          throw new Error('Headers unavailable');
+        return parseReplyHeaders(fetched.headers);
+      }),
+    message: (message) =>
+      within(message, async (client) => {
+        const structure = await client.fetchOne(
+          String(message.uid),
+          { bodyStructure: true },
+          { uid: true },
+        );
+        if (!structure) throw new Error('Message unavailable');
+        return {
+          attachments: listAttachments(structure.bodyStructure),
+          source: await download(
+            client,
+            String(message.uid),
+            undefined,
+            MAX_RAW_BYTES,
+          ),
+        };
+      }),
+    attachment: (message, part, max) =>
+      within(message, (client) =>
+        download(client, String(message.uid), part, max),
+      ),
+  };
+}
+
+const locate = `SELECT m.size_bytes,m.remote_key,mm.uid,mm.uid_validity,b.path,c.attachments,c.state,c.reply_headers_pending
   FROM mail_content c JOIN mail_messages m ON m.user_id=c.user_id AND m.id=c.message_id
   JOIN mail_memberships mm ON mm.user_id=c.user_id AND mm.account_id=c.account_id AND mm.message_id=c.message_id
   JOIN mailboxes b ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=mm.mailbox_id
@@ -100,12 +182,14 @@ export async function fetchMessageContent(
   keys: MailKeys,
   job: ContentJob,
   connect = connectImap,
+  google: GoogleConfig | null = null,
 ) {
   if (job.attachment !== undefined)
-    return fetchAttachment(pool, keys, job, job.attachment, connect);
+    return fetchAttachment(pool, keys, job, job.attachment, connect, google);
   const { userId: owner, accountId, messageId, version } = job;
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
+  const source = contentSource(account, keys, connect, google);
   try {
     const message = (
       await pool.query(
@@ -134,33 +218,7 @@ export async function fetchMessageContent(
       );
     });
     if (message.state === 'ready' && message.reply_headers_pending) {
-      const metadata = await withMailbox(
-        account,
-        keys,
-        message,
-        connect,
-        async (client) => {
-          const fetched = await client.fetchOne(
-            String(message.uid),
-            {
-              headers: [
-                'from',
-                'to',
-                'cc',
-                'reply-to',
-                'subject',
-                'message-id',
-                'in-reply-to',
-                'references',
-              ],
-            },
-            { uid: true },
-          );
-          if (!fetched || !Buffer.isBuffer(fetched.headers))
-            throw new Error('Headers unavailable');
-          return parseReplyHeaders(fetched.headers);
-        },
-      );
+      const metadata = await source.replyHeaders(message);
       await withLease(pool, account, async (db) => {
         const encoded = JSON.stringify(metadata);
         const updated = await db.query(
@@ -189,30 +247,9 @@ export async function fetchMessageContent(
     }
     if (Number(message.size_bytes) > MAX_RAW_BYTES)
       throw new Error('Message size limit');
-    const { source, attachments } = await withMailbox(
-      account,
-      keys,
-      message,
-      connect,
-      async (client) => {
-        const structure = await client.fetchOne(
-          String(message.uid),
-          { bodyStructure: true },
-          { uid: true },
-        );
-        if (!structure) throw new Error('Message unavailable');
-        return {
-          attachments: listAttachments(structure.bodyStructure),
-          source: await download(
-            client,
-            String(message.uid),
-            undefined,
-            MAX_RAW_BYTES,
-          ),
-        };
-      },
-    );
-    const parsed = await parseMessage(source);
+    const fetched = await source.message(message);
+    const attachments = fetched.attachments;
+    const parsed = await parseMessage(fetched.source);
     await withLease(pool, account, async (db) => {
       const updated = await db.query(
         `UPDATE mail_content SET state='ready',plain_text=$5,html=$6,resources=$7,byte_size=$8,attachments=$9,reply_metadata=$10,
@@ -264,10 +301,12 @@ async function fetchAttachment(
   job: ContentJob,
   position: number,
   connect: typeof connectImap,
+  google: GoogleConfig | null,
 ) {
   const { userId: owner, accountId, messageId, version } = job;
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
+  const source = contentSource(account, keys, connect, google);
   // Every write requires the cached body version the attachment list came from.
   const attachmentRow = `FROM mail_content c WHERE t.user_id=$1 AND t.message_id=$3 AND t.position=$5
     AND t.state='pending' AND c.user_id=t.user_id AND c.message_id=t.message_id AND c.account_id=$2
@@ -295,9 +334,7 @@ async function fetchAttachment(
         [owner, messageId, position],
       );
     });
-    const data = await withMailbox(account, keys, message, connect, (client) =>
-      download(client, String(message.uid), part, MAX_ATTACHMENT_BYTES),
-    );
+    const data = await source.attachment(message, part, MAX_ATTACHMENT_BYTES);
     await withLease(pool, account, async (db) => {
       const updated = await db.query(
         `UPDATE mail_content_attachments t SET state='ready',data=$6 ${attachmentRow}`,

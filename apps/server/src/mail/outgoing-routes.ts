@@ -10,6 +10,7 @@ import {
   OUTGOING_STORAGE_BYTES,
   outgoingStorage,
 } from './file-storage.js';
+import { gmailSenderName } from './gmail-mail.js';
 import { composeOutgoing, outgoingMessage } from './outgoing-message.js';
 import { readMailPreferences } from './preferences.js';
 import {
@@ -277,17 +278,29 @@ export function registerOutgoingRoutes(
         if (!at) return null;
         const account = (
           await db.query(
-            'SELECT id FROM mail_accounts WHERE user_id=$1 AND id=$2 FOR UPDATE',
+            `SELECT a.id,a.provider,a.username,${gmailSenderName('a')} AS gmail_sender
+            FROM mail_accounts a WHERE a.user_id=$1 AND a.id=$2 FOR UPDATE OF a`,
             [owner, at.account_id],
           )
         ).rows[0];
         if (!account) return { error: 'Choose a connected sending account.' };
-        const smtp = (
-          await db.query(
-            'SELECT * FROM mail_smtp WHERE user_id=$1 AND account_id=$2',
-            [owner, at.account_id],
-          )
-        ).rows[0];
+        // Gmail sends through the Gmail API as the connected address (D040);
+        // the account ID versions its fixed settings.
+        const smtp =
+          account.provider === 'gmail'
+            ? {
+                state: 'ready',
+                version: account.id,
+                username: account.username,
+                display_name: defaultSenderName(account.gmail_sender),
+                save_sent_copy: true,
+              }
+            : (
+                await db.query(
+                  'SELECT * FROM mail_smtp WHERE user_id=$1 AND account_id=$2',
+                  [owner, at.account_id],
+                )
+              ).rows[0];
         if (smtp?.state !== 'ready')
           return {
             error:
@@ -371,6 +384,7 @@ export function registerOutgoingRoutes(
                 content: fileStream(db, owner, file.id),
               })),
               smtp.display_name,
+              account.provider === 'gmail',
             );
             stream = composed.compiled;
             message = {
@@ -386,6 +400,7 @@ export function registerOutgoingRoutes(
               draft.reply_context,
               draft.forward_content,
               smtp.display_name,
+              account.provider === 'gmail',
             );
         } catch (error) {
           return {
@@ -603,9 +618,13 @@ export function registerOutgoingRoutes(
                 }
               : 'refused';
           }
+          // Gmail's settings are fixed and versioned by the account ID (D040).
           const smtp = (
             await db.query(
-              'SELECT state,version FROM mail_smtp WHERE user_id=$1 AND account_id=$2',
+              `SELECT CASE WHEN a.provider='gmail' THEN 'ready' ELSE s.state END AS state,
+              CASE WHEN a.provider='gmail' THEN a.id ELSE s.version END AS version
+              FROM mail_accounts a LEFT JOIN mail_smtp s ON s.user_id=a.user_id AND s.account_id=a.id
+              WHERE a.user_id=$1 AND a.id=$2`,
               [owner, row.account_id],
             )
           ).rows[0];

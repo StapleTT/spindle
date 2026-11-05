@@ -25,7 +25,6 @@ type Account = {
   id: string;
   name: string;
   username: string;
-  provider?: 'imap' | 'gmail';
   smtpState?: string | null;
   sender?: string | null;
   senderName?: string | null;
@@ -401,9 +400,7 @@ export function Composer({
         )}
         {value.accountId && selectedAccount?.smtpState !== 'ready' && (
           <p className="notice">
-            {selectedAccount?.provider === 'gmail'
-              ? 'Sending from Gmail arrives in a later update. This draft stays saved in Spindle.'
-              : 'Configure outgoing SMTP for this account before sending.'}
+            Configure outgoing SMTP for this account before sending.
           </p>
         )}
         {selectedAccount?.smtpState === 'ready' && (

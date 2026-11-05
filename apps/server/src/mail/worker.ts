@@ -11,11 +11,14 @@ import { wakeSnoozedConversations } from './conversation-state.js';
 import type { MailKeys } from './credentials.js';
 import { cleanupUploads, fetchForwardFile, scanUpload } from './file-worker.js';
 import { syncGmailAccount } from './gmail.js';
+import { applyGmailActions } from './gmail-mail.js';
 import { type GoogleConfig, revokeUnusedGrants } from './google.js';
 import { watchInbox } from './idle.js';
+import { connectImap } from './imap.js';
 import { MAX_ATTACHMENTS } from './media.js';
 import { processOutgoing } from './outgoing-worker.js';
 import { syncProviderDrafts } from './provider-drafts.js';
+import { connectSmtp } from './smtp.js';
 import { imapAccount, transaction } from './store.js';
 import { syncAccount } from './sync.js';
 import { contentPending } from './work-pending.js';
@@ -129,7 +132,7 @@ export async function startMailWorker(
       AND (state='cancelled' OR (state='accepted' AND sent_copy IN ('saved','unavailable','failed')))`);
     const outgoing =
       await pool.query(`SELECT user_id,account_id FROM mail_smtp WHERE state='pending' AND ${imapAccount('mail_smtp.user_id', 'mail_smtp.account_id')} AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_smtp.user_id AND u.email_verified AND NOT u.suspended)
-      UNION SELECT user_id,account_id FROM mail_outbox WHERE account_id IS NOT NULL AND ${imapAccount('mail_outbox.user_id', 'mail_outbox.account_id')} AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_outbox.user_id AND u.email_verified AND NOT u.suspended) AND
+      UNION SELECT user_id,account_id FROM mail_outbox WHERE account_id IS NOT NULL AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_outbox.user_id AND u.email_verified AND NOT u.suspended) AND
       ((state='queued' AND next_attempt_at<=clock_timestamp()) OR state='sending' OR
        (state IN ('accepted','partial','unknown') AND sent_copy IN ('pending','appending','unknown') AND next_attempt_at<=clock_timestamp())) LIMIT 100`);
     for (const row of outgoing.rows)
@@ -140,7 +143,7 @@ export async function startMailWorker(
       );
     const actions =
       await pool.query(`SELECT DISTINCT user_id,account_id FROM mail_actions
-      WHERE state='pending' AND next_attempt_at<=clock_timestamp() AND ${imapAccount('mail_actions.user_id', 'mail_actions.account_id')} AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_actions.user_id AND u.email_verified AND NOT u.suspended) LIMIT 100`);
+      WHERE state='pending' AND next_attempt_at<=clock_timestamp() AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_actions.user_id AND u.email_verified AND NOT u.suspended) LIMIT 100`);
     // Actions share the content queue so each worker keeps two provider connections at most.
     for (const row of actions.rows)
       await boss.send(
@@ -150,7 +153,7 @@ export async function startMailWorker(
       );
     for (const row of (
       await pool.query(`SELECT f.user_id,f.id,f.source->>'accountId' AS account_id FROM mail_uploads f JOIN users u ON u.id=f.user_id
-      WHERE f.state='pending_fetch' AND ${imapAccount('f.user_id', "f.source->>'accountId'")} AND u.email_verified AND NOT u.suspended LIMIT 100`)
+      WHERE f.state='pending_fetch' AND u.email_verified AND NOT u.suspended LIMIT 100`)
     ).rows)
       await boss.send(
         'mail-content',
@@ -164,7 +167,7 @@ export async function startMailWorker(
       );
     const pending =
       await pool.query(`SELECT user_id,account_id,message_id,version FROM mail_content
-      WHERE (state='pending' OR reply_headers_pending) AND ${imapAccount('mail_content.user_id', 'mail_content.account_id')} AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_content.user_id AND u.email_verified AND NOT u.suspended) AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
+      WHERE (state='pending' OR reply_headers_pending) AND EXISTS(SELECT 1 FROM users u WHERE u.id=mail_content.user_id AND u.email_verified AND NOT u.suspended) AND next_attempt_at<=clock_timestamp() ORDER BY next_attempt_at LIMIT 100`);
     for (const row of pending.rows)
       await boss.send(
         'mail-content',
@@ -179,7 +182,7 @@ export async function startMailWorker(
     const attachments =
       await pool.query(`SELECT t.user_id,t.account_id,t.message_id,t.position,c.version
       FROM mail_content_attachments t JOIN mail_content c ON c.user_id=t.user_id AND c.message_id=t.message_id
-      WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=t.user_id AND u.email_verified AND NOT u.suspended) AND ${imapAccount('t.user_id', 't.account_id')} AND t.state='pending' AND t.next_attempt_at<=clock_timestamp() ORDER BY t.next_attempt_at LIMIT 100`);
+      WHERE EXISTS(SELECT 1 FROM users u WHERE u.id=t.user_id AND u.email_verified AND NOT u.suspended) AND t.state='pending' AND t.next_attempt_at<=clock_timestamp() ORDER BY t.next_attempt_at LIMIT 100`);
     for (const row of attachments.rows)
       await boss.send(
         'mail-content',
@@ -197,9 +200,7 @@ export async function startMailWorker(
       WHERE a.next_sync_at<=clock_timestamp() AND (a.lease_until IS NULL OR a.lease_until<clock_timestamp())
       AND u.email_verified AND NOT u.suspended ORDER BY a.next_sync_at LIMIT 100`);
     for (const account of due.rows) {
-      // Gmail has no user-requested provider work yet (D038 slice 1).
       if (
-        account.provider === 'imap' &&
         (await pool.query(contentPending, [account.user_id, account.id]))
           .rowCount
       )
@@ -251,6 +252,13 @@ export async function startMailWorker(
           [data.userId, data.accountId],
         )
       ).rows[0]?.provider;
+      if (provider !== 'imap' && provider !== 'gmail') return;
+      // User-requested content, actions and sends outrank metadata work.
+      if (
+        (await pool.query(contentPending, [data.userId, data.accountId]))
+          .rowCount
+      )
+        return;
       if (provider === 'gmail') {
         if (data.kind !== 'idle')
           await syncGmailAccount(
@@ -262,12 +270,6 @@ export async function startMailWorker(
           );
         return;
       }
-      if (provider !== 'imap') return;
-      if (
-        (await pool.query(contentPending, [data.userId, data.accountId]))
-          .rowCount
-      )
-        return;
       if (data.kind === 'idle') {
         const changed = await watchInbox(
           pool,
@@ -319,12 +321,30 @@ export async function startMailWorker(
             userId,
             accountId,
             data.fileId ?? '',
+            connectImap,
+            google,
           );
         if (data.kind === 'provider-drafts')
           return syncProviderDrafts(pool, keys, userId, accountId);
         return data.kind === 'outgoing'
-          ? processOutgoing(pool, keys, userId, accountId)
-          : applyMailActions(pool, keys, userId, accountId);
+          ? processOutgoing(
+              pool,
+              keys,
+              userId,
+              accountId,
+              connectSmtp,
+              connectImap,
+              google,
+            )
+          : // Provider-specific step only; intents, undo and settling are shared.
+            (
+                await pool.query(
+                  'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
+                  [userId, accountId],
+                )
+              ).rows[0]?.provider === 'gmail'
+            ? applyGmailActions(pool, keys, google, userId, accountId)
+            : applyMailActions(pool, keys, userId, accountId);
       }
       if (
         !data ||
@@ -342,7 +362,7 @@ export async function startMailWorker(
           ))
       )
         throw new Error('Invalid content job');
-      await fetchMessageContent(pool, keys, data);
+      await fetchMessageContent(pool, keys, data, connectImap, google);
     },
   );
   await boss.work<{ userId: string; fileId: string }>(

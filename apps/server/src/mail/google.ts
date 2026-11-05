@@ -22,6 +22,7 @@ export function readGoogleConfig(env: NodeJS.ProcessEnv = process.env) {
     revokeUrl: 'https://oauth2.googleapis.com/revoke',
     userinfoUrl: 'https://openidconnect.googleapis.com/v1/userinfo',
     gmailUrl: 'https://gmail.googleapis.com/gmail/v1/users/me',
+    uploadUrl: 'https://gmail.googleapis.com/upload/gmail/v1/users/me',
   };
 }
 
@@ -43,12 +44,29 @@ export class GoogleError extends Error {
 const enumLike = (value: unknown) =>
   typeof value === 'string' && /^[A-Za-z_]{1,64}$/.test(value) ? value : '';
 
+export type GoogleRequest = RequestInit & {
+  token?: string;
+  form?: Record<string, string>;
+  json?: unknown;
+  // Raw upload (message/rfc822 for Gmail send).
+  upload?: { type: string; data: Buffer };
+  maxBytes?: number;
+  timeout?: number;
+};
+
 export async function googleJson<T>(
   url: string,
-  init: RequestInit & { token?: string; form?: Record<string, string> } = {},
-  timeout = 10000,
+  init: GoogleRequest = {},
 ): Promise<T> {
-  const { token, form, ...rest } = init;
+  const {
+    token,
+    form,
+    json,
+    upload,
+    maxBytes = 4 * 1024 * 1024,
+    timeout = 10000,
+    ...rest
+  } = init;
   const response = await fetch(url, {
     ...rest,
     redirect: 'error',
@@ -57,11 +75,17 @@ export async function googleJson<T>(
       accept: 'application/json',
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...(form ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+      ...(json !== undefined ? { 'content-type': 'application/json' } : {}),
+      ...(upload ? { 'content-type': upload.type } : {}),
     },
     ...(form ? { method: 'POST', body: new URLSearchParams(form) } : {}),
+    ...(json !== undefined
+      ? { method: 'POST', body: JSON.stringify(json) }
+      : {}),
+    ...(upload ? { method: 'POST', body: new Uint8Array(upload.data) } : {}),
   });
   const text = await response.text();
-  if (text.length > 4 * 1024 * 1024) throw new GoogleError(502, 'too_large');
+  if (text.length > maxBytes) throw new GoogleError(502, 'too_large');
   let body: unknown = null;
   try {
     body = text ? JSON.parse(text) : null;
