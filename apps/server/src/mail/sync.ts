@@ -11,7 +11,7 @@ import {
   type Mailbox,
   withLease,
 } from './store.js';
-import { contentPending } from './work-pending.js';
+import { bodyPending } from './work-pending.js';
 
 const UID_BATCH = 500;
 
@@ -196,9 +196,9 @@ export async function syncAccount(
     });
     const deadline = Date.now() + 30000;
     for (let batch = 0; batch < 10 && Date.now() < deadline; batch++) {
-      // Opening a message or an action outranks another metadata batch; the
+      // A reader waiting on a body outranks another metadata batch; the
       // remaining folders stay due and resume after the user's work.
-      if ((await pool.query(contentPending, [owner, id])).rowCount) break;
+      if ((await pool.query(bodyPending, [owner, id])).rowCount) break;
       const box = (
         await pool.query<Mailbox>(
           `SELECT * FROM mailboxes WHERE user_id=$1 AND account_id=$2

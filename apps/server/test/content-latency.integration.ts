@@ -29,7 +29,6 @@ test('requested bodies are fetched promptly, even during IDLE and sync', {
     }),
   });
   const app = testApp(pool, testConfig, undefined, keys);
-  t.after(() => app.close());
   const owner = await createTestUser(
     app,
     pool,
@@ -65,10 +64,15 @@ test('requested bodies are fetched promptly, even during IDLE and sync', {
   boss.on('error', () => undefined);
   await boss.start();
   const stop = await startMailWorker(boss, pool, keys);
+  // Later suites share this database: stop the worker, then remove the
+  // synthetic owner (cascading its account, mirror and cached bodies).
   t.after(async () => {
     stop();
     await boss.stop({ graceful: false });
+    await pool.query('DELETE FROM users WHERE id=$1', [owner.id]);
   });
+  // Registered last: closing the app also ends the shared pool.
+  t.after(() => app.close());
   const until = async (check: () => Promise<boolean>, limit = 60000) => {
     const started = Date.now();
     while (!(await check())) {

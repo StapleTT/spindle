@@ -14,7 +14,7 @@ import { parseReplyHeaders } from './parse.js';
 import { defaultSenderName } from './smtp.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import { text, upsertMessage, validDate } from './sync.js';
-import { contentPending } from './work-pending.js';
+import { bodyPending } from './work-pending.js';
 
 type GmailMessage = {
   id?: unknown;
@@ -555,8 +555,8 @@ export async function syncGmailAccount(
       await reconcileConversationState(db, owner, id, anchors);
     };
     while (Date.now() < deadline) {
-      // Opening a message or an action outranks another metadata page.
-      if ((await pool.query(contentPending, [owner, id])).rowCount) break;
+      // A reader waiting on a body outranks another metadata page.
+      if ((await pool.query(bodyPending, [owner, id])).rowCount) break;
       const state = (
         await pool.query<{
           history_id: string | null;

@@ -21,7 +21,7 @@ import { syncProviderDrafts } from './provider-drafts.js';
 import { connectSmtp } from './smtp.js';
 import { imapAccount, transaction } from './store.js';
 import { syncAccount } from './sync.js';
-import { contentPending } from './work-pending.js';
+import { bodyPending, contentPending } from './work-pending.js';
 
 type ActionJob = {
   kind: 'actions' | 'outgoing' | 'draft-attachment' | 'provider-drafts';
@@ -259,12 +259,16 @@ export async function startMailWorker(
       )
         throw new Error('Invalid mail job');
       if (shutdown.signal.aborted) return;
+      // Only a watch or sync that actually ran can have held the lease a
+      // waiting body needed; an early return must not kick, or IDLE jobs and
+      // dispatches would chase each other while an action sits in its grace.
+      let ran = false;
       try {
-        await metadata(data);
+        ran = await metadata(data);
       } finally {
-        // A watch or sync that yielded left user work waiting on its lease.
         if (
-          (await pool.query(contentPending, [data.userId, data.accountId]))
+          ran &&
+          (await pool.query(bodyPending, [data.userId, data.accountId]))
             .rowCount
         )
           kick();
@@ -275,7 +279,7 @@ export async function startMailWorker(
     accountId: string;
     userId: string;
     kind?: 'idle';
-  }) {
+  }): Promise<boolean> {
     {
       const provider = (
         await pool.query(
@@ -283,23 +287,17 @@ export async function startMailWorker(
           [data.userId, data.accountId],
         )
       ).rows[0]?.provider;
-      if (provider !== 'imap' && provider !== 'gmail') return;
+      if (provider !== 'imap' && provider !== 'gmail') return false;
       // User-requested content, actions and sends outrank metadata work.
       if (
         (await pool.query(contentPending, [data.userId, data.accountId]))
           .rowCount
       )
-        return;
+        return false;
       if (provider === 'gmail') {
-        if (data.kind !== 'idle')
-          await syncGmailAccount(
-            pool,
-            keys,
-            google,
-            data.userId,
-            data.accountId,
-          );
-        return;
+        if (data.kind === 'idle') return false;
+        await syncGmailAccount(pool, keys, google, data.userId, data.accountId);
+        return true;
       }
       if (data.kind === 'idle') {
         const changed = await watchInbox(
@@ -315,9 +313,10 @@ export async function startMailWorker(
           (await pool.query(contentPending, [data.userId, data.accountId]))
             .rowCount
         )
-          return;
+          return true;
       }
       await syncAccount(pool, keys, data.userId, data.accountId);
+      return true;
     }
   }
   await boss.work<ContentJob | ActionJob>(

@@ -468,7 +468,8 @@ Fix, without new dependencies:
 
 - Append migration 0037: a `spindle_mail_work` NOTIFY fires when a body or attachment is newly requested or retried. The worker LISTENs on its own connection (one per worker process, re-established after errors) and dispatches.
 - pg-boss `useListenNotify` and per-queue `notify` wake the dispatch and content queues.
-- A metadata job that yields to user work dispatches again at once, and IMAP sync now yields between batches.
+- A metadata job that yields to user work dispatches again at once.
+- IMAP sync now yields between batches when a body or attachment is waiting. Actions do not trigger the mid-job yield, because they sit in a five-second undo window; they still prevent a new sync from starting, as before.
 - The reader reloads on the committed SSE content change.
 - Gmail access tokens are reused from worker memory until five minutes before expiry. They are never stored, a reconnect invalidates them, and a 401 retries once with a fresh token.
 
