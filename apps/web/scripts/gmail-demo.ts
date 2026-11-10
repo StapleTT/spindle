@@ -157,27 +157,29 @@ await step('read and unread', async () => {
 
 await step('archive and undo', async () => {
   await caption('Archive removes the Inbox label in Gmail…', 800);
+  // The drawer's Archive folder shares the name; the reader button has the command.
   await page
     .getByRole('button', { name: 'Archive', exact: true })
-    .first()
+    .and(page.locator('[data-mail-command="archive"]'))
     .click();
-  await pause();
-  await caption('…and every action can be undone for five seconds.', 600);
+  // Undo lasts five seconds, so click it before the caption pause.
+  await pause(1200);
   await page
     .getByRole('button', { name: /^Undo:/ })
     .first()
     .click();
-  await pause();
+  await caption('…and every action can be undone for five seconds.');
 });
 
 await step('trash and restore', async () => {
   await openInbox(page);
-  const row = page
-    .getByRole('list', { name: 'Messages' })
-    .getByRole('listitem')
-    .filter({ hasText: subject })
-    .first();
-  await row.hover();
+  const row = () =>
+    page
+      .getByRole('list', { name: 'Messages' })
+      .getByRole('listitem')
+      .filter({ hasText: subject })
+      .first();
+  await row().hover();
   await caption(
     'Trash moves a message to Gmail’s Trash. Spindle never permanently deletes mail.',
     800,
@@ -186,23 +188,27 @@ await step('trash and restore', async () => {
     .getByRole('button', { name: `Move “${subject}” to trash` })
     .click();
   await pause();
+  // The account's Trash folder (not the unified view) offers Restore.
   await page
-    .getByRole('button', { name: /^Trash/ })
+    .getByRole('button', { name: /^Trash \(\d+ unread \/ \d+\)$/ })
     .first()
     .click();
+  await row().hover();
   await caption('Restore brings it back from Trash.', 800);
-  const restore = page.getByRole('button', { name: `Restore “${subject}”` });
-  await restore.first().hover();
-  await restore.first().click();
+  await page
+    .getByRole('button', { name: `Restore “${subject}”` })
+    .first()
+    .click();
   await pause();
 });
 
 await step('search', async () => {
   await openInbox(page);
   const word = subject.split(/\s+/).find((item) => item.length > 3) ?? subject;
+  const search = page.locator('#mail-search');
   await caption('Search runs over mail already synced to Spindle.', 600);
-  await page.getByLabel('Search mail').pressSequentially(word, { delay: 80 });
-  await page.getByLabel('Search mail').press('Enter');
+  await search.pressSequentially(word, { delay: 80 });
+  await search.press('Enter');
   await pause(2500);
   await page.getByRole('button', { name: 'Clear search', exact: true }).click();
 });
