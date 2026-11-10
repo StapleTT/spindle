@@ -20,6 +20,7 @@
     "db:migrate": "tsx --env-file-if-exists=.env apps/server/scripts/migrate.ts",
     "auth:invite": "tsx --env-file-if-exists=.env apps/server/scripts/invite.ts",
     "test:integration": "tsx --env-file-if-exists=.env apps/server/scripts/test-auth.ts",
+    "demo:gmail": "tsx --env-file-if-exists=.env apps/web/scripts/gmail-demo.ts",
     "test:browser": "tsx --env-file-if-exists=.env apps/server/scripts/test-auth.ts --browser",
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
