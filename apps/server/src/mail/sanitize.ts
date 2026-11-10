@@ -8,7 +8,7 @@ export type ImageResource =
   | { kind: 'inline'; cid: string };
 
 // Cached content revision: bump when stored body/attachment metadata changes shape.
-export const SANITIZER_VERSION = 3;
+export const SANITIZER_VERSION = 4;
 
 function stylesFrom(html: string) {
   const styles: string[] = [];
@@ -149,6 +149,7 @@ const policy: sanitizeHtml.IOptions = {
     'iframe',
     'object',
     'template',
+    'title',
   ],
   nestingLimit: 40,
   // Style attributes have already passed our CSS parser; do not parse/serialize them again.

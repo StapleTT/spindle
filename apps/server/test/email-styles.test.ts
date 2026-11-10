@@ -4,7 +4,7 @@ import { sanitizeCss } from '../src/mail/css.js';
 import { renderMessage, sanitizeMessage } from '../src/mail/sanitize.js';
 
 test('newsletter styles, responsive rules and legacy table/image layout survive both sanitization passes', () => {
-  const source = `<html><head><style>
+  const source = `<html><head><title>Hidden document title</title><style>
     body.brand { margin:0; font-family:Arial,sans-serif; background-color:#eef2f6 }
     .newsletter { width:600px; border-collapse:collapse }
     .title { color:#123456; font-size:28px }
@@ -26,6 +26,7 @@ test('newsletter styles, responsive rules and legacy table/image layout survive 
     ),
   ]) {
     assert.match(html, /<style>/);
+    assert.doesNotMatch(html, /Hidden document title/);
     assert.match(html, /@media only screen and \(max-width:480px\)/);
     assert.match(html, /\.spindle-email-body\.brand/);
     assert.match(html, /width:100%!important/);

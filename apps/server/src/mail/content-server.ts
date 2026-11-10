@@ -92,7 +92,7 @@ function htmlDocument(html: string, theme: 'light' | 'dark' = 'light') {
   const authoredPalette =
     /\b(?:color|background(?:-color)?)\s*:|\b(?:bgcolor|color)\s*=/i.test(html);
   const dark = theme === 'dark' && !authoredPalette;
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.55 system-ui,sans-serif;margin:0;color:${dark ? '#ececec' : '#202124'};background:${dark ? '#222222' : '#f1f2f7'};overflow-wrap:anywhere}a{color:${dark ? '#a9b5f5' : '#3e56c2'}}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font:16px/1.55 system-ui,sans-serif;margin:0;color:${dark ? '#ececec' : '#202124'};background:${dark ? '#222222' : '#f1f2f7'};overflow-wrap:break-word}a{color:${dark ? '#a9b5f5' : '#3e56c2'}}img{max-width:100%}pre{white-space:pre-wrap}</style></head><body>${html}</body></html>`;
 }
 
 export function bodyUrl(
