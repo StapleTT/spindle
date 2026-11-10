@@ -1,7 +1,5 @@
-import alternateEmail from '@material-symbols/svg-400/rounded/alternate_email.svg';
 import arrowForward from '@material-symbols/svg-400/rounded/arrow_forward.svg';
 import bolt from '@material-symbols/svg-400/rounded/bolt.svg';
-import businessCenter from '@material-symbols/svg-400/rounded/business_center.svg';
 import check from '@material-symbols/svg-400/rounded/check.svg';
 import cloud from '@material-symbols/svg-400/rounded/cloud.svg';
 import contentCopy from '@material-symbols/svg-400/rounded/content_copy.svg';
@@ -16,7 +14,6 @@ import inbox from '@material-symbols/svg-400/rounded/inbox.svg';
 import key from '@material-symbols/svg-400/rounded/key.svg';
 import lightMode from '@material-symbols/svg-400/rounded/light_mode.svg';
 import lock from '@material-symbols/svg-400/rounded/lock.svg';
-import mail from '@material-symbols/svg-400/rounded/mail.svg';
 import notificationsActive from '@material-symbols/svg-400/rounded/notifications_active.svg';
 import outbox from '@material-symbols/svg-400/rounded/outbox.svg';
 import search from '@material-symbols/svg-400/rounded/search.svg';
@@ -67,10 +64,8 @@ if (
 
 // Only icons imported here are bundled; add one before using a new data-icon.
 const icons: Record<string, string> = {
-  alternate_email: alternateEmail,
   arrow_forward: arrowForward,
   bolt: bolt,
-  business_center: businessCenter,
   check: check,
   cloud: cloud,
   content_copy: contentCopy,
@@ -85,7 +80,6 @@ const icons: Record<string, string> = {
   key: key,
   light_mode: lightMode,
   lock: lock,
-  mail: mail,
   notifications_active: notificationsActive,
   outbox: outbox,
   search: search,

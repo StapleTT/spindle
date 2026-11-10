@@ -175,37 +175,6 @@ a.brand:hover {
   gap: 28px;
   text-align: center;
 }
-.hero-chip {
-  height: 36px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 0 16px 0 8px;
-  border-radius: 18px;
-  background: var(--surf-hi);
-  color: var(--on-var);
-  font-size: 14px;
-  font-weight: 500;
-}
-.dots {
-  display: flex;
-  gap: 3px;
-}
-.dots i {
-  width: 10px;
-  height: 10px;
-  border-radius: 5px;
-  background: var(--a1);
-}
-.dots i:nth-child(2) {
-  background: var(--a2);
-}
-.dots i:nth-child(3) {
-  background: var(--a3);
-}
-.dots i:nth-child(4) {
-  background: var(--a4);
-}
 .hero h1 {
   max-width: 14ch;
   font-size: clamp(44px, 7vw, 84px);
@@ -480,6 +449,18 @@ a.brand:hover {
 }
 .providers li .icon {
   font-size: 22px;
+}
+/* Provider brand marks keep their own colours (docs/design.md#provider-logos). */
+.providers .provider-logo {
+  width: 28px;
+  height: 22px;
+  object-fit: contain;
+}
+.providers .provider-wordmark {
+  height: 20px;
+}
+.providers .soon img {
+  filter: grayscale(1);
 }
 .providers small {
   color: var(--on-var);
