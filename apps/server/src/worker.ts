@@ -40,7 +40,9 @@ try {
   await pool.query('SELECT id FROM mail_accounts LIMIT 0');
   await pool.query('SELECT message_id FROM mail_content LIMIT 0');
   await boss.start();
-  stopMail = await startMailWorker(boss, pool, keys, google);
+  stopMail = await startMailWorker(boss, pool, keys, google, {
+    prefetch: true,
+  });
   logger.info('Worker ready for private mail synchronization');
   if (!keys.keys.size)
     logger.warn('Mailbox connections require mail encryption configuration');

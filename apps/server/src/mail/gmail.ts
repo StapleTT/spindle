@@ -368,6 +368,7 @@ export async function openGmail(
   };
 }
 
+// Resolves true when the pass completed, false when it could not run, paused or failed.
 export async function syncGmailAccount(
   pool: Pool,
   keys: MailKeys,
@@ -376,7 +377,7 @@ export async function syncGmailAccount(
   id: string,
 ) {
   const account = await claimAccount(pool, owner, id);
-  if (!account) return;
+  if (!account) return false;
   // The 90-second lease outlives the soft deadline plus one bounded page.
   const started = Date.now();
   const deadline = started + 40000;
@@ -791,6 +792,7 @@ export async function syncGmailAccount(
         [owner, id, account.sync_request, Boolean(state?.done)],
       );
     });
+    return true;
   } catch (error) {
     if (error instanceof GmailPause) {
       await pool.query(
@@ -799,7 +801,7 @@ export async function syncGmailAccount(
          WHERE user_id=$1 AND id=$2 AND lease_token=$3 AND lease_until>clock_timestamp()`,
         [owner, id, account.lease_token, error.delaySeconds],
       );
-      return;
+      return false;
     }
     // Revoked or expired consent needs the user; other failures back off.
     const reconnect = needsReconnect(error);
@@ -833,5 +835,6 @@ export async function syncGmailAccount(
             Math.floor(Math.random() * 15),
       ],
     );
+    return false;
   }
 }

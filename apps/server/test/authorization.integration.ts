@@ -378,6 +378,10 @@ test('route-wide authorization matrix', {
       body: { retry: false },
       foreign: 'deny',
     },
+    'POST /api/mail/messages/:id/prefetch': {
+      guard: 'session',
+      foreign: 'deny',
+    },
     'POST /api/mail/messages/:id/attachments/:index': {
       guard: 'session',
       url: `/api/mail/messages/${ids.message}/attachments/0`,

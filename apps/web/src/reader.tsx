@@ -22,6 +22,7 @@ import {
   type MailAction,
   MailApiError,
   mailApi,
+  prefetchContent,
   requestAction,
   type Undoable,
 } from './mail-api.js';
@@ -238,7 +239,12 @@ export function Reader({
   actionRevision: number;
   userId: string;
 }) {
-  const liveRevision = useMailRevision(['mail', 'accounts', 'actions']);
+  const liveRevision = useMailRevision([
+    'mail',
+    'content',
+    'accounts',
+    'actions',
+  ]);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -296,7 +302,7 @@ export function Reader({
       if (timer) clearTimeout(timer);
       void load();
     };
-    const unsubscribe = subscribeMailChanges(['mail'], wake);
+    const unsubscribe = subscribeMailChanges(['mail', 'content'], wake);
     setDetail(null);
     setError('');
     setImages(false);
@@ -318,13 +324,18 @@ export function Reader({
         setDetail(current);
         setImages(current.content.images ?? false);
         if (current.content.state === 'missing' && !requested) {
-          await mailApi(`messages/${id}/content`, {
-            method: 'POST',
-            body: '{}',
-            signal: controller.signal,
-          });
+          const { state } = await mailApi<{ state: string }>(
+            `messages/${id}/content`,
+            { method: 'POST', body: '{}', signal: controller.signal },
+          );
           requested = true;
+          // Cached since the read above (background prefetch): show it now.
+          if (state === 'ready') return load();
         }
+        // Next and Previous then open from the cache.
+        if (current.content.state === 'ready')
+          for (const neighbour of [current.next, current.previous])
+            if (neighbour) prefetchContent(neighbour);
         if (
           current.content.state === 'missing' ||
           current.content.state === 'pending'

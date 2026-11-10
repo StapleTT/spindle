@@ -474,3 +474,19 @@ Fix, without new dependencies:
 - Gmail access tokens are reused from worker memory until five minutes before expiry. They are never stored, a reconnect invalidates them, and a 401 retries once with a fresh token.
 
 The timer, polling and the minute schedule remain fallbacks. Result: about 0.4 s quiet and 1.2–1.8 s during a 4,000-message sync, plus provider fetch time. The IMAP TLS connection per body job is unchanged; reuse it if login time dominates. A per-worker body concurrency of one also stays unchanged, to preserve the two-connection budget.
+
+## D042 — bodies cached before they are opened
+
+Status: requested by the user on 2026-11-09 ("How can we make emails load in under 1 second when clicked, all the time?", then "Do steps 1 and 2"). This replaces the lazy-only retrieval and the seven-day expiry of the reader decision above; the 128 MiB / 1,000-message budget is unchanged.
+
+D041 shortened dispatch, but a first open still paid a provider connection and a full download. Only a body already in Postgres opens instantly.
+
+- **Worker prefetch:** after each completed metadata sync the same job runs one bounded pass (15 seconds) that downloads the account's newest uncached messages, newest first. It uses the on-demand source, parser, sanitizer and cache writes, so a prefetched body is identical to an opened one. IMAP uses one connection for the pass. A failed or paused sync skips the pass and keeps its backoff. Remaining candidates bring the next sync forward.
+- **Priority:** prefetch runs in the metadata slot, so the content queue and the two-connection budget are untouched. It never starts while the account has pending user work, writes no pending rows and fires no `spindle_mail_work` notification. A reader's request ends a running pass within about a second.
+- **What is cached:** the cache keeps its least-recently-used eviction. A prefetched row ranks by its message's received time and an opened row by its last access. A message is prefetched only while the rows ranked above it leave room for it, so prefetch cannot evict a body and then fetch it again. Trash and Junk mail and messages over the 10 MiB raw limit are fetched on demand only.
+- **Expiry:** ready bodies no longer expire by age. With prefetch an expired body would simply be downloaded again, so the budget is the bound. Migration 0038 lifts the expiry of existing ready bodies. Failed requests still expire.
+- **Failures:** a body prefetch cannot fetch is recorded as a failed row with code `prefetch_unavailable` and retried after a day. The reader treats that row as missing and requests the body itself, so the user only ever sees the result of a real attempt.
+- **Events:** body-cache changes notify a new `content` SSE topic instead of `mail`. Only the reader and active searches listen, so continuous background caching does not refetch every open list or spend the read rate budget.
+- **Client:** the reader requests its Previous and Next messages once its own body is shown, and the list requests a row after the pointer or keyboard focus rests on it. These use `POST /api/mail/messages/:id/prefetch`, the same deduplicated request as opening, on its own rate-limit bucket.
+
+Consequences: up to the budget, recent mail is held in Postgres continuously instead of only after opening, and body search covers it. Mail outside the budget, in Trash or Junk, or opened before its first prefetch pass still takes the on-demand path. See [reader](reader.md#prefetch).

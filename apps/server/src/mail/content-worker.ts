@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { trimContentCache } from './content-cache.js';
 import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
@@ -46,18 +46,15 @@ export type ContentSource = {
   attachment(message: Located, part: string, max: number): Promise<Buffer>;
 };
 
-export function contentSource(
-  account: MailAccount,
-  keys: MailKeys,
-  connect: typeof connectImap,
-  google: GoogleConfig | null,
-): ContentSource {
-  if (account.provider === 'gmail')
-    return gmailContentSource(account, keys, google);
-  const within = <T>(
+// IMAP reads through `within`, which supplies a client with the message's
+// mailbox selected read-only: a fresh connection per user request, or one
+// shared connection for a prefetch pass.
+export function imapSource(
+  within: <T>(
     message: Located,
     operation: (client: Client) => Promise<T>,
-  ) => withMailbox(account, keys, message, connect, operation);
+  ) => Promise<T>,
+): ContentSource {
   return {
     replyHeaders: (message) =>
       within(message, async (client) => {
@@ -106,6 +103,19 @@ export function contentSource(
   };
 }
 
+export function contentSource(
+  account: MailAccount,
+  keys: MailKeys,
+  connect: typeof connectImap,
+  google: GoogleConfig | null,
+): ContentSource {
+  if (account.provider === 'gmail')
+    return gmailContentSource(account, keys, google);
+  return imapSource((message, operation) =>
+    withMailbox(account, keys, message, connect, operation),
+  );
+}
+
 const locate = `SELECT m.size_bytes,m.remote_key,mm.uid,mm.uid_validity,b.path,c.attachments,c.state,c.reply_headers_pending
   FROM mail_content c JOIN mail_messages m ON m.user_id=c.user_id AND m.id=c.message_id
   JOIN mail_memberships mm ON mm.user_id=c.user_id AND mm.account_id=c.account_id AND mm.message_id=c.message_id
@@ -115,6 +125,25 @@ const leased = (
   token: string,
 ) => `EXISTS(SELECT 1 FROM mail_accounts a JOIN users u ON u.id=a.user_id
   WHERE a.id=$2 AND a.user_id=$1 AND a.lease_token=${token} AND a.lease_until>clock_timestamp() AND u.email_verified AND NOT u.suspended)`;
+
+// Non-mutating access to one message's mailbox on an open connection.
+export async function inMailbox<T>(
+  client: Client,
+  message: Located,
+  operation: (client: Client) => Promise<T>,
+) {
+  const lock = await client.getMailboxLock(message.path, { readOnly: true });
+  try {
+    if (
+      !client.mailbox ||
+      String(client.mailbox.uidValidity) !== message.uid_validity
+    )
+      throw new Error('Message identity changed');
+    return await operation(client);
+  } finally {
+    lock.release();
+  }
+}
 
 export async function withMailbox<T>(
   account: MailAccount,
@@ -129,21 +158,34 @@ export async function withMailbox<T>(
   );
   const timer = setTimeout(() => client.close(), 45000);
   try {
-    const lock = await client.getMailboxLock(message.path, { readOnly: true });
-    try {
-      if (
-        !client.mailbox ||
-        String(client.mailbox.uidValidity) !== message.uid_validity
-      )
-        throw new Error('Message identity changed');
-      return await operation(client);
-    } finally {
-      lock.release();
-    }
+    return await inMailbox(client, message, operation);
   } finally {
     clearTimeout(timer);
     client.close();
   }
+}
+
+// After a body row became ready, inside the transaction that wrote it:
+// conversation references, inline images and the owner's cache budget.
+export async function publishContent(
+  db: PoolClient,
+  owner: string,
+  accountId: string,
+  messageId: string,
+  parsed: Awaited<ReturnType<typeof parseMessage>>,
+) {
+  await db.query(
+    'UPDATE mail_messages SET reference_ids=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
+    [owner, accountId, messageId, parsed.reply.references],
+  );
+  await reconcileConversationState(db, owner, accountId, [messageId]);
+  for (const image of parsed.images)
+    await db.query(
+      `INSERT INTO mail_content_images(user_id,account_id,message_id,position,content_type,data)
+        VALUES($1,$2,$3,$4,$5,$6)`,
+      [owner, accountId, messageId, image.position, image.type, image.data],
+    );
+  await trimContentCache(db, owner, messageId);
 }
 
 async function download(
@@ -253,7 +295,7 @@ export async function fetchMessageContent(
     await withLease(pool, account, async (db) => {
       const updated = await db.query(
         `UPDATE mail_content SET state='ready',plain_text=$5,html=$6,resources=$7,byte_size=$8,attachments=$9,reply_metadata=$10,
-        sanitizer_version=${SANITIZER_VERSION},reply_headers_pending=false,error_code=NULL,expires_at=clock_timestamp()+interval '7 days',accessed_at=clock_timestamp()
+        sanitizer_version=${SANITIZER_VERSION},reply_headers_pending=false,error_code=NULL,expires_at='infinity',accessed_at=clock_timestamp()
         WHERE user_id=$1 AND account_id=$2 AND message_id=$3 AND version=$4 AND state='pending' RETURNING message_id`,
         [
           owner,
@@ -268,19 +310,8 @@ export async function fetchMessageContent(
           JSON.stringify(parsed.reply),
         ],
       );
-      if (!updated.rowCount) return;
-      await db.query(
-        'UPDATE mail_messages SET reference_ids=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
-        [owner, accountId, messageId, parsed.reply.references],
-      );
-      await reconcileConversationState(db, owner, accountId, [messageId]);
-      for (const image of parsed.images)
-        await db.query(
-          `INSERT INTO mail_content_images(user_id,account_id,message_id,position,content_type,data)
-        VALUES($1,$2,$3,$4,$5,$6)`,
-          [owner, accountId, messageId, image.position, image.type, image.data],
-        );
-      await trimContentCache(db, owner, messageId);
+      if (updated.rowCount)
+        await publishContent(db, owner, accountId, messageId, parsed);
     });
   } catch {
     await pool.query(

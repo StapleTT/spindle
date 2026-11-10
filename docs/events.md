@@ -11,7 +11,7 @@ retry: 5000
 
 id: <stream-uuid>:1
 event: reset
-data: {"topics":["mail","accounts","actions","outbox","drafts","files","searches"]}
+data: {"topics":["mail","accounts","actions","outbox","drafts","files","searches","content"]}
 
 id: <stream-uuid>:2
 event: change
@@ -59,3 +59,10 @@ All 177 integration tests passed; the focused SSE API suite passed again after i
 Full-browser, live-provider, production proxy and large deployment/load acceptance remain pending. The knowledge graph is marked stale for a later rebuild.
 
 Send later migration 0024 extends Outbox invalidation to committed schedule/revision changes; it introduces no new SSE topic.
+
+
+## Content topic — 2026-11-09
+
+Body-cache and attachment-download changes (`mail_content`, `mail_content_attachments`) notify the `content` topic instead of `mail` (migration 0038, D042). Background prefetch commits these rows continuously, and under `mail` each one made every open list refetch and spent the per-user read budget. The reader and its waiting state subscribe to `content`; the message list subscribes only while a search is active, because body terms, attachment filters and coverage depend on cached bodies. Lists, counts, conversations, notifications and recipient suggestions do not.
+
+Deploy the migration with the API and web app together. An older API ignores the unknown topic and an older open tab ignores frames that contain it; both recover through the existing reader poll and list polling until reloaded.

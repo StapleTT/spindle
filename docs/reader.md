@@ -1,6 +1,6 @@
 # Message reader
 
-Open any synchronized message to read its cached body. Format selection is automatic: plain-only messages display escaped plain text; messages with HTML display their isolated sanitized formatting. There is no manual format switch. Previous/next follows the current account/folder view across list pages. **Back to message list** preserves that list's filters and page. Browser Back/Forward and message links use the URL fragment. Slow requests for a previously selected message cannot replace the current one.
+Open any synchronized message to read its cached body. Recent mail is cached before it is opened ([prefetch](#prefetch)); other mail is fetched when opened. Format selection is automatic: plain-only messages display escaped plain text; messages with HTML display their isolated sanitized formatting. There is no manual format switch. Previous/next follows the current account/folder view across list pages. **Back to message list** preserves that list's filters and page. Browser Back/Forward and message links use the URL fragment. Slow requests for a previously selected message cannot replace the current one.
 
 Body fetching uses IMAP's non-mutating download and a read-only mailbox lock. The web reader separately queues the existing durable read action after one continuous second of foreground viewing of loaded content (D033); listing or fetching mail alone does not change provider flags. Explicit read/unread, move and reply controls remain available. Attachments are listed and downloaded on demand (see below).
 
@@ -22,13 +22,13 @@ Terminate TLS at the proxy and forward that hostname to the content listener. Ex
 
 ## Retrieval and cache behavior
 
-An authenticated POST records a deduplicated body request in Postgres. The existing pg-boss dispatcher recovers pending requests after restart. Body work takes the same expiring account lease as metadata sync, validates ownership/verified identity and rechecks mailbox UIDVALIDITY before downloading the UID. Pending body requests take priority over another metadata pass. One metadata and one body job run concurrently per worker; account leases serialize work for the same account.
+For a body that is not cached yet, an authenticated POST records a deduplicated body request in Postgres. The existing pg-boss dispatcher recovers pending requests after restart. Body work takes the same expiring account lease as metadata sync, validates ownership/verified identity and rechecks mailbox UIDVALIDITY before downloading the UID. Pending body requests take priority over another metadata pass. One metadata and one body job run concurrently per worker; account leases serialize work for the same account.
 
 Latency (D041): a new body or attachment request fires a `spindle_mail_work` notification at commit (migration 0037). Only transitions into pending fire, so worker writes never loop. The worker LISTENs on its own connection and dispatches at once, and pg-boss wakes the dispatch and content queues over LISTEN/NOTIFY (`useListenNotify`). Metadata work yields to the request: IMAP IDLE within about a second, IMAP sync between folder batches, Gmail sync between pages. Whichever job yields dispatches again immediately, instead of waiting for the 5-second timer, which remains the fallback alongside polling. The reader reloads on the committed content change (SSE), with its 1.5-second poll as the fallback. With synthetic local IMAP, measured request-to-cache times fell from about 5 s to 0.4 s with IDLE holding the lease, and from 8.8 s to about 1.2–1.8 s during a 4,000-message sync. Provider fetch time is extra: TLS login per IMAP body job, or one Gmail request using an access token reused from worker memory.
 
 Only the worker contacts IMAP for bodies. The API exposes missing/pending/ready/failed states; the reader polls while waiting and provides explicit retry after failure. Cached reading works while the provider or worker is unavailable. Failed retrieval never clears synchronized headers. Disconnect, deleted membership, lease takeover, changed cache version and account removal prevent stale fetches from recreating content.
 
-The first cache uses existing Postgres storage for bounded parsed text/HTML and supported inline/image blobs. It stores no raw MIME; attachment files are cached only after their owner requests a download. Entries expire seven days after retrieval and are removed by the worker's dispatcher. Each user has a 128 MiB / 1,000-message cache budget; least-recently-accessed entries are evicted first. Eviction removes downloaded copies, preserving synchronized metadata and provider mail. Versions invalidate old content grants when an entry is replaced. Access does not extend its seven-day expiry.
+The first cache uses existing Postgres storage for bounded parsed text/HTML and supported inline/image blobs. It stores no raw MIME; attachment files are cached only after their owner requests a download. Each user has a 128 MiB / 1,000-message cache budget; least-recently-accessed entries are evicted first. Ready entries do not expire by age (D042); failed requests expire after seven days, or one day for a failed prefetch, and are removed by the worker's dispatcher. Eviction removes downloaded copies, preserving synchronized metadata and provider mail. Versions invalidate old content grants when an entry is replaced.
 
 Limits are enforced before publishing a ready entry:
 
@@ -39,6 +39,30 @@ Limits are enforced before publishing a ready entry:
 - Connection setup and connected IMAP work retain their existing timeouts; connected body work is closed after 45 seconds. Parser input, node count and output are bounded; HTML sanitization limits nesting to 40.
 
 Mail content is private application data in Postgres, without separate application-layer encryption for the body cache. Protect database access, volumes and backups accordingly. Hosted KMS/object-storage/operational acceptance remain release gates; this implementation adds no object-store service.
+
+## Prefetch
+
+Bodies are cached before they are opened (D042), so opening recent mail reads Postgres only.
+
+After each completed metadata sync, the worker spends up to 15 seconds downloading the account's newest uncached messages, newest first, through the same source, parser, sanitizer and cache writes as an opened message. IMAP uses one connection per pass. New mail is therefore cached right after the sync that discovers it, including syncs triggered by IDLE. A backlog continues on the following syncs, which are brought forward while candidates remain. A failed or paused sync skips the pass.
+
+Prefetch is background work:
+
+- It runs in the metadata slot, never starts while the account has pending user work and wakes no worker.
+- A reader's body or attachment request ends a running pass within about a second; the pass resumes afterwards.
+- It does not change provider flags, and prefetched mail stays unread until the reader's one-second viewing rule marks it.
+
+The cache budget decides what is kept. A prefetched entry ranks by its message's received time, an opened entry by its last access, and the lowest-ranked entries are evicted first. A message is prefetched only while the entries ranked above it leave room, so prefetch settles on the newest mail plus what was recently read instead of evicting and refetching. Prefetch skips Trash and Junk mail and messages over the 10 MiB raw limit; those are fetched when opened.
+
+A body that prefetch could not fetch is retried after a day. Until then the reader treats it as not cached and fetches it on opening, so any error shown comes from a real attempt.
+
+The web app adds two requests for mail prefetch has not reached: the reader asks for its Previous and Next messages once its own body is shown, and the list asks for a row when the pointer or keyboard focus rests on it for 150 ms. Both use `POST /api/mail/messages/:id/prefetch`, the same owned, deduplicated request as opening a message, limited to 120 per minute separately from reader actions.
+
+Still fetched on opening: mail beyond the budget, Trash and Junk, and mail opened before its first prefetch pass. Those opens cost a provider round trip as before (D041).
+
+`0038_content_prefetch.sql` lifts the expiry of existing ready bodies and moves body-cache notifications to their own [`content` event topic](events.md#content-topic--2026-11-09), so background caching does not make open lists refetch. It changes no tables. Apply it and deploy the API, worker and web app together. For application rollback keep the data: older code reads those rows as unexpired and resumes lazy fetching.
+
+Proof (2026-11-09): `prefetch.integration.ts` on synthetic IMAP covers caching without any request or worker wake-up, received-time ranking, Trash exclusion, inline images and attachment lists, byte-for-byte equality with on-demand content, the failed-prefetch path, the prefetch route's ownership and rate bucket, new-mail caching, a reader request served in under five seconds during a 1,200-message backlog, and a full 1,000-entry cache that stays unchanged across further passes. Locally a pass stored about 11 bodies per second. Real-provider timing has not been measured.
 
 ## Attachments
 

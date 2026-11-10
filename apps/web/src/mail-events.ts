@@ -8,6 +8,8 @@ export const mailTopics = [
   'drafts',
   'files',
   'searches',
+  // Body cache and attachment downloads: the reader and body search only.
+  'content',
 ] as const;
 type Topic = (typeof mailTopics)[number];
 const changed = 'spindle:mail-changed';

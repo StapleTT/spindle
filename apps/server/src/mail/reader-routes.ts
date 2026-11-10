@@ -12,7 +12,7 @@ import {
   settle,
   withSeen,
 } from './actions.js';
-import { trimContentCache } from './content-cache.js';
+import { PREFETCH_FAILED, trimContentCache } from './content-cache.js';
 import type { ContentConfig } from './content-config.js';
 import { attachmentUrl, bodyUrl } from './content-server.js';
 import {
@@ -37,6 +37,9 @@ const params = {
   properties: { id: { type: 'string', format: 'uuid' } },
   additionalProperties: false,
 };
+// A usable cache row. A failed background prefetch (D042) is not one: the
+// reader requests the body itself, exactly as if it had never been fetched.
+const fresh = `expires_at>clock_timestamp() AND (state<>'ready' OR sanitizer_version=${SANITIZER_VERSION}) AND error_code IS DISTINCT FROM '${PREFETCH_FAILED}'`;
 const view = {
   type: 'object',
   properties: {
@@ -166,7 +169,7 @@ export function registerReaderRoutes(
       const cached = (
         await pool.query(
           `UPDATE mail_content SET accessed_at=clock_timestamp() WHERE user_id=$1 AND message_id=$2
-      RETURNING *,expires_at>clock_timestamp() AND (state<>'ready' OR sanitizer_version=${SANITIZER_VERSION}) AS fresh`,
+      RETURNING *,${fresh} AS fresh`,
           [owner, id],
         )
       ).rows[0];
@@ -214,7 +217,6 @@ export function registerReaderRoutes(
                         !preferences.blockRemoteImages,
                       )
                     : null,
-                expiresAt: cached.expires_at,
                 attachments: (cached.attachments as AttachmentInfo[]).map(
                   ({ filename, contentType, size }, index) => ({
                     index,
@@ -476,6 +478,40 @@ export function registerReaderRoutes(
     },
   );
 
+  // Records a deduplicated body request for the worker and reports the cache
+  // state: 'ready' and waiting rows are returned unchanged.
+  async function requestContent(owner: string, id: string, retry: boolean) {
+    return transaction(pool, async (db) => {
+      await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
+      const message = (
+        await db.query(
+          `SELECT m.account_id FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
+        AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=m.id)`,
+          [owner, id],
+        )
+      ).rows[0];
+      if (!message) return null;
+      const cached = (
+        await db.query(
+          `SELECT *,${fresh} AS fresh FROM mail_content WHERE user_id=$1 AND message_id=$2 FOR UPDATE`,
+          [owner, id],
+        )
+      ).rows[0];
+      if (cached?.fresh && (cached.state !== 'failed' || !retry))
+        return cached.state as string;
+      await db.query(
+        'DELETE FROM mail_content WHERE user_id=$1 AND message_id=$2',
+        [owner, id],
+      );
+      await db.query(
+        'INSERT INTO mail_content(user_id,account_id,message_id) VALUES($1,$2,$3)',
+        [owner, message.account_id, id],
+      );
+      await trimContentCache(db, owner, id);
+      return 'pending';
+    });
+  }
+
   app.post<{ Params: { id: string }; Body: { retry?: boolean } }>(
     '/api/mail/messages/:id/content',
     {
@@ -489,37 +525,31 @@ export function registerReaderRoutes(
       },
     },
     async (request, reply) => {
-      const owner = request.mailUser ?? '';
-      const id = request.params.id;
-      const result = await transaction(pool, async (db) => {
-        await db.query('SELECT id FROM users WHERE id=$1 FOR UPDATE', [owner]);
-        const message = (
-          await db.query(
-            `SELECT m.account_id FROM mail_messages m WHERE m.user_id=$1 AND m.id=$2
-        AND EXISTS(SELECT 1 FROM mail_memberships mm WHERE mm.user_id=$1 AND mm.message_id=m.id)`,
-            [owner, id],
-          )
-        ).rows[0];
-        if (!message) return null;
-        const cached = (
-          await db.query(
-            `SELECT *,expires_at>clock_timestamp() AND (state<>'ready' OR sanitizer_version=${SANITIZER_VERSION}) AS fresh FROM mail_content WHERE user_id=$1 AND message_id=$2 FOR UPDATE`,
-            [owner, id],
-          )
-        ).rows[0];
-        if (cached?.fresh && (cached.state !== 'failed' || !request.body.retry))
-          return cached.state as string;
-        await db.query(
-          'DELETE FROM mail_content WHERE user_id=$1 AND message_id=$2',
-          [owner, id],
-        );
-        await db.query(
-          'INSERT INTO mail_content(user_id,account_id,message_id) VALUES($1,$2,$3)',
-          [owner, message.account_id, id],
-        );
-        await trimContentCache(db, owner, id);
-        return 'pending';
-      });
+      const result = await requestContent(
+        request.mailUser ?? '',
+        request.params.id,
+        Boolean(request.body.retry),
+      );
+      if (!result)
+        return reply.code(404).send({ message: 'Message not found.' });
+      return reply
+        .code(result === 'pending' ? 202 : 200)
+        .send({ state: result });
+    },
+  );
+
+  // The same request for a message the user is likely to open next (reader
+  // neighbours, a hovered or focused row). Its own rate-limit bucket keeps
+  // speculative requests from spending the reader's.
+  app.post<{ Params: { id: string } }>(
+    '/api/mail/messages/:id/prefetch',
+    { schema: { params } },
+    async (request, reply) => {
+      const result = await requestContent(
+        request.mailUser ?? '',
+        request.params.id,
+        false,
+      );
       if (!result)
         return reply.code(404).send({ message: 'Message not found.' });
       return reply

@@ -180,6 +180,40 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
         directImages.push(request.url());
     });
     await page.goto(`${config.appUrl}/inbox`);
+    // D042: resting on a row, and a shown message's neighbour, are cached
+    // before they are opened.
+    const cachedBody = async (id: string) => {
+      for (let i = 0; i < 200; i++) {
+        if (
+          (
+            await pool.query(
+              "SELECT 1 FROM mail_content WHERE message_id=$1 AND state='ready'",
+              [id],
+            )
+          ).rowCount
+        )
+          return true;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      return false;
+    };
+    const rested = (
+      await pool.query(
+        'SELECT id FROM mail_messages WHERE user_id=$1 AND subject=$2',
+        [owner.id, 'Reader message 30'],
+      )
+    ).rows[0].id;
+    await page.locator(`[data-message-row="${rested}"]`).hover();
+    assert.ok(await cachedBody(rested), 'rested-on row is cached');
+    assert.equal(
+      (
+        await pool.query(
+          'SELECT 1 FROM mail_content WHERE message_id=ANY($1::uuid[])',
+          [[newest, next]],
+        )
+      ).rowCount,
+      0,
+    );
     await page
       .getByRole('link', { name: 'Reader message 50', exact: true })
       .click();
@@ -190,6 +224,17 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await frame().getByText('Formatted body 50', { exact: true }).waitFor();
     assert.equal(await frame().locator('img').count(), 0);
     assert.equal(imageCalls, 0);
+    // Requested as soon as this body was shown. Not awaited to completion:
+    // lingering here would trip the one-second automatic read.
+    assert.equal(
+      (
+        await pool.query('SELECT 1 FROM mail_content WHERE message_id=$1', [
+          next,
+        ])
+      ).rowCount,
+      1,
+      'next message is requested unopened',
+    );
     assert.equal(await frame().locator('#preheader').isVisible(), false);
     const title = frame().locator('.newsletter-title');
     assert.equal(

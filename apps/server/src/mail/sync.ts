@@ -145,6 +145,7 @@ async function saveMessage(
   return { uid: mail.uid, id };
 }
 
+// Resolves true when the pass completed, false when it could not run or failed.
 export async function syncAccount(
   pool: Pool,
   keys: MailKeys,
@@ -153,7 +154,7 @@ export async function syncAccount(
   connect = connectImap,
 ) {
   const account = await claimAccount(pool, owner, id);
-  if (!account) return;
+  if (!account) return false;
   let client: Awaited<ReturnType<typeof connectImap>> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -339,6 +340,7 @@ export async function syncAccount(
         [owner, id, account.sync_request],
       );
     });
+    return true;
   } catch {
     // Retry scheduling is durable and provider errors never enter logs or queue payloads.
     await pool.query(
@@ -353,6 +355,7 @@ export async function syncAccount(
           Math.floor(Math.random() * 15),
       ],
     );
+    return false;
   } finally {
     if (timer) clearTimeout(timer);
     client?.close();

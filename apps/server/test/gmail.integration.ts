@@ -10,6 +10,7 @@ import { syncGmailAccount } from '../src/mail/gmail.js';
 import { applyGmailActions } from '../src/mail/gmail-mail.js';
 import { connectImap } from '../src/mail/imap.js';
 import { processOutgoing } from '../src/mail/outgoing-worker.js';
+import { prefetchAccount } from '../src/mail/prefetch.js';
 import { connectSmtp } from '../src/mail/smtp.js';
 import { startMailWorker } from '../src/mail/worker.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
@@ -780,6 +781,66 @@ test('Gmail OAuth connection, sync, reader, actions and sending', {
         { id: randomUUID(), kind: 'reply' },
       );
       assert.equal(reply.statusCode, 201, reply.body);
+    },
+  );
+
+  await t.test(
+    'prefetch caches Gmail bodies exactly as opening them does',
+    async () => {
+      const body = async () =>
+        (
+          await pool.query(
+            'SELECT state,plain_text,html,resources,attachments,reply_metadata,sanitizer_version FROM mail_content WHERE message_id=$1',
+            [rich],
+          )
+        ).rows[0];
+      const opened = await body();
+      assert.equal(opened.state, 'ready');
+      await pool.query('DELETE FROM mail_content WHERE account_id=$1', [
+        accountA,
+      ]);
+      await cleared();
+      await prefetchAccount(pool, keys, google.config, owner.id, accountA);
+      assert.deepEqual(await body(), opened);
+      // Every message outside Trash and Spam is cached; nothing else is.
+      const rows = (
+        await pool.query(
+          `SELECT c.state,c.expires_at='infinity' AS kept,c.accessed_at=m.received_at AS ranked,
+          EXISTS(SELECT 1 FROM mail_memberships mm JOIN mailboxes b ON b.id=mm.mailbox_id
+            WHERE mm.message_id=m.id AND b.role IS DISTINCT FROM '\\Trash' AND b.role IS DISTINCT FROM '\\Junk') AS wanted
+          FROM mail_messages m LEFT JOIN mail_content c ON c.message_id=m.id WHERE m.account_id=$1`,
+          [accountA],
+        )
+      ).rows;
+      assert.ok(rows.some((row) => row.wanted));
+      for (const row of rows)
+        assert.deepEqual(
+          row,
+          row.wanted
+            ? { state: 'ready', kept: true, ranked: true, wanted: true }
+            : { state: null, kept: null, ranked: null, wanted: false },
+        );
+      // Prefetching never marks mail read at Gmail or holds the account.
+      assert.ok(google.messages.get('rich')?.labels.has('UNREAD'));
+      assert.deepEqual(google.state.modifies, []);
+      assert.equal(
+        (
+          await pool.query(
+            'SELECT 1 FROM mail_accounts WHERE id=$1 AND lease_token IS NULL',
+            [accountA],
+          )
+        ).rowCount,
+        1,
+      );
+      // A second pass finds nothing left to do.
+      const gets = google.state.gets;
+      await prefetchAccount(pool, keys, google.config, owner.id, accountA);
+      assert.equal(google.state.gets, gets);
+      // Later subtests request bodies themselves.
+      await pool.query(
+        'DELETE FROM mail_content WHERE account_id=$1 AND message_id<>$2',
+        [accountA, rich],
+      );
     },
   );
 

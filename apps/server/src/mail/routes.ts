@@ -139,9 +139,14 @@ export async function registerMailRoutes(
                 ? 'send'
                 : request.routeOptions.url?.startsWith('/api/mail/drafts')
                   ? 'draft'
-                  : request.routeOptions.url?.startsWith('/api/mail/messages/')
-                    ? 'reader'
-                    : 'write',
+                  : request.routeOptions.url ===
+                      '/api/mail/messages/:id/prefetch'
+                    ? 'prefetch'
+                    : request.routeOptions.url?.startsWith(
+                          '/api/mail/messages/',
+                        )
+                      ? 'reader'
+                      : 'write',
         request.routeOptions.url?.startsWith('/api/mail/contacts')
           ? 120
           : request.method === 'GET'
@@ -152,9 +157,14 @@ export async function registerMailRoutes(
                 ? 10
                 : request.routeOptions.url?.startsWith('/api/mail/drafts')
                   ? 120
-                  : request.routeOptions.url?.startsWith('/api/mail/messages/')
-                    ? 60
-                    : 10,
+                  : request.routeOptions.url ===
+                      '/api/mail/messages/:id/prefetch'
+                    ? 120
+                    : request.routeOptions.url?.startsWith(
+                          '/api/mail/messages/',
+                        )
+                      ? 60
+                      : 10,
       ))
     )
       return reply

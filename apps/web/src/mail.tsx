@@ -58,7 +58,12 @@ import {
   unarchive,
 } from './icons.js';
 import { KeyboardTriage } from './keyboard-triage.js';
-import { mailApi as api, requestAction, type Undoable } from './mail-api.js';
+import {
+  mailApi as api,
+  prefetchContent,
+  requestAction,
+  type Undoable,
+} from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
 import { OpenNotifications } from './notifications.js';
 import { Outbox, OutboxFeedback, useOutbox } from './outbox.js';
@@ -164,6 +169,7 @@ export function Mail({
     null,
   );
   const focusNext = useRef<string | null>(null);
+  const warming = useRef<ReturnType<typeof setTimeout>>(undefined);
   const previousMessage = useRef('');
   const currentQuery = useRef('');
   const generation = useRef(0);
@@ -236,7 +242,17 @@ export function Mail({
     load(new AbortController().signal).catch(() => {});
   }, [load]);
 
-  useEffect(() => subscribeMailChanges(['mail', 'accounts'], reload), [reload]);
+  // Only search results depend on cached bodies (body terms, attachments,
+  // coverage); other lists ignore the body cache filling in the background.
+  const searching = Boolean(q);
+  useEffect(
+    () =>
+      subscribeMailChanges(
+        searching ? ['mail', 'accounts', 'content'] : ['mail', 'accounts'],
+        reload,
+      ),
+    [reload, searching],
+  );
 
   const [latestAction, setLatestAction] = useState<Undoable | null>(null);
   const track = useCallback((action: Undoable) => setLatestAction(action), []);
@@ -557,6 +573,12 @@ export function Mail({
       message: '',
     });
 
+  // Resting the pointer or keyboard focus on a row caches its body, so the
+  // click opens from the cache. Passing over rows requests nothing.
+  const warmSoon = (id: string) => {
+    clearTimeout(warming.current);
+    warming.current = setTimeout(() => prefetchContent(id), 150);
+  };
   const rows = (
     <ul
       className={`message-list ${density}`}
@@ -574,6 +596,9 @@ export function Mail({
           <li
             key={message.id}
             data-message-row={message.id}
+            onPointerEnter={() => warmSoon(message.id)}
+            onPointerLeave={() => clearTimeout(warming.current)}
+            onFocus={() => warmSoon(message.id)}
             style={accountStyleOf(message.accountId)}
             className={`row${message.unread ? ' unread' : ''}${message.id === messageId ? ' selected' : ''}${checked ? ' checked' : ''}`}
           >

@@ -267,6 +267,13 @@
       "when": 1793550000006,
       "tag": "0037_mail_work_notify",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793550000007,
+      "tag": "0038_content_prefetch",
+      "breakpoints": true
     }
   ]
 }

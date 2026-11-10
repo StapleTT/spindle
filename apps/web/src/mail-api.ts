@@ -28,6 +28,18 @@ export async function mailApi<T>(path: string, options: RequestInit = {}) {
   return data as T;
 }
 
+// Ask the worker to cache a body the user is likely to open next: reader
+// neighbours and hovered or focused rows. Best effort and deduplicated; the
+// reader still requests the body itself when it opens the message.
+const warmed = new Map<string, number>();
+export function prefetchContent(id: string) {
+  const now = Date.now();
+  if (now - (warmed.get(id) ?? 0) < 60000) return;
+  if (warmed.size >= 500) warmed.clear();
+  warmed.set(id, now);
+  mailApi(`messages/${id}/prefetch`, { method: 'POST' }).catch(() => {});
+}
+
 export type MailAction = {
   id: string;
   kind: 'read' | 'unread' | 'archive' | 'trash' | 'move' | 'restore';

@@ -17,6 +17,7 @@ import { watchInbox } from './idle.js';
 import { connectImap } from './imap.js';
 import { MAX_ATTACHMENTS } from './media.js';
 import { processOutgoing } from './outgoing-worker.js';
+import { prefetchAccount } from './prefetch.js';
 import { syncProviderDrafts } from './provider-drafts.js';
 import { connectSmtp } from './smtp.js';
 import { imapAccount, transaction } from './store.js';
@@ -35,6 +36,8 @@ export async function startMailWorker(
   pool: Pool,
   keys: MailKeys,
   google: GoogleConfig | null = null,
+  // D042 body prefetch after each completed sync; the worker process enables it.
+  options: { prefetch?: boolean } = {},
 ) {
   const shutdown = new AbortController();
   await boss.createQueue('mail-sync', {
@@ -62,6 +65,8 @@ export async function startMailWorker(
   // fallback). Updated in place so existing queues opt in too.
   for (const name of ['mail-dispatch', 'mail-content'])
     await boss.updateQueue(name, { notify: true });
+  // A sync job may be followed by one bounded prefetch pass (D042).
+  await boss.updateQueue('mail-sync', { expireInSeconds: 180 });
   // Dispatch as soon as a lease holder steps aside for user work, instead of
   // waiting for the next timer tick.
   const kick = () =>
@@ -294,12 +299,8 @@ export async function startMailWorker(
           .rowCount
       )
         return false;
-      if (provider === 'gmail') {
-        if (data.kind === 'idle') return false;
-        await syncGmailAccount(pool, keys, google, data.userId, data.accountId);
-        return true;
-      }
-      if (data.kind === 'idle') {
+      if (provider === 'gmail' && data.kind === 'idle') return false;
+      if (provider === 'imap' && data.kind === 'idle') {
         const changed = await watchInbox(
           pool,
           keys,
@@ -315,7 +316,27 @@ export async function startMailWorker(
         )
           return true;
       }
-      await syncAccount(pool, keys, data.userId, data.accountId);
+      const synced =
+        provider === 'gmail'
+          ? await syncGmailAccount(
+              pool,
+              keys,
+              google,
+              data.userId,
+              data.accountId,
+            )
+          : await syncAccount(pool, keys, data.userId, data.accountId);
+      // New mail is cached before it is opened (D042). A failed or paused
+      // sync keeps its backoff instead.
+      if (synced && options.prefetch)
+        await prefetchAccount(
+          pool,
+          keys,
+          google,
+          data.userId,
+          data.accountId,
+          shutdown.signal,
+        );
       return true;
     }
   }
