@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="How the hosted Spindle service at spindlemail.dev collects, uses, stores and deletes your data." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Privacy Policy · Spindle</title>
+    <!-- Mirrors applyTheme() in src/theme.ts before first paint. -->
+    <script>
+      try {
+        const t = localStorage.getItem('spindle-theme');
+        document.documentElement.dataset.theme =
+          t === 'dark' ||
+          (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+            ? 'dark'
+            : 'light';
+      } catch {}
+    </script>
+    <script type="module" src="/src/landing.ts"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="/">
+          <svg class="spindle-logo" width="34" height="34" aria-hidden="true"><use href="#spindle-mark" /></svg>
+          Spindle
+        </a>
+        <span class="header-spacer"></span>
+        <button type="button" class="icon-button" data-theme-toggle>
+          <span class="icon" data-icon="contrast" aria-hidden="true"></span>
+        </button>
+        <a class="pill filled" href="/inbox">Open app</a>
+      </div>
+    </header>
+
+    <main class="wrap narrow legal">
+      <p class="eyebrow">Legal</p>
+      <h1>Privacy Policy</h1>
+      <p class="legal-meta">Effective November 9, 2026</p>
+
+      <p>Spindle is an email client that brings your Gmail and IMAP mailboxes into one inbox. This policy explains what the hosted Spindle service at <strong>spindlemail.dev</strong> collects, why, how long it is kept and what control you have. The service is run by an individual who goes by Staple (“I”, “me”). If you run Spindle on your own server, that server’s operator is responsible for your data instead, and this policy does not apply.</p>
+      <p>In short: your mail is used only to show it to you and to carry out what you ask Spindle to do. I don’t sell it, show ads, run analytics or tracking, or use it to train AI models.</p>
+
+      <h2>What Spindle collects</h2>
+      <h3>Your Spindle account</h3>
+      <ul>
+        <li>Your name, email address and a salted hash of your password (never the password itself).</li>
+        <li>Sign-in sessions, with the IP address and browser user agent of each session.</li>
+        <li>A security activity log of sign-ins, failed sign-in attempts, password and email changes, sign-outs, exports and deletion requests, with the IP address and user agent involved.</li>
+        <li>Your settings: mail preferences, signatures, saved searches and sending options.</li>
+      </ul>
+
+      <h3>Connected mail accounts</h3>
+      <ul>
+        <li><strong>IMAP and SMTP accounts:</strong> server addresses, ports, usernames, your sender name and your password. Passwords are encrypted at rest with keys kept separately from the database.</li>
+        <li><strong>Gmail accounts:</strong> your Google account ID, Gmail address and a Google OAuth refresh token, encrypted the same way. Spindle never sees your Google password.</li>
+      </ul>
+
+      <h3>Mail data</h3>
+      <ul>
+        <li><strong>Message details:</strong> subjects, senders and recipients (From, To, Cc), dates, message and thread identifiers, folders or labels, and read, starred and similar flags. These are stored so lists, search and counts work without contacting your provider each time.</li>
+        <li><strong>Message bodies and attachments:</strong> text, HTML and inline images of recent messages and of messages you open, plus attachment files you choose to download. These are kept in a size-limited cache (currently 128 MiB or 1,000 messages per user). Older entries are removed automatically and fetched again from your provider when needed.</li>
+        <li><strong>Search index:</strong> built from the message details and cached bodies above, so you can search your own mail.</li>
+        <li><strong>Mail you write:</strong> drafts, files you attach, and outgoing messages while they are queued or being sent. Attachments you upload are checked for malware by a scanner running on the Spindle server itself.</li>
+        <li><strong>Local organizing:</strong> pins, mutes and snoozes you set in Spindle.</li>
+      </ul>
+
+      <h3>Browser storage</h3>
+      <p>Spindle uses a sign-in cookie to keep you signed in, and stores your theme and display density in your browser. There are no advertising or analytics cookies.</p>
+
+      <h2>How Spindle uses your data</h2>
+      <ul>
+        <li>To provide the features you use: syncing, displaying, searching, organizing and sending mail.</li>
+        <li>To keep the service secure: authenticating you, preventing abuse, rate limiting and showing you your security activity.</li>
+        <li>To send account email: invitations, email verification, password resets and security notices.</li>
+        <li>To fix problems you report, with your permission.</li>
+      </ul>
+      <p>Spindle does not use your data for advertising, profiling, selling, or training machine learning or AI models.</p>
+
+      <h2 id="google">Google user data</h2>
+      <p>When you connect a Gmail account, Spindle asks Google for these permissions:</p>
+      <ul>
+        <li><code>openid</code> and <code>email</code>: to identify the Google account you connected and show its address.</li>
+        <li><code>https://www.googleapis.com/auth/gmail.modify</code>: to read your messages and labels so they appear in Spindle; to mark messages read or unread, archive, move, trash and restore them when you ask; and to send mail you write.</li>
+      </ul>
+      <p>Spindle does not permanently delete mail from Gmail. It stores the Gmail data described under “Mail data” above on the Spindle server, which runs in the United States.</p>
+      <p><strong>Spindle’s use and transfer to any other app of information received from Google APIs will adhere to the <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="noopener noreferrer">Google API Services User Data Policy</a>, including the Limited Use requirements.</strong> Specifically:</p>
+      <ul>
+        <li>Google user data is used only to provide and improve the user-facing features of Spindle that you can see in the app.</li>
+        <li>It is not transferred to anyone else, except as needed to provide those features, to comply with the law, for security purposes, or as part of a merger, acquisition or sale of the service, with notice to you.</li>
+        <li>It is never used for advertising, including retargeting or personalized or interest-based ads.</li>
+        <li>No person reads it unless you give your permission for specific messages (for example, when you ask for help), it is needed for security purposes such as investigating abuse, it is required by law, or it is aggregated and anonymized for internal operations.</li>
+        <li>It is not sold, and it is not used to develop, improve or train generalized or non-personalized AI or machine learning models.</li>
+      </ul>
+      <p>You can remove Spindle’s access at any time by disconnecting the account in Spindle’s Settings, or in your <a href="https://myaccount.google.com/connections" rel="noopener noreferrer">Google account settings</a>.</p>
+
+      <h2>Who else receives data</h2>
+      <p>Spindle runs on a server I own and operate. Data leaves it only in these cases:</p>
+      <ul>
+        <li><strong>Your mail providers</strong> (Google or the IMAP/SMTP servers you configure): Spindle connects to them on your behalf to sync and send mail.</li>
+        <li><strong>Resend</strong>, an email delivery provider: receives your email address and the content of Spindle’s account emails (invitations, verification, password resets and security notices) in order to deliver them.</li>
+        <li><strong>Image hosts:</strong> when you choose to show remote images in a message, Spindle fetches them through its image proxy by default, so the sender sees the Spindle server rather than your IP address or browser. If you turn on direct image loading in Settings, your browser contacts those image hosts itself.</li>
+        <li><strong>Legal requirements:</strong> if required by valid legal process, or to protect the rights, safety or security of users or the service.</li>
+      </ul>
+      <p>I do not sell or rent personal information, and I do not share it for cross-context behavioral advertising.</p>
+
+      <h2>Who can access your data</h2>
+      <p>Every mailbox in Spindle belongs to exactly one user. Spindle administrators can manage accounts and see account email addresses and sign-in activity, but the admin tools give no access to anyone’s mail. As the person running the server, I have technical access to the stored data. I will not look at your mail except in the cases listed under “Google user data” above, which apply to all connected accounts, not only Gmail.</p>
+
+      <h2>Retention and deletion</h2>
+      <ul>
+        <li><strong>Disconnecting a mail account</strong> deletes Spindle’s copy of that account’s data, including its stored credentials, and revokes Spindle’s Google access when no other Spindle connection uses the same Google account. Your mail at the provider is not affected.</li>
+        <li><strong>Deleting your Spindle account</strong> (Settings → Security) signs you out everywhere and deletes all of your data after a seven-day grace period, during which you can cancel by signing in. Mail at your providers is never deleted.</li>
+        <li><strong>Cached message bodies</strong> are removed automatically as the per-user cache limit is reached.</li>
+        <li><strong>Sent messages</strong> are removed from Spindle’s outbox seven days after successful delivery. Messages whose delivery failed or is uncertain stay visible until you deal with them.</li>
+        <li><strong>Security activity</strong> is deleted after 180 days. After account deletion, a single record of the deletion keyed by an internal ID, without your email or IP address, is kept for 180 days.</li>
+        <li><strong>Backups</strong> may contain deleted data until they expire, no later than 30 days after deletion.</li>
+      </ul>
+
+      <h2>Your choices and rights</h2>
+      <p>You can do the following yourself in Spindle:</p>
+      <ul>
+        <li><strong>Access and portability:</strong> download a copy of your data from Settings → Security → Export your data.</li>
+        <li><strong>Correction:</strong> change your name, email address, password, and mail account settings in Settings.</li>
+        <li><strong>Deletion:</strong> disconnect mail accounts or delete your Spindle account in Settings.</li>
+      </ul>
+      <p>Depending on where you live, including California and other US states with privacy laws, you may have legal rights to know, access, correct, delete or move your personal information and to opt out of its sale or sharing. Spindle does not sell or share personal information, but you can make any of these requests to <a href="mailto:support@spindlemail.dev">support@spindlemail.dev</a>. I will verify the request comes from the account owner and respond within 45 days. You will not be treated differently for exercising your rights.</p>
+
+      <h2>Security</h2>
+      <p>Connections to Spindle and to your mail providers use TLS. Mail account passwords and Google tokens are encrypted at rest. Message content from senders is sanitized and displayed from a separate origin that never receives your Spindle cookies. No system is perfectly secure, so protect your password. If I learn of a breach affecting your data, I will notify you as required by law.</p>
+
+      <h2>Children</h2>
+      <p>Spindle is not intended for children under 13, and I do not knowingly collect their personal information. If you believe a child has created an account, contact me and I will delete it.</p>
+
+      <h2>Changes to this policy</h2>
+      <p>If I change this policy, I will update the effective date above. If a change materially affects how your data is used, I will notify you by email or in the app before it takes effect.</p>
+
+      <h2>Contact</h2>
+      <p>Questions or requests: <a href="mailto:support@spindlemail.dev">support@spindlemail.dev</a>.</p>
+    </main>
+
+    <footer class="wrap site-footer">
+      <span class="brand">
+        <svg class="spindle-logo" width="28" height="28" aria-hidden="true"><use href="#spindle-mark" /></svg>
+        Spindle
+      </span>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="/privacy" aria-current="page">Privacy</a>
+        <a href="/terms">Terms</a>
+        <a href="/#security">Security</a>
+        <a href="/#install">Docs</a>
+      </nav>
+    </footer>
+
+    <!-- Same geometry as SpindleLogo in src/brand.tsx. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <mask id="spindle-s" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff" /><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="#000" stroke="#000" stroke-width="3.4" stroke-linejoin="round" /><rect x="0" y="17" width="48" height="14" fill="#fff" /></g></mask>
+        <mask id="spindle-m" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff" /><path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" stroke="#000" stroke-width="8" stroke-linecap="round" /></mask>
+        <symbol id="spindle-mark" viewBox="0 0 48 48">
+          <g mask="url(#spindle-s)"><path d="M33 16.5C34 13.5 32.5 10.5 29.5 9.3C27.8 8.6 26 8.4 24 8.4C18.5 8.4 15 11.3 15 15.5C15 19.9 19.4 21.6 24.2 23.4C29.6 25.4 34.8 27.6 34.8 33C34.8 37 30.8 39.6 25 39.6C20 39.6 14.6 39.2 10 37.8" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" fill="none" stroke="currentColor" stroke-width="4.6" stroke-linecap="round" /></g>
+          <g mask="url(#spindle-m)"><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round" /><path d="M15.6 43.5L27 45.3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></g></g>
+          <path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" fill="none" stroke="currentColor" stroke-width="4.6" stroke-linecap="butt" />
+        </symbol>
+      </defs>
+    </svg>
+  </body>
+</html>

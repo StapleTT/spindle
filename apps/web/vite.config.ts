@@ -17,6 +17,8 @@ export default defineConfig(({ mode }) => {
           home: fileURLToPath(new URL('index.html', import.meta.url)),
           login: fileURLToPath(new URL('login.html', import.meta.url)),
           inbox: fileURLToPath(new URL('inbox.html', import.meta.url)),
+          privacy: fileURLToPath(new URL('privacy.html', import.meta.url)),
+          terms: fileURLToPath(new URL('terms.html', import.meta.url)),
           landing: fileURLToPath(
             new URL('landing/index.html', import.meta.url),
           ),

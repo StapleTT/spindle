@@ -191,6 +191,12 @@ test('browser signup, verification, sessions, recovery and phone layout', {
     await heading('Create your account');
     assert.equal(new URL(page.url()).pathname, '/login');
     assert.equal(
+      await page
+        .getByRole('link', { name: 'Terms of Service', exact: true })
+        .getAttribute('href'),
+      '/terms',
+    );
+    assert.equal(
       await page.getByLabel('Email address').inputValue(),
       'legacy@example.test',
     );

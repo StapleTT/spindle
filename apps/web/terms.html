@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="description" content="Terms of Service for the hosted Spindle service at spindlemail.dev." />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Terms of Service · Spindle</title>
+    <!-- Mirrors applyTheme() in src/theme.ts before first paint. -->
+    <script>
+      try {
+        const t = localStorage.getItem('spindle-theme');
+        document.documentElement.dataset.theme =
+          t === 'dark' ||
+          (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches)
+            ? 'dark'
+            : 'light';
+      } catch {}
+    </script>
+    <script type="module" src="/src/landing.ts"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="wrap header-row">
+        <a class="brand" href="/">
+          <svg class="spindle-logo" width="34" height="34" aria-hidden="true"><use href="#spindle-mark" /></svg>
+          Spindle
+        </a>
+        <span class="header-spacer"></span>
+        <button type="button" class="icon-button" data-theme-toggle>
+          <span class="icon" data-icon="contrast" aria-hidden="true"></span>
+        </button>
+        <a class="pill filled" href="/inbox">Open app</a>
+      </div>
+    </header>
+
+    <main class="wrap narrow legal">
+      <p class="eyebrow">Legal</p>
+      <h1>Terms of Service</h1>
+      <p class="legal-meta">Effective November 9, 2026</p>
+
+      <p>These terms are an agreement between you and the individual who goes by Staple (“I”, “me”), who runs the hosted Spindle service at <strong>spindlemail.dev</strong> (the “Service”). By creating an account or using the Service, you agree to these terms and to the <a href="/privacy">Privacy Policy</a>. If you don’t agree, don’t use the Service.</p>
+      <p>These terms cover only the hosted Service. If you run the Spindle software on your own server, the software license governs that use, not these terms.</p>
+
+      <h2>1. The Service</h2>
+      <p>Spindle is an email client. It connects to Gmail and IMAP/SMTP mail accounts that you control, keeps a synchronized copy so you can read, search, organize and send mail, and carries out actions you request at your providers.</p>
+      <p>The Service is currently an invite-only beta, offered free of charge. Features may change, break or be removed, and the Service may be interrupted or shut down. If I decide to shut the Service down, I will try to give you reasonable notice so you can export your data.</p>
+
+      <h2>2. Your account</h2>
+      <ul>
+        <li>You must be at least 13 years old, and old enough to agree to these terms where you live.</li>
+        <li>Give accurate information, keep your password secure, and tell me promptly at <a href="mailto:support@spindlemail.dev">support@spindlemail.dev</a> if you think someone else has accessed your account.</li>
+        <li>You are responsible for activity under your account.</li>
+        <li>Each account is for one person. Don’t share your account or sell or transfer it.</li>
+      </ul>
+
+      <h2>3. Connected mail accounts</h2>
+      <ul>
+        <li>Connect only mail accounts that you own or are authorized to access.</li>
+        <li>You authorize Spindle to access each connected account and to read, organize and send mail there as you direct. Actions such as archiving, moving, trashing or sending take effect at your provider.</li>
+        <li>Your use of each provider remains subject to that provider’s terms, including Google’s Terms of Service for Gmail.</li>
+        <li>Spindle is a client, not a backup service. Keep your own copies of mail that matters. Disconnecting an account or deleting your Spindle account never deletes mail at your providers.</li>
+      </ul>
+
+      <h2>4. Your content</h2>
+      <p>Your mail, drafts, attachments and other content stay yours. You give me only the permission needed to store, process and transmit that content to operate the Service for you, as described in the Privacy Policy. That permission ends when the content is deleted from the Service, except for copies remaining in backups until they expire.</p>
+
+      <h2>5. Acceptable use</h2>
+      <p>Don’t use the Service to:</p>
+      <ul>
+        <li>send spam, bulk unsolicited messages, phishing or fraudulent messages;</li>
+        <li>distribute malware or deliberately try to get around the attachment malware scanner;</li>
+        <li>harass, threaten or abuse others, or send content that is illegal or infringes others’ rights;</li>
+        <li>access accounts, mail or data that aren’t yours;</li>
+        <li>probe, attack or disrupt the Service or its infrastructure, get around rate limits or security controls, or put an unreasonable load on the Service;</li>
+        <li>break any law or any mail provider’s terms.</li>
+      </ul>
+
+      <h2>6. Suspension and termination</h2>
+      <p>You can stop using the Service and delete your account at any time in Settings → Security. I may suspend or close your account if you break these terms, if your use puts the Service, other users or a mail provider at risk, or if required by law. Where reasonable, I will tell you why and give you a chance to export your data first. Sections 4 and 7–10 continue after termination.</p>
+
+      <h2>7. No warranty</h2>
+      <p>THE SERVICE IS PROVIDED “AS IS” AND “AS AVAILABLE”, WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. I don’t promise that the Service will be uninterrupted, error-free or secure, that mail will be synchronized, delivered or sent on time or at all, or that data will never be lost.</p>
+
+      <h2>8. Limitation of liability</h2>
+      <p>TO THE FULLEST EXTENT PERMITTED BY LAW, I WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF DATA, PROFITS, REVENUE OR GOODWILL, ARISING FROM OR RELATED TO THE SERVICE, EVEN IF I HAVE BEEN TOLD SUCH DAMAGES ARE POSSIBLE. MY TOTAL LIABILITY FOR ALL CLAIMS RELATED TO THE SERVICE IS LIMITED TO US$50. Some jurisdictions don’t allow these limits, so some of them may not apply to you.</p>
+
+      <h2>9. Indemnity</h2>
+      <p>If someone brings a claim against me because of your content or your violation of these terms or the law, you agree to cover the reasonable costs, losses and damages that result, to the extent permitted by law.</p>
+
+      <h2>10. Governing law</h2>
+      <p>These terms are governed by the laws of the United States and of the State of [STATE], without regard to conflict-of-law rules. Any dispute will be resolved in the state or federal courts located in that state, and you and I both consent to their jurisdiction.</p>
+
+      <h2>11. Changes to these terms</h2>
+      <p>I may update these terms. I will change the effective date above and, for material changes, notify you by email or in the app before they take effect. If you keep using the Service after a change takes effect, you accept the updated terms.</p>
+
+      <h2>12. Other terms</h2>
+      <p>These terms and the Privacy Policy are the entire agreement between us about the Service. If any part is found unenforceable, the rest still applies. Not enforcing a provision right away doesn’t waive my right to enforce it later. You may not transfer these terms. I may transfer them to someone who takes over the Service, and I will tell you if that happens.</p>
+
+      <h2>Contact</h2>
+      <p>Questions about these terms: <a href="mailto:support@spindlemail.dev">support@spindlemail.dev</a>.</p>
+    </main>
+
+    <footer class="wrap site-footer">
+      <span class="brand">
+        <svg class="spindle-logo" width="28" height="28" aria-hidden="true"><use href="#spindle-mark" /></svg>
+        Spindle
+      </span>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="/privacy">Privacy</a>
+        <a href="/terms" aria-current="page">Terms</a>
+        <a href="/#security">Security</a>
+        <a href="/#install">Docs</a>
+      </nav>
+    </footer>
+
+    <!-- Same geometry as SpindleLogo in src/brand.tsx. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <mask id="spindle-s" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff" /><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="#000" stroke="#000" stroke-width="3.4" stroke-linejoin="round" /><rect x="0" y="17" width="48" height="14" fill="#fff" /></g></mask>
+        <mask id="spindle-m" maskUnits="userSpaceOnUse" x="-10" y="-10" width="68" height="68"><rect x="-10" y="-10" width="68" height="68" fill="#fff" /><path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" stroke="#000" stroke-width="8" stroke-linecap="round" /></mask>
+        <symbol id="spindle-mark" viewBox="0 0 48 48">
+          <g mask="url(#spindle-s)"><path d="M33 16.5C34 13.5 32.5 10.5 29.5 9.3C27.8 8.6 26 8.4 24 8.4C18.5 8.4 15 11.3 15 15.5C15 19.9 19.4 21.6 24.2 23.4C29.6 25.4 34.8 27.6 34.8 33C34.8 37 30.8 39.6 25 39.6C20 39.6 14.6 39.2 10 37.8" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" fill="none" stroke="currentColor" stroke-width="4.6" stroke-linecap="round" /></g>
+          <g mask="url(#spindle-m)"><g transform="translate(24 24) scale(0.86) translate(-22.4 -25)"><path d="M26.8 4.6L23 44.6L19.6 44.2Z" fill="currentColor" stroke="currentColor" stroke-width="0.8" stroke-linejoin="round" /><path d="M15.6 43.5L27 45.3" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" /></g></g>
+          <path d="M20.6 21.9C22 22.5 23 22.9 24.2 23.4C25.4 23.9 26.4 24.2 27.6 24.7" transform="translate(24 24) scale(0.86) translate(-22.4 -25)" fill="none" stroke="currentColor" stroke-width="4.6" stroke-linecap="butt" />
+        </symbol>
+      </defs>
+    </svg>
+  </body>
+</html>

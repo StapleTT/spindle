@@ -418,6 +418,15 @@ main.auth > .icon-button {
   color: var(--on-var);
   font-size: 13px;
 }
+.auth-consent {
+  color: var(--on-var);
+  font-size: 13px;
+  text-align: center;
+}
+.auth-consent a {
+  color: var(--primary);
+  font-weight: 600;
+}
 .auth-links {
   display: flex;
   flex-direction: column;

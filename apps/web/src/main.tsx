@@ -459,6 +459,19 @@ function App() {
               />
             </label>
           )}
+          {view === 'signup' && (
+            <p className="auth-consent">
+              By creating an account, you agree to the{' '}
+              <a href="/terms" target="_blank" rel="noopener">
+                Terms of Service
+              </a>{' '}
+              and{' '}
+              <a href="/privacy" target="_blank" rel="noopener">
+                Privacy Policy
+              </a>
+              .
+            </p>
+          )}
           <button type="submit" disabled={busy}>
             {busy
               ? 'Please wait…'
