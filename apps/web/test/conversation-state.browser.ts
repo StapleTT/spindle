@@ -168,6 +168,14 @@ test('conversation controls persist, update private tabs, preserve focus and rec
             .getAttribute('data-message-row'),
           latest,
         );
+        // Headless pages all report focus; hide this tab so foreground
+        // dwell-to-read cannot mark the conversation read before mute.
+        await page.evaluate(() =>
+          Object.defineProperty(document, 'visibilityState', {
+            configurable: true,
+            value: 'hidden',
+          }),
+        );
         await open();
         const search = second.getByRole('searchbox', {
           name: 'Search mail',

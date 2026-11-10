@@ -84,6 +84,12 @@ test('IDLE-triggered inbox arrival appears automatically and cached mail survive
     "UPDATE mail_accounts SET next_sync_at=clock_timestamp()+interval '10 minutes' WHERE user_id=$1 AND id=$2",
     [owner.id, account],
   );
+  // Earlier files share this database and leave accounts whose fixtures are
+  // closed; each would take a polled turn in the single metadata slot first.
+  await pool.query(
+    "UPDATE mail_accounts SET next_sync_at=clock_timestamp()+interval '1 hour', next_idle_at=clock_timestamp()+interval '1 hour' WHERE user_id<>$1",
+    [owner.id],
+  );
   const apiUrl = await app.listen({ host: '127.0.0.1', port: 0 });
   const vite = await createServer({
     configFile: false,
