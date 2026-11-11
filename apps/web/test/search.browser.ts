@@ -133,6 +133,12 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
         };
       }),
     );
+    // Headless pages always report focus, so foreground dwell-to-read would
+    // mark the open reader message read on slow runners and add actions these
+    // shortcut tests count. Dwell itself is covered by reader-attention tests.
+    await context.addInitScript(() => {
+      document.hasFocus = () => false;
+    });
     const page = await context.newPage();
     page.setDefaultTimeout(12000);
     const errors: string[] = [];
