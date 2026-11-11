@@ -946,6 +946,10 @@ export function Mail({
               message: '',
             }),
         })}
+        <hr className="drawer-divider" />
+        {navItem('primary', 'Primary', 'Primary', mail, {
+          onClick: goScope('primary'),
+        })}
         {navItem('needs', 'Needs reply', 'Reply', reply, { disabled: true })}
         {navItem('news', 'Newsletters', 'News', newspaper, {
           onClick: goScope('news'),
@@ -1309,6 +1313,7 @@ export function Mail({
 }
 
 const scopeQueries = {
+  primary: 'in:inbox -is:newsletter',
   news: 'in:inbox is:newsletter',
   pinned: 'in:pinned',
   snoozed: 'in:snoozed',
@@ -1319,6 +1324,7 @@ const scopeQueries = {
 };
 const scopeTitles = {
   all: 'All inboxes',
+  primary: 'Primary',
   news: 'Newsletters',
   pinned: 'Pinned',
   snoozed: 'Snoozed',
@@ -1329,6 +1335,7 @@ const scopeTitles = {
 };
 const emptyStates = {
   all: [doneAll, 'Inbox zero', 'Everything across your accounts is handled.'],
+  primary: [doneAll, 'Inbox zero', 'Everything except newsletters is handled.'],
   news: [
     newspaper,
     'No newsletters',

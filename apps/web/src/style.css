@@ -542,6 +542,11 @@ main.auth > .icon-button {
   font-size: 12px;
   font-weight: 600;
 }
+.drawer-divider {
+  margin: 8px 16px;
+  border: 0;
+  border-top: 1px solid var(--outline-var);
+}
 .drawer-section {
   padding: 20px 16px 8px;
   color: var(--on-var);

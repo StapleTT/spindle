@@ -183,6 +183,47 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
     await page.goto(`${config.appUrl}/inbox`);
     await rows.first().waitFor();
     await t.test(
+      'Primary and Newsletters split every inbox by List-Unsubscribe',
+      async () => {
+        await pool.query(
+          'UPDATE mail_messages SET list_unsubscribe=true WHERE id=$1',
+          [beta],
+        );
+        const nav = page.getByRole('navigation', {
+          name: 'Mail accounts and folders',
+        });
+        // The fixture also has an account named Primary; the view comes first.
+        await nav
+          .getByRole('button', { name: 'Primary', exact: true })
+          .first()
+          .click();
+        await page.locator('#list-title', { hasText: /^Primary$/ }).waitFor();
+        await rows.first().waitFor();
+        assert.equal(await rows.count(), 50);
+        assert.equal(await row(beta).count(), 0);
+        if (process.env.DRAWER_SCREENSHOT)
+          await nav.screenshot({ path: process.env.DRAWER_SCREENSHOT });
+        await nav
+          .getByRole('button', { name: 'Newsletters', exact: true })
+          .click();
+        await page
+          .getByRole('heading', { name: 'Newsletters', exact: true })
+          .waitFor();
+        await row(beta).waitFor();
+        assert.equal(await rows.count(), 1);
+        await pool.query(
+          'UPDATE mail_messages SET list_unsubscribe=NULL WHERE id=$1',
+          [beta],
+        );
+        await nav
+          .getByRole('button', { name: 'All inboxes', exact: true })
+          .click();
+        await page
+          .locator('#list-title', { hasText: /^All inboxes$/ })
+          .waitFor();
+      },
+    );
+    await t.test(
       'search persists in URL, saved views restore filters, and typing/IME/modifiers cannot mutate mail',
       async () => {
         await find('subject:Project');
