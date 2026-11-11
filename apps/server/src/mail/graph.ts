@@ -12,7 +12,13 @@ import {
 } from './microsoft.js';
 import { hasListUnsubscribe, headerBlock, parseReplyHeaders } from './parse.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
-import { text, upsertMessage, validDate } from './sync.js';
+import {
+  recordNewsletters,
+  text,
+  uncheckedNewsletters,
+  upsertMessage,
+  validDate,
+} from './sync.js';
 import { bodyPending } from './work-pending.js';
 
 export const graphId = (value: unknown): value is string =>
@@ -476,6 +482,36 @@ export async function syncGraphAccount(
             );
         });
       }
+    // One-time newsletter check for mail synchronized before D045: one
+    // header per message, in small committed batches that yield to the reader.
+    while (Date.now() < deadline) {
+      if ((await pool.query(bodyPending, [owner, id])).rowCount) break;
+      const remotes = await uncheckedNewsletters(pool, owner, id, 20);
+      if (!remotes.length) break;
+      const checked: [string, boolean][] = [];
+      for (const remote of remotes) {
+        let headers: unknown;
+        try {
+          headers = (
+            await api<{ internetMessageHeaders?: unknown }>(
+              `/messages/${encodeURIComponent(remote)}`,
+              { $select: 'internetMessageHeaders' },
+            )
+          ).internetMessageHeaders;
+        } catch (error) {
+          // Deleted at Microsoft: not a newsletter; delta removes it locally.
+          if (!(error instanceof MicrosoftError && error.status === 404))
+            throw error;
+        }
+        checked.push([
+          remote,
+          hasListUnsubscribe(headerBlock(headers, ['List-Unsubscribe']).block),
+        ]);
+      }
+      await withLease(pool, account, (db) =>
+        recordNewsletters(db, owner, id, checked),
+      );
+    }
     await withLease(pool, account, async (db) => {
       const pending = (
         await db.query(

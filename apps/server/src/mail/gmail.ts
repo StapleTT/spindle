@@ -13,7 +13,13 @@ import {
 import { hasListUnsubscribe, headerBlock, parseReplyHeaders } from './parse.js';
 import { defaultSenderName } from './smtp.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
-import { text, upsertMessage, validDate } from './sync.js';
+import {
+  recordNewsletters,
+  text,
+  uncheckedNewsletters,
+  upsertMessage,
+  validDate,
+} from './sync.js';
 import { bodyPending } from './work-pending.js';
 
 type GmailMessage = {
@@ -337,9 +343,9 @@ export async function syncGmailAccount(
   const hardDeadline = started + 75000;
   try {
     const api = await openGmail(google, keys, account, hardDeadline);
-    const fetchOne = async (remote: string) => {
+    const fetchOne = async (remote: string, headers = HEADERS) => {
       const query = new URLSearchParams({ format: 'metadata' });
-      for (const name of HEADERS) query.append('metadataHeaders', name);
+      for (const name of headers) query.append('metadataHeaders', name);
       try {
         const message = await api<GmailMessage>(`/messages/${remote}`, query);
         if (message.id !== remote) throw new Error('Invalid Gmail response');
@@ -351,14 +357,14 @@ export async function syncGmailAccount(
       }
     };
     // ponytail: one paced request per message (~40/s); use the batch endpoint if initial sync speed matters.
-    const fetchAll = async (list: string[]) => {
+    const fetchAll = async (list: string[], headers = HEADERS) => {
       const results: (GmailMessage | null)[] = [];
       let next = 0;
       await Promise.all(
         Array.from({ length: Math.min(CONCURRENCY, list.length) }, async () => {
           while (next < list.length) {
             const index = next++;
-            results[index] = await fetchOne(list[index] as string);
+            results[index] = await fetchOne(list[index] as string, headers);
           }
         }),
       );
@@ -729,6 +735,30 @@ export async function syncGmailAccount(
         );
       });
       if (!next) break;
+    }
+    // One-time newsletter check for mail synchronized before D045. It only
+    // reads one header per message and keeps yielding to the reader.
+    while (Date.now() < deadline) {
+      if ((await pool.query(bodyPending, [owner, id])).rowCount) break;
+      const remotes = await uncheckedNewsletters(pool, owner, id, PAGE);
+      if (!remotes.length) break;
+      const messages = await fetchAll(remotes, ['List-Unsubscribe']);
+      await withLease(pool, account, (db) =>
+        recordNewsletters(
+          db,
+          owner,
+          id,
+          // Deleted at Google: not a newsletter; history removes it locally.
+          remotes.map((remote, index) => [
+            remote,
+            hasListUnsubscribe(
+              headerBlock(messages[index]?.payload?.headers, [
+                'List-Unsubscribe',
+              ]).block,
+            ),
+          ]),
+        ),
+      );
     }
     await withLease(pool, account, async (db) => {
       const state = (

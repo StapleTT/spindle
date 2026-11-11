@@ -512,6 +512,34 @@ test('Gmail OAuth connection, sync, reader, actions and sending', {
   );
 
   await t.test(
+    'mail synchronized before the newsletter header is checked once',
+    async () => {
+      const m2 = google.messages.get('m2');
+      assert.ok(m2);
+      m2.headers['List-Unsubscribe'] = '<mailto:leave@example.test>';
+      await pool.query(
+        'UPDATE mail_messages SET list_unsubscribe=NULL WHERE account_id=$1',
+        [accountA],
+      );
+      const gets = google.state.gets;
+      assert.equal((await sync()).status, 'ready');
+      assert.equal(google.state.gets - gets, 106);
+      const flags = (
+        await pool.query(
+          'SELECT remote_key,list_unsubscribe FROM mail_messages WHERE account_id=$1 AND (list_unsubscribe IS NOT FALSE)',
+          [accountA],
+        )
+      ).rows;
+      assert.deepEqual(flags, [{ remote_key: 'm2', list_unsubscribe: true }]);
+      // Checked once: the next run reads no message headers.
+      const after = google.state.gets;
+      await sync();
+      assert.equal(google.state.gets, after);
+      delete m2.headers['List-Unsubscribe'];
+    },
+  );
+
+  await t.test(
     'history adds, label changes and deletions apply incrementally',
     async () => {
       add('new1', ['INBOX', 'UNREAD'], 'Fresh arrival');

@@ -393,6 +393,34 @@ test('Microsoft OAuth, Graph sync, reader, durable actions and sending', {
   );
 
   await t.test(
+    'mail synchronized before the newsletter header is checked once',
+    async () => {
+      const m2 = microsoft.messages.get('m2');
+      assert.ok(m2);
+      m2.headers = [
+        { name: 'Message-ID', value: '<m2@example.test>' },
+        { name: 'List-Unsubscribe', value: '<mailto:leave@example.test>' },
+      ];
+      await pool.query(
+        'UPDATE mail_messages SET list_unsubscribe=NULL WHERE account_id=$1',
+        [accountId],
+      );
+      assert.equal((await sync()).status, 'ready');
+      const flags = (
+        await pool.query(
+          'SELECT remote_key,list_unsubscribe FROM mail_messages WHERE account_id=$1 AND (list_unsubscribe IS NOT FALSE)',
+          [accountId],
+        )
+      ).rows;
+      assert.deepEqual(flags, [{ remote_key: 'm2', list_unsubscribe: true }]);
+      const gets = microsoft.state.gets;
+      await sync();
+      assert.equal(microsoft.state.gets, gets, 'checked only once');
+      delete m2.headers;
+    },
+  );
+
+  await t.test(
     'oversized reply headers cannot block ordinary Graph metadata',
     async () => {
       microsoft.messages.set('hostile-headers', {

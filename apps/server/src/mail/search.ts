@@ -107,7 +107,7 @@ export function searchCondition(query: string, values: unknown[]) {
     if (field === 'is')
       sql =
         value === 'newsletter'
-          ? 'm.list_unsubscribe'
+          ? 'coalesce(m.list_unsubscribe,false)'
           : value === 'unread'
             ? unreadCondition
             : `NOT (${unreadCondition})`;

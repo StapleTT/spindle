@@ -181,7 +181,7 @@ export async function publishContent(
   parsed: Awaited<ReturnType<typeof parseMessage>>,
 ) {
   await db.query(
-    'UPDATE mail_messages SET reference_ids=$4,list_unsubscribe=list_unsubscribe OR $5 WHERE user_id=$1 AND account_id=$2 AND id=$3',
+    'UPDATE mail_messages SET reference_ids=$4,list_unsubscribe=coalesce(list_unsubscribe,false) OR $5 WHERE user_id=$1 AND account_id=$2 AND id=$3',
     [
       owner,
       accountId,

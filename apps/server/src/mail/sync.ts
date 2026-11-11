@@ -68,7 +68,7 @@ export async function upsertMessage(
        sender=EXCLUDED.sender, recipients=EXCLUDED.recipients, sent_at=EXCLUDED.sent_at,
        received_at=EXCLUDED.received_at, size_bytes=EXCLUDED.size_bytes,
        reference_ids=COALESCE(EXCLUDED.reference_ids,mail_messages.reference_ids),
-       list_unsubscribe=mail_messages.list_unsubscribe OR EXCLUDED.list_unsubscribe
+       list_unsubscribe=coalesce(mail_messages.list_unsubscribe,false) OR EXCLUDED.list_unsubscribe
      RETURNING id`,
     [
       account.user_id,
@@ -88,6 +88,42 @@ export async function upsertMessage(
     ],
   );
   return result.rows[0].id as string;
+}
+
+// One-time newsletter check (D045) for mail stored before the header was
+// read: newest first, so the inbox view fills before older history.
+export async function uncheckedNewsletters(
+  pool: Pool,
+  owner: string,
+  accountId: string,
+  limit: number,
+) {
+  return (
+    await pool.query<{ remote_key: string }>(
+      `SELECT remote_key FROM mail_messages WHERE user_id=$1 AND account_id=$2
+       AND list_unsubscribe IS NULL ORDER BY received_at DESC LIMIT $3`,
+      [owner, accountId, limit],
+    )
+  ).rows.map((row) => row.remote_key);
+}
+
+export async function recordNewsletters(
+  db: PoolClient,
+  owner: string,
+  accountId: string,
+  checked: [remoteKey: string, listUnsubscribe: boolean][],
+) {
+  await db.query(
+    `UPDATE mail_messages m SET list_unsubscribe=coalesce(m.list_unsubscribe,false) OR c.flag
+     FROM unnest($3::text[],$4::boolean[]) AS c(remote,flag)
+     WHERE m.user_id=$1 AND m.account_id=$2 AND m.remote_key=c.remote`,
+    [
+      owner,
+      accountId,
+      checked.map(([key]) => key),
+      checked.map(([, flag]) => flag),
+    ],
+  );
 }
 
 async function saveMessage(
