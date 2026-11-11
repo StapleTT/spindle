@@ -3,7 +3,7 @@ import type { ImapSettings } from './imap.js';
 
 export type MailAccount = ImapSettings & {
   id: string;
-  provider: 'imap' | 'gmail';
+  provider: 'imap' | 'gmail' | 'microsoft';
   user_id: string;
   credential: string;
   history_since: Date | null;
@@ -12,6 +12,12 @@ export type MailAccount = ImapSettings & {
   sync_request: string;
   sync_completed: string | null;
 };
+
+// Native providers supply the sender name; IMAP uses its checked SMTP settings.
+export const providerSenderName = (a: string) =>
+  `COALESCE(CASE WHEN ${a}.provider='microsoft' THEN ${a}.provider_name ELSE
+    (SELECT g.display_name FROM mail_gmail_sync g WHERE g.account_id=${a}.id) END,
+    (SELECT u.name FROM users u WHERE u.id=${a}.user_id),'')`;
 
 // Containment for IMAP-only work: rows for other providers never reach an
 // IMAP/SMTP connection. Arguments are SQL expressions for owner and account.

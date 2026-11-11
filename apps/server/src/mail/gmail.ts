@@ -1,6 +1,6 @@
 import type { Pool, PoolClient } from 'pg';
 import { logger } from '../logger.js';
-import { pendingKind, refreshPendingFolder, withSeen } from './actions.js';
+import { writeMemberships } from './actions.js';
 import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import {
@@ -10,7 +10,7 @@ import {
   googleJson,
   refreshAccessToken,
 } from './google.js';
-import { parseReplyHeaders } from './parse.js';
+import { headerBlock, parseReplyHeaders } from './parse.js';
 import { defaultSenderName } from './smtp.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import { text, upsertMessage, validDate } from './sync.js';
@@ -103,33 +103,6 @@ function ids(values: unknown, limit: number) {
   });
 }
 
-// Gmail returns header values without folding; re-serialize a bounded block so
-// addresses, encoded words and References follow the IMAP/reader parser rules.
-export function headerBlock(headers: unknown, names: string[]) {
-  const values = new Map<string, string>();
-  for (const header of Array.isArray(headers) ? headers.slice(0, 500) : []) {
-    const name =
-      typeof header?.name === 'string' ? header.name.toLowerCase() : '';
-    if (
-      typeof header?.value === 'string' &&
-      names.some((wanted) => wanted.toLowerCase() === name) &&
-      !values.has(name)
-    )
-      values.set(name, header.value);
-  }
-  const block = Buffer.from(
-    names
-      .flatMap((name) => {
-        const value = values.get(name.toLowerCase());
-        return value === undefined
-          ? []
-          : [`${name}: ${value.replace(/[\r\n\0]+/g, ' ').slice(0, 8192)}`];
-      })
-      .join('\r\n'),
-  );
-  return { values, block };
-}
-
 // Gmail labels as local memberships and flags. Every message maps to Inbox,
 // Spam, Trash or Archive, so an empty target list means a folder is missing.
 export function mirror(labels: string[], boxes: Map<string, string>) {
@@ -154,28 +127,6 @@ export function mirror(labels: string[], boxes: Map<string, string>) {
     ),
   ];
   return { flags, targets };
-}
-
-export async function writeMemberships(
-  db: PoolClient,
-  account: MailAccount,
-  local: string,
-  { flags, targets }: ReturnType<typeof mirror>,
-) {
-  await db.query(
-    `DELETE FROM mail_memberships WHERE user_id=$1 AND account_id=$2 AND message_id=$3
-     AND NOT(mailbox_id=ANY($4::uuid[]))`,
-    [account.user_id, account.id, local, targets],
-  );
-  // A pending read intent and pending move keep their optimistic local state
-  // until the worker applies them, exactly as IMAP sync does.
-  await db.query(
-    `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,flags)
-     SELECT $1,$2,box,$3,${withSeen('$5::text[]', pendingKind('$1', '$3'))} FROM unnest($4::uuid[]) AS box
-     ON CONFLICT (mailbox_id,message_id) DO UPDATE SET flags=EXCLUDED.flags`,
-    [account.user_id, account.id, local, targets, flags],
-  );
-  await refreshPendingFolder(db, account.user_id, local);
 }
 
 async function saveGmailMessage(

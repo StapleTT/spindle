@@ -4,12 +4,14 @@ import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { gmailContentSource } from './gmail-mail.js';
 import type { GoogleConfig } from './google.js';
+import { graphContentSource } from './graph-mail.js';
 import { connectImap } from './imap.js';
 import {
   type AttachmentInfo,
   listAttachments,
   MAX_ATTACHMENT_BYTES,
 } from './media.js';
+import type { MicrosoftConfig } from './microsoft.js';
 import { MAX_RAW_BYTES, parseMessage, parseReplyHeaders } from './parse.js';
 import type { ReplyMetadata } from './reply.js';
 import { SANITIZER_VERSION } from './sanitize.js';
@@ -37,7 +39,7 @@ export type Located = {
 type Client = Awaited<ReturnType<typeof connectImap>>;
 
 // Provider fetches behind the shared cache, sanitizer and ownership writes.
-// IMAP and Gmail each supply these three reads (D040).
+// Each provider supplies these three reads.
 export type ContentSource = {
   replyHeaders(message: Located): Promise<ReplyMetadata>;
   message(
@@ -104,13 +106,17 @@ export function imapSource(
 }
 
 export function contentSource(
+  pool: Pool,
   account: MailAccount,
   keys: MailKeys,
   connect: typeof connectImap,
   google: GoogleConfig | null,
+  microsoft: MicrosoftConfig | null = null,
 ): ContentSource {
   if (account.provider === 'gmail')
     return gmailContentSource(account, keys, google);
+  if (account.provider === 'microsoft')
+    return graphContentSource(pool, account, keys, microsoft);
   return imapSource((message, operation) =>
     withMailbox(account, keys, message, connect, operation),
   );
@@ -225,13 +231,22 @@ export async function fetchMessageContent(
   job: ContentJob,
   connect = connectImap,
   google: GoogleConfig | null = null,
+  microsoft: MicrosoftConfig | null = null,
 ) {
   if (job.attachment !== undefined)
-    return fetchAttachment(pool, keys, job, job.attachment, connect, google);
+    return fetchAttachment(
+      pool,
+      keys,
+      job,
+      job.attachment,
+      connect,
+      google,
+      microsoft,
+    );
   const { userId: owner, accountId, messageId, version } = job;
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
-  const source = contentSource(account, keys, connect, google);
+  const source = contentSource(pool, account, keys, connect, google, microsoft);
   try {
     const message = (
       await pool.query(
@@ -333,11 +348,12 @@ async function fetchAttachment(
   position: number,
   connect: typeof connectImap,
   google: GoogleConfig | null,
+  microsoft: MicrosoftConfig | null,
 ) {
   const { userId: owner, accountId, messageId, version } = job;
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
-  const source = contentSource(account, keys, connect, google);
+  const source = contentSource(pool, account, keys, connect, google, microsoft);
   // Every write requires the cached body version the attachment list came from.
   const attachmentRow = `FROM mail_content c WHERE t.user_id=$1 AND t.message_id=$3 AND t.position=$5
     AND t.state='pending' AND c.user_id=t.user_id AND c.message_id=t.message_id AND c.account_id=$2

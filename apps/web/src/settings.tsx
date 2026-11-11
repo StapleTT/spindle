@@ -35,7 +35,7 @@ export type Account = {
   id: string;
   name: string;
   color: string | null;
-  provider: 'imap' | 'gmail';
+  provider: 'imap' | 'gmail' | 'microsoft';
   host: string | null;
   port: number | null;
   transport: 'tls' | 'starttls' | null;
@@ -52,12 +52,13 @@ export type Account = {
 };
 
 export type Density = 'comfortable' | 'compact';
+type OAuthProvider = Exclude<Account['provider'], 'imap'>;
 
 export const accountStatus = (account: Account) =>
   account.errorCode === 'reconnect_required'
-    ? 'Google access expired or was removed. Reconnect to resume sync.'
+    ? `${account.provider === 'microsoft' ? 'Microsoft' : 'Google'} access expired or was removed. Reconnect to resume sync.`
     : account.status === 'error'
-      ? account.provider === 'gmail'
+      ? account.provider !== 'imap'
         ? 'Sync failed. Automatic retries continue.'
         : 'Sync failed. Check your server settings and app password, then reconnect. Automatic retries continue.'
       : account.status === 'syncing'
@@ -66,7 +67,7 @@ export const accountStatus = (account: Account) =>
           ? 'Waiting for the sync worker…'
           : 'Up to date at last check.';
 
-// Generic callback results from /api/mail/oauth/google/callback.
+// Generic callback results contain no provider error text or credentials.
 const gmailResults: Record<string, string> = {
   connected:
     'Gmail connected. Labels and mail sync in the background; this view updates automatically.',
@@ -79,6 +80,20 @@ const gmailResults: Record<string, string> = {
   expired:
     'The Google sign-in expired or was already used. Start again from Settings.',
   failed: 'Gmail could not be connected. Try again.',
+};
+
+const microsoftResults: Record<string, string> = {
+  connected:
+    'Microsoft connected. Folders and mail sync in the background; this view updates automatically.',
+  denied: 'Microsoft access was not granted. Nothing was connected.',
+  scope:
+    'Spindle needs permission to read, organize and send Outlook mail. Try again and grant the requested permissions.',
+  mismatch:
+    'That Microsoft account is not the one being reconnected. Choose the original account.',
+  limit: 'You can connect up to five mail accounts.',
+  expired:
+    'The Microsoft sign-in expired or was already used. Start again from Settings.',
+  failed: 'Microsoft could not be connected. Try again.',
 };
 
 const tabs = [
@@ -105,6 +120,7 @@ export function Settings({
   isAdmin,
   configured,
   gmailAvailable,
+  microsoftAvailable,
   density,
   onDensity,
   onNotify,
@@ -119,6 +135,7 @@ export function Settings({
   isAdmin: boolean;
   configured: boolean;
   gmailAvailable: boolean;
+  microsoftAvailable: boolean;
   density: Density;
   onDensity: (density: Density) => void;
   onNotify: (text: string) => void;
@@ -143,7 +160,10 @@ export function Settings({
   const [orderError, setOrderError] = useState('');
   const [editing, setEditing] = useState<Account | null>(null);
   const [showConnect, setShowConnect] = useState(false);
-  const [showGmail, setShowGmail] = useState(false);
+  const [oauthProvider, setOAuthProvider] = useState<OAuthProvider | null>(
+    null,
+  );
+  const oauthName = oauthProvider === 'gmail' ? 'Google' : 'Microsoft';
   const [disconnect, setDisconnect] = useState<Account | null>(null);
   const [smtpAccount, setSmtpAccount] = useState<Account | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -153,32 +173,41 @@ export function Settings({
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.hash.slice(1));
-    const result = params.get('gmail');
+    const provider = params.has('gmail') ? 'gmail' : 'microsoft';
+    const result = params.get(provider);
     if (result === null) return;
     params.delete('gmail');
+    params.delete('microsoft');
     window.history.replaceState(null, '', `#${params}`);
-    onNotify(gmailResults[result] ?? gmailResults.failed ?? '');
+    const results = provider === 'gmail' ? gmailResults : microsoftResults;
+    onNotify(results[result] ?? results.failed ?? '');
   }, [onNotify]);
 
-  // Google returns to the callback, which redirects back to Settings.
-  async function connectGmail(history: string, account?: Account) {
+  async function connectOAuth(
+    provider: OAuthProvider,
+    history: string,
+    account?: Account,
+  ) {
     if (busy) return;
     setBusy(true);
     try {
-      const { url } = await api<{ url: string }>('oauth/google', {
-        method: 'POST',
-        body: JSON.stringify({
-          history,
-          ...(account ? { accountId: account.id } : {}),
-        }),
-      });
+      const { url } = await api<{ url: string }>(
+        `oauth/${provider === 'gmail' ? 'google' : 'microsoft'}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            history,
+            ...(account ? { accountId: account.id } : {}),
+          }),
+        },
+      );
       window.location.assign(url);
     } catch (error) {
       setBusy(false);
       onNotify(
         error instanceof Error
           ? error.message
-          : 'Unable to start Gmail sign-in.',
+          : `Unable to start ${provider === 'gmail' ? 'Gmail' : 'Microsoft'} sign-in.`,
       );
     }
   }
@@ -417,7 +446,11 @@ export function Settings({
                         <p>
                           <strong>{item.name}</strong>
                           <span className="badge">
-                            {item.provider === 'gmail' ? 'Gmail' : 'IMAP'}
+                            {item.provider === 'gmail'
+                              ? 'Gmail'
+                              : item.provider === 'microsoft'
+                                ? 'Outlook / Microsoft 365'
+                                : 'IMAP'}
                           </span>
                         </p>
                       )}
@@ -472,8 +505,9 @@ export function Settings({
                           className="text-button"
                           disabled={busy}
                           onClick={() => {
-                            if (item.provider === 'gmail') {
-                              void connectGmail(
+                            if (item.provider !== 'imap') {
+                              void connectOAuth(
+                                item.provider,
                                 item.historySince ? '90d' : 'all',
                                 item,
                               );
@@ -481,7 +515,7 @@ export function Settings({
                             }
                             setEditing(item);
                             setShowConnect(true);
-                            setShowGmail(false);
+                            setOAuthProvider(null);
                             setDisconnect(null);
                           }}
                         >
@@ -568,10 +602,12 @@ export function Settings({
                   type="button"
                   className="provider-card"
                   aria-label="Connect Gmail account"
-                  aria-expanded={showGmail}
+                  aria-expanded={oauthProvider === 'gmail'}
                   disabled={!configured || !gmailAvailable || busy}
                   onClick={() => {
-                    setShowGmail(!showGmail);
+                    setOAuthProvider(
+                      oauthProvider === 'gmail' ? null : 'gmail',
+                    );
                     setShowConnect(false);
                     setEditing(null);
                     setDisconnect(null);
@@ -585,10 +621,28 @@ export function Settings({
                       : 'Needs operator setup'}
                   </span>
                 </button>
-                <button type="button" className="provider-card" disabled>
+                <button
+                  type="button"
+                  className="provider-card"
+                  aria-label="Connect Microsoft account"
+                  aria-expanded={oauthProvider === 'microsoft'}
+                  disabled={!configured || !microsoftAvailable || busy}
+                  onClick={() => {
+                    setOAuthProvider(
+                      oauthProvider === 'microsoft' ? null : 'microsoft',
+                    );
+                    setShowConnect(false);
+                    setEditing(null);
+                    setDisconnect(null);
+                  }}
+                >
                   <img className="provider-logo" src={outlookLogo} alt="" />
                   <strong>Microsoft</strong>
-                  <span>Coming soon</span>
+                  <span>
+                    {microsoftAvailable
+                      ? 'Outlook and Microsoft 365'
+                      : 'Needs operator setup'}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -599,7 +653,7 @@ export function Settings({
                   onClick={() => {
                     setEditing(null);
                     setShowConnect(!showConnect || Boolean(editing));
-                    setShowGmail(false);
+                    setOAuthProvider(null);
                     setDisconnect(null);
                   }}
                 >
@@ -608,16 +662,19 @@ export function Settings({
                   <span>Fastmail, iCloud, Yahoo and any IMAP server</span>
                 </button>
               </div>
-              {showGmail && (
+              {oauthProvider && (
                 <section
                   className="settings-panel connect"
-                  aria-labelledby="gmail-title"
+                  aria-labelledby={`${oauthProvider}-title`}
                 >
-                  <h3 id="gmail-title">Connect Gmail</h3>
+                  <h3 id={`${oauthProvider}-title`}>
+                    Connect {oauthProvider === 'gmail' ? 'Gmail' : 'Microsoft'}
+                  </h3>
                   <form
                     onSubmit={(event) => {
                       event.preventDefault();
-                      void connectGmail(
+                      void connectOAuth(
+                        oauthProvider,
                         String(
                           new FormData(event.currentTarget).get('history'),
                         ),
@@ -635,19 +692,21 @@ export function Settings({
                     <div className="form-actions wide">
                       <span className="tls-note">
                         <Icon src={lock} />
-                        You will sign in with Google. Spindle stores an
-                        encrypted access grant, never your Google password.
+                        You will sign in with {oauthName}. Spindle stores an
+                        encrypted access grant, never your {oauthName} password.
                       </span>
                       <button
                         type="button"
                         className="text-button"
                         disabled={busy}
-                        onClick={() => setShowGmail(false)}
+                        onClick={() => setOAuthProvider(null)}
                       >
                         Cancel
                       </button>
                       <button type="submit" disabled={busy}>
-                        {busy ? 'Opening Google…' : 'Continue with Google'}
+                        {busy
+                          ? `Opening ${oauthName}…`
+                          : `Continue with ${oauthName}`}
                       </button>
                     </div>
                   </form>

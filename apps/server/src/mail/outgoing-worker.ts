@@ -4,7 +4,9 @@ import { decryptCredential, type MailKeys } from './credentials.js';
 import { outboxStream } from './file-storage.js';
 import { gmailTransport } from './gmail-mail.js';
 import type { GoogleConfig } from './google.js';
+import { graphTransport } from './graph-mail.js';
 import { connectImap } from './imap.js';
+import type { MicrosoftConfig } from './microsoft.js';
 import { checkProviderDraftBeforeSend } from './provider-drafts.js';
 import { connectSmtp } from './smtp.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
@@ -19,11 +21,12 @@ export async function processOutgoing(
   connect = connectSmtp,
   imapConnect = connectImap,
   google: GoogleConfig | null = null,
+  microsoft: MicrosoftConfig | null = null,
 ) {
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
-  // D040: Gmail sends through messages.send; Gmail files the Sent copy itself.
-  const gmail = account.provider === 'gmail';
+  // Native API providers send and file Sent copies without SMTP.
+  const native = account.provider !== 'imap';
   let smtp:
     | {
         send: (
@@ -55,8 +58,8 @@ export async function processOutgoing(
         [owner, accountId],
       );
     });
-    // Gmail rows carry the account ID as their settings version (send route).
-    const settings = gmail
+    // Native providers carry the account ID as their settings version.
+    const settings = native
       ? { state: 'ready', version: accountId }
       : (
           await pool.query(
@@ -120,8 +123,8 @@ export async function processOutgoing(
       } else {
         smtp?.close();
         smtp = undefined;
-        // Provider drafts are not synced for Gmail yet (D040).
-        const conflict = gmail
+        // Native provider drafts stay local; IMAP preflight remains required.
+        const conflict = native
           ? null
           : await checkProviderDraftBeforeSend(
               pool,
@@ -195,22 +198,25 @@ export async function processOutgoing(
         if (claimed.rowCount) {
           sending = row.id;
           if (!smtp)
-            smtp = gmail
-              ? await gmailTransport(account, keys, google)
-              : await connect(
-                  settings,
-                  decryptCredential(
-                    settings.credential,
-                    owner,
-                    `${accountId}:smtp`,
-                    keys,
-                  ),
-                );
+            smtp =
+              account.provider === 'gmail'
+                ? await gmailTransport(account, keys, google)
+                : account.provider === 'microsoft'
+                  ? await graphTransport(pool, account, keys, microsoft)
+                  : await connect(
+                      settings,
+                      decryptCredential(
+                        settings.credential,
+                        owner,
+                        `${accountId}:smtp`,
+                        keys,
+                      ),
+                    );
           // Recheck ownership, live configuration and the fence immediately before I/O.
           await withLease(pool, account, async (db) => {
             const valid = await db.query(
-              gmail
-                ? "SELECT id FROM mail_accounts WHERE user_id=$1 AND id=$2 AND id=$3::uuid AND provider='gmail'"
+              native
+                ? "SELECT id FROM mail_accounts WHERE user_id=$1 AND id=$2 AND id=$3::uuid AND provider IN ('gmail','microsoft')"
                 : "SELECT account_id FROM mail_smtp WHERE user_id=$1 AND account_id=$2 AND version=$3 AND state='ready'",
               [owner, accountId, row.smtp_version],
             );
@@ -257,7 +263,7 @@ export async function processOutgoing(
                 rejected.length ? 'partial' : 'accepted',
                 JSON.stringify(accepted),
                 JSON.stringify(rejected),
-                gmail,
+                native,
               ],
             );
             if (result.rowCount && !rejected.length)
@@ -279,10 +285,11 @@ export async function processOutgoing(
         [owner, accountId],
       )
     ).rows[0];
-    if (copy && gmail) {
-      // Unknown delivery: look for it in Gmail, never send again.
-      const found = await (
-        await gmailTransport(account, keys, google)
+    if (copy && native) {
+      // Unknown delivery: search the provider, never send again.
+      const found = await (account.provider === 'gmail'
+        ? await gmailTransport(account, keys, google)
+        : await graphTransport(pool, account, keys, microsoft)
       ).sentCopyExists(copy.message_id);
       await withLease(pool, account, (db) =>
         db.query(
@@ -422,24 +429,36 @@ export async function processOutgoing(
         preflight ||
         (typeof status === 'number' && status >= 400 && status < 600);
       const temporary = known && !preflight && (!status || status < 500);
+      const retryAfter =
+        (error as { retryAfter?: number; delaySeconds?: number }).retryAfter ??
+        (error as { delaySeconds?: number }).delaySeconds;
+      const retrySeconds =
+        typeof retryAfter === 'number' && Number.isFinite(retryAfter)
+          ? Math.min(2147483647, Math.max(15, Math.ceil(retryAfter)))
+          : 15;
       await withLease(pool, account, async (db) => {
         await db.query(
           `UPDATE mail_outbox SET state=CASE WHEN $3 AND attempts<3 THEN 'queued' WHEN $4 THEN 'failed' ELSE 'unknown' END,
           error_code=CASE WHEN $4 THEN $5 ELSE 'delivery_unknown' END,
-          next_attempt_at=clock_timestamp()+interval '15 seconds',completed_at=CASE WHEN $3 AND attempts<3 THEN NULL ELSE clock_timestamp() END
+          next_attempt_at=clock_timestamp()+make_interval(secs=>$6),completed_at=CASE WHEN $3 AND attempts<3 THEN NULL ELSE clock_timestamp() END
           WHERE user_id=$1 AND id=$2 AND state='sending'`,
           [
             owner,
             sending,
             temporary,
             known,
-            gmail
+            native
               ? sendStarted
-                ? 'gmail_rejected'
-                : 'gmail_unavailable'
+                ? account.provider === 'gmail'
+                  ? 'gmail_rejected'
+                  : 'microsoft_rejected'
+                : account.provider === 'gmail'
+                  ? 'gmail_unavailable'
+                  : 'microsoft_unavailable'
               : sendStarted
                 ? 'smtp_rejected'
                 : 'smtp_unavailable',
+            retrySeconds,
           ],
         );
       }).catch(() => {});

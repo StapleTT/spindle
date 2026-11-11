@@ -10,7 +10,7 @@ import {
   OUTGOING_STORAGE_BYTES,
   outgoingStorage,
 } from './file-storage.js';
-import { gmailSenderName } from './gmail-mail.js';
+import { GRAPH_MIME_BYTES } from './graph-mail.js';
 import { composeOutgoing, outgoingMessage } from './outgoing-message.js';
 import { readMailPreferences } from './preferences.js';
 import {
@@ -19,7 +19,7 @@ import {
   senderDisplayName,
   smtpErrors,
 } from './smtp.js';
-import { transaction } from './store.js';
+import { providerSenderName, transaction } from './store.js';
 
 const uuid = { type: 'string', format: 'uuid' };
 const params = {
@@ -278,21 +278,21 @@ export function registerOutgoingRoutes(
         if (!at) return null;
         const account = (
           await db.query(
-            `SELECT a.id,a.provider,a.username,${gmailSenderName('a')} AS gmail_sender
+            `SELECT a.id,a.provider,a.username,${providerSenderName('a')} AS provider_sender
             FROM mail_accounts a WHERE a.user_id=$1 AND a.id=$2 FOR UPDATE OF a`,
             [owner, at.account_id],
           )
         ).rows[0];
         if (!account) return { error: 'Choose a connected sending account.' };
-        // Gmail sends through the Gmail API as the connected address (D040);
+        // Native providers send through their API as the connected address;
         // the account ID versions its fixed settings.
         const smtp =
-          account.provider === 'gmail'
+          account.provider !== 'imap'
             ? {
                 state: 'ready',
                 version: account.id,
                 username: account.username,
-                display_name: defaultSenderName(account.gmail_sender),
+                display_name: defaultSenderName(account.provider_sender),
                 save_sent_copy: true,
               }
             : (
@@ -384,7 +384,7 @@ export function registerOutgoingRoutes(
                 content: fileStream(db, owner, file.id),
               })),
               smtp.display_name,
-              account.provider === 'gmail',
+              account.provider !== 'imap',
             );
             stream = composed.compiled;
             message = {
@@ -400,7 +400,7 @@ export function registerOutgoingRoutes(
               draft.reply_context,
               draft.forward_content,
               smtp.display_name,
-              account.provider === 'gmail',
+              account.provider !== 'imap',
             );
         } catch (error) {
           return {
@@ -414,6 +414,15 @@ export function registerOutgoingRoutes(
           return {
             error:
               'Daily send limit reached (100 messages or 500 recipients). Try again later.',
+          };
+        if (
+          account.provider === 'microsoft' &&
+          message.raw &&
+          message.raw.length > GRAPH_MIME_BYTES
+        )
+          return {
+            error:
+              'Outlook messages must be under 3 MB including encoded attachments.',
           };
         const inserted = (
           await db.query(
@@ -443,9 +452,14 @@ export function registerOutgoingRoutes(
             position = 0;
           for await (const data of fixedChunks(stream.createReadStream())) {
             bytes += data.length;
-            if (bytes > MIME_BYTES)
+            if (
+              bytes >
+              (account.provider === 'microsoft' ? GRAPH_MIME_BYTES : MIME_BYTES)
+            )
               throw new AttachmentError(
-                'The encoded message exceeds the 30 MiB send limit. Remove an attachment or shorten the message.',
+                account.provider === 'microsoft'
+                  ? 'Outlook messages must be under 3 MB including encoded attachments.'
+                  : 'The encoded message exceeds the 30 MiB send limit. Remove an attachment or shorten the message.',
               );
             await db.query(
               'INSERT INTO mail_outbox_chunks(user_id,outbox_id,position,data) VALUES($1,$2,$3,$4)',
@@ -618,11 +632,11 @@ export function registerOutgoingRoutes(
                 }
               : 'refused';
           }
-          // Gmail's settings are fixed and versioned by the account ID (D040).
+          // Native settings are fixed and versioned by the account ID.
           const smtp = (
             await db.query(
-              `SELECT CASE WHEN a.provider='gmail' THEN 'ready' ELSE s.state END AS state,
-              CASE WHEN a.provider='gmail' THEN a.id ELSE s.version END AS version
+              `SELECT CASE WHEN a.provider<>'imap' THEN 'ready' ELSE s.state END AS state,
+              CASE WHEN a.provider<>'imap' THEN a.id ELSE s.version END AS version
               FROM mail_accounts a LEFT JOIN mail_smtp s ON s.user_id=a.user_id AND s.account_id=a.id
               WHERE a.user_id=$1 AND a.id=$2`,
               [owner, row.account_id],

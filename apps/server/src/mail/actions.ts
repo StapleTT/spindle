@@ -1,7 +1,12 @@
 import type { Pool, PoolClient } from 'pg';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
-import { claimAccount, releaseLease, withLease } from './store.js';
+import {
+  claimAccount,
+  type MailAccount,
+  releaseLease,
+  withLease,
+} from './store.js';
 
 export type ActionKind =
   | 'read'
@@ -48,6 +53,28 @@ export async function refreshPendingFolder(
       ORDER BY a.seq DESC LIMIT 1) WHERE user_id=$1 AND message_id=$2`,
     [owner, message],
   );
+}
+
+export async function writeMemberships(
+  db: PoolClient,
+  account: MailAccount,
+  local: string,
+  { flags, targets }: { flags: string[]; targets: string[] },
+) {
+  await db.query(
+    `DELETE FROM mail_memberships WHERE user_id=$1 AND account_id=$2 AND message_id=$3
+     AND NOT(mailbox_id=ANY($4::uuid[]))`,
+    [account.user_id, account.id, local, targets],
+  );
+  // A pending read intent and pending move keep their optimistic local state
+  // until the worker applies them, exactly as IMAP sync does.
+  await db.query(
+    `INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,flags)
+     SELECT $1,$2,box,$3,${withSeen('$5::text[]', pendingKind('$1', '$3'))} FROM unnest($4::uuid[]) AS box
+     ON CONFLICT (mailbox_id,message_id) DO UPDATE SET flags=EXCLUDED.flags`,
+    [account.user_id, account.id, local, targets, flags],
+  );
+  await refreshPendingFolder(db, account.user_id, local);
 }
 
 // User-facing outcomes for stored error codes; provider diagnostics are never stored.

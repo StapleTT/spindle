@@ -7,6 +7,7 @@ import { scanFile } from './file-scanner.js';
 import { FILE_BYTES, fileStream, fixedChunks } from './file-storage.js';
 import type { GoogleConfig } from './google.js';
 import { connectImap } from './imap.js';
+import type { MicrosoftConfig } from './microsoft.js';
 import { claimAccount, releaseLease, transaction, withLease } from './store.js';
 
 export async function scanUpload(
@@ -56,6 +57,7 @@ export async function fetchForwardFile(
   id: string,
   connect = connectImap,
   google: GoogleConfig | null = null,
+  microsoft: MicrosoftConfig | null = null,
 ) {
   const account = await claimAccount(pool, owner, accountId, false);
   if (!account) return;
@@ -102,14 +104,17 @@ export async function fetchForwardFile(
         });
       }
     };
-    if (account.provider === 'gmail')
+    if (account.provider !== 'imap')
       await store(
         Readable.from([
-          await contentSource(account, keys, connect, google).attachment(
-            message,
-            part,
-            FILE_BYTES,
-          ),
+          await contentSource(
+            pool,
+            account,
+            keys,
+            connect,
+            google,
+            microsoft,
+          ).attachment(message, part, FILE_BYTES),
         ]),
       );
     else

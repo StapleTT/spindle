@@ -274,6 +274,13 @@
       "when": 1793550000007,
       "tag": "0038_content_prefetch",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793550000008,
+      "tag": "0039_microsoft_graph",
+      "breakpoints": true
     }
   ]
 }

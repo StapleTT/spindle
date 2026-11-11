@@ -7,6 +7,7 @@ import { type AuthConfig, readAuthConfig } from '../src/auth/config.js';
 import { readContentConfig } from '../src/mail/content-config.js';
 import type { MailKeys } from '../src/mail/credentials.js';
 import type { GoogleConfig } from '../src/mail/google.js';
+import type { MicrosoftConfig } from '../src/mail/microsoft.js';
 
 export const testConfig = readAuthConfig({
   APP_URL: 'http://127.0.0.1:5173',
@@ -25,6 +26,7 @@ export function testApp(
   mailKeys?: MailKeys,
   content = readContentConfig(config, {}),
   google: GoogleConfig | null = null,
+  microsoft: MicrosoftConfig | null = null,
 ) {
   const app = buildApp(
     pool,
@@ -34,6 +36,7 @@ export function testApp(
     content,
     mailer,
     google,
+    microsoft,
   );
   app.log.level = 'silent';
   return app;

@@ -13,9 +13,10 @@ import { encryptCredential, type MailKeys } from './credentials.js';
 import { registerDraftRoutes } from './drafts.js';
 import { registerMailEvents } from './events.js';
 import { registerUploadRoutes } from './file-uploads.js';
-import { gmailSenderName } from './gmail-mail.js';
 import { registerGmailOAuthRoutes } from './gmail-oauth.js';
 import { type GoogleConfig, revokeUnusedGrants } from './google.js';
+import type { MicrosoftConfig } from './microsoft.js';
+import { registerMicrosoftOAuthRoutes } from './microsoft-oauth.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerPreferenceRoutes } from './preferences.js';
@@ -30,7 +31,7 @@ import {
   unreadCondition,
 } from './search.js';
 import { registerSignatureRoutes, signatureField } from './signatures.js';
-import { consumeLimit, transaction } from './store.js';
+import { consumeLimit, providerSenderName, transaction } from './store.js';
 import { registerTriageRoutes } from './triage-routes.js';
 import { localStateFields, receivedMembershipCondition } from './view.js';
 
@@ -106,6 +107,7 @@ export async function registerMailRoutes(
   keys: MailKeys,
   content: ContentConfig | null,
   google: GoogleConfig | null = null,
+  microsoft: MicrosoftConfig | null = null,
 ) {
   app.decorateRequest('mailUser', '');
   app.decorateRequest('mailSession', '');
@@ -174,25 +176,24 @@ export async function registerMailRoutes(
         .send({ message: 'Too many requests. Try again in a minute.' });
   });
 
-  // Gmail sends through the Gmail API (D040), so SMTP settings do not apply.
+  // Native API providers do not use SMTP settings.
   // Unowned IDs fall through to the route's 404.
   const imapOnly = new Set([
     '/api/mail/accounts/:id/smtp',
     '/api/mail/accounts/:id/smtp/test',
   ]);
   app.addHook('preHandler', async (request, reply) => {
-    if (
-      imapOnly.has(request.routeOptions.url ?? '') &&
-      (
-        await pool.query(
-          'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
-          [request.mailUser, (request.params as { id: string }).id],
-        )
-      ).rows[0]?.provider === 'gmail'
-    )
+    if (!imapOnly.has(request.routeOptions.url ?? '')) return;
+    const provider = (
+      await pool.query(
+        'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
+        [request.mailUser, (request.params as { id: string }).id],
+      )
+    ).rows[0]?.provider;
+    if (provider && provider !== 'imap')
       return reply.code(409).send({
         message:
-          'Gmail accounts send through Gmail; SMTP settings do not apply.',
+          'These accounts send through their provider API; SMTP settings do not apply.',
       });
   });
 
@@ -203,12 +204,13 @@ export async function registerMailRoutes(
   app.get('/api/mail/accounts', async (request) => ({
     configured: keys.keys.has(keys.active),
     gmail: Boolean(google) && keys.keys.has(keys.active),
+    microsoft: Boolean(microsoft) && keys.keys.has(keys.active),
     accounts: (
       await pool.query(
         `SELECT ${accountFields},${signatureField},
-        CASE WHEN a.provider='gmail' THEN 'ready' ELSE (SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS "smtpState",
-        CASE WHEN a.provider='gmail' THEN a.username ELSE (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS sender,
-        CASE WHEN a.provider='gmail' THEN ${gmailSenderName('a')} ELSE (SELECT display_name FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS "senderName",
+        CASE WHEN a.provider<>'imap' THEN 'ready' ELSE (SELECT state FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS "smtpState",
+        CASE WHEN a.provider<>'imap' THEN a.username ELSE (SELECT username FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS sender,
+        CASE WHEN a.provider<>'imap' THEN ${providerSenderName('a')} ELSE (SELECT display_name FROM mail_smtp s WHERE s.user_id=a.user_id AND s.account_id=a.id) END AS "senderName",
         (SELECT count(*)::int FROM mailboxes b WHERE b.user_id=$1 AND b.account_id=a.id AND NOT b.initial_complete) AS "foldersRemaining"
        FROM mail_accounts a WHERE user_id=$1 ORDER BY sort_order NULLS LAST,created_at,id`,
         [request.mailUser],
@@ -663,6 +665,7 @@ export async function registerMailRoutes(
     },
   );
   registerGmailOAuthRoutes(app, pool, config, keys, google);
+  registerMicrosoftOAuthRoutes(app, pool, config, keys, microsoft);
   registerTriageRoutes(app, pool);
   registerContactRoutes(app, pool);
   registerReaderRoutes(app, pool, content);

@@ -20,8 +20,7 @@ export function composeOutgoing(
   forward?: ForwardContent | null,
   files: { filename: string; content: Readable; contentType: string }[] = [],
   displayName = '',
-  // Gmail's messages.send reads recipients from headers and strips Bcc from
-  // delivered copies; SMTP takes them from the envelope (D040).
+  // Provider APIs read recipients from MIME headers; SMTP uses the envelope.
   keepBcc = false,
 ) {
   if (!emailAddress(sender))

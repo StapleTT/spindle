@@ -13,6 +13,32 @@ import { sanitizeMessage } from './sanitize.js';
 export const MAX_RAW_BYTES = 10 * 1024 * 1024;
 export const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
+// Provider JSON headers use the same bounded parser as MIME headers.
+export function headerBlock(headers: unknown, names: string[]) {
+  const values = new Map<string, string>();
+  for (const header of Array.isArray(headers) ? headers.slice(0, 500) : []) {
+    const name =
+      typeof header?.name === 'string' ? header.name.toLowerCase() : '';
+    if (
+      typeof header?.value === 'string' &&
+      names.some((wanted) => wanted.toLowerCase() === name) &&
+      !values.has(name)
+    )
+      values.set(name, header.value);
+  }
+  const block = Buffer.from(
+    names
+      .flatMap((name) => {
+        const value = values.get(name.toLowerCase());
+        return value === undefined
+          ? []
+          : [`${name}: ${value.replace(/[\r\n\0]+/g, ' ').slice(0, 8192)}`];
+      })
+      .join('\r\n'),
+  );
+  return { values, block };
+}
+
 export async function parseReplyHeaders(headers: Buffer) {
   if (headers.length > 64 * 1024) throw new Error('Header size limit');
   return replyMetadata(

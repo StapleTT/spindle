@@ -139,7 +139,7 @@ export function registerGmailOAuthRoutes(
       // Single use, bound to this user and sign-in session, and expiring.
       const saved = (
         await pool.query(
-          `DELETE FROM mail_oauth_states WHERE state_hash=$1 AND user_id=$2 AND session_id=$3
+          `DELETE FROM mail_oauth_states WHERE provider='gmail' AND state_hash=$1 AND user_id=$2 AND session_id=$3
            AND expires_at>clock_timestamp() RETURNING account_id,history,code_verifier`,
           [sha256(state).toString('hex'), owner, request.mailSession],
         )

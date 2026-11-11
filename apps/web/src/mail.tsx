@@ -181,6 +181,7 @@ export function Mail({
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [configured, setConfigured] = useState(true);
   const [gmailAvailable, setGmailAvailable] = useState(false);
+  const [microsoftAvailable, setMicrosoftAvailable] = useState(false);
   const {
     q,
     account,
@@ -210,12 +211,14 @@ export function Mail({
       if (currentQuery.current !== queryString) return;
       const requested = ++generation.current;
       const [connections, folders, messages] = await Promise.all([
-        api<{ accounts: Account[]; configured: boolean; gmail: boolean }>(
-          'accounts',
-          {
-            signal,
-          },
-        ),
+        api<{
+          accounts: Account[];
+          configured: boolean;
+          gmail: boolean;
+          microsoft: boolean;
+        }>('accounts', {
+          signal,
+        }),
         api<{ mailboxes: Mailbox[] }>('mailboxes', { signal }),
         api<Page>(`messages?${queryString}`, { signal }),
       ]);
@@ -229,6 +232,7 @@ export function Mail({
       setAccountsReady(true);
       setConfigured(connections.configured);
       setGmailAvailable(connections.gmail);
+      setMicrosoftAvailable(connections.microsoft);
       setMailboxes(folders.mailboxes);
       setPage(messages);
       setFailure('');
@@ -1142,6 +1146,7 @@ export function Mail({
               isAdmin={isAdmin}
               configured={configured}
               gmailAvailable={gmailAvailable}
+              microsoftAvailable={microsoftAvailable}
               density={density}
               onDensity={(value) => {
                 setDensity(value);

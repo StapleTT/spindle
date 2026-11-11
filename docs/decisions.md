@@ -490,3 +490,18 @@ D041 shortened dispatch, but a first open still paid a provider connection and a
 - **Client:** the reader requests its Previous and Next messages once its own body is shown, and the list requests a row after the pointer or keyboard focus rests on it. These use `POST /api/mail/messages/:id/prefetch`, the same deduplicated request as opening, on its own rate-limit bucket.
 
 Consequences: up to the budget, recent mail is held in Postgres continuously instead of only after opening, and body search covers it. Mail outside the budget, in Trash or Junk, or opened before its first prefetch pass still takes the on-demand path. See [reader](reader.md#prefetch).
+
+## D043 — Microsoft OAuth and Graph polling mail
+
+Status: user requested Microsoft OAuth and Graph API integration on 2026-11-10.
+
+Support Outlook.com personal and Microsoft 365 mailbox connections through delegated Microsoft OAuth and Graph v1.0. Reuse the existing worker queues, fenced leases, local mirror/search/SSE, reader isolation, durable actions/undo, local composer, signatures and immutable Outbox. Mailbox I/O stays in the worker; the API performs only OAuth exchange/identity discovery.
+
+- Request `openid profile email offline_access User.Read Mail.ReadWrite Mail.Send`; use common Microsoft endpoints and exact redirects. Bind hashed expiring single-use PKCE state to provider/user/session/target. Keep Microsoft mailbox consent separate from Spindle login.
+- Use app-scoped userinfo `sub` as the provider identity and `/me` for the connected address/name. Refuse reconnect substitution. Encrypt refresh tokens with the existing owner/account AAD; persist rotations under the lease. Disconnect/deletion removes tokens locally without broad Microsoft session revocation.
+- Persist folder-hierarchy and per-folder message delta checkpoints atomically with pages. Use immutable IDs and reconcile removals against current message location before deleting; retain message identity, caches and local conversation state across moves. Honor throttling and recover expired delta without clearing visible mail first.
+- Keep the fixed 90-day/all choice. Traverse unfiltered delta and apply the horizon locally to avoid the provider's filtered-delta cap. Use native fetch; add no dependency/service.
+- Reader, actions and sending replace only the provider step. Read/unread is PATCH; moves carry durable unknown-move protection. Send base64 MIME once, retain Bcc, reuse cancellation/scheduling/unknown-send safeguards and let Microsoft create Sent copies.
+- Bound outgoing MIME to 3,000,000 bytes before transport base64 for Graph's 4 MB request limit. Larger attachment upload sessions, native Outlook Drafts synchronization and subscriptions/push remain separate. No shared/delegated mailboxes, aliases, on-premises Exchange or national clouds.
+
+Append migration 0039; deploy API/worker/web together. Old workers must never run against Microsoft accounts. Live personal/Microsoft 365 acceptance and tenant consent/publisher verification remain open; K01/K02/M5 are not marked complete. See [Outlook setup and behavior](outlook.md).

@@ -39,6 +39,10 @@ export const smtpErrors: Record<string, string> = {
     'Gmail could not be reached before sending. Your draft is preserved; retry when Gmail is reachable.',
   gmail_rejected:
     'Gmail rejected this message. Review its recipients and attachments before retrying.',
+  microsoft_unavailable:
+    'Microsoft could not be reached before sending. Your draft is preserved; retry when Microsoft is reachable.',
+  microsoft_rejected:
+    'Microsoft rejected this message. Review its recipients and attachments before retrying.',
   smtp_rejected:
     'The SMTP server rejected this message. Review its recipients and outgoing settings before retrying.',
   settings_changed:

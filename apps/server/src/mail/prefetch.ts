@@ -16,7 +16,13 @@ import { decryptCredential, type MailKeys } from './credentials.js';
 import { GmailPause } from './gmail.js';
 import { gmailContentSource } from './gmail-mail.js';
 import { type GoogleConfig, GoogleError } from './google.js';
+import { graphContentSource } from './graph-mail.js';
 import { connectImap } from './imap.js';
+import {
+  type MicrosoftConfig,
+  MicrosoftError,
+  MicrosoftPause,
+} from './microsoft.js';
 import { MAX_BODY_BYTES, MAX_RAW_BYTES, parseMessage } from './parse.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
@@ -89,8 +95,10 @@ const storeFailure = `INSERT INTO mail_content(user_id,account_id,message_id,sta
   ON CONFLICT (message_id) DO NOTHING RETURNING message_id`;
 
 // Quota, authorization and network failures concern the account, not the
-// message; only Gmail reporting the message gone does.
-const gmailUnavailable = (error: unknown) =>
+// message; only the provider reporting the message gone does.
+const providerUnavailable = (error: unknown) =>
+  error instanceof MicrosoftPause ||
+  (error instanceof MicrosoftError && error.status !== 404) ||
   error instanceof GmailPause ||
   (error instanceof GoogleError && error.status !== 404) ||
   error instanceof TypeError ||
@@ -104,6 +112,7 @@ export async function prefetchAccount(
   id: string,
   signal?: AbortSignal,
   connect = connectImap,
+  microsoft: MicrosoftConfig | null = null,
 ) {
   if (signal?.aborted) return;
   try {
@@ -135,6 +144,8 @@ export async function prefetchAccount(
     let source: ContentSource;
     if (account.provider === 'gmail')
       source = gmailContentSource(account, keys, google);
+    else if (account.provider === 'microsoft')
+      source = graphContentSource(pool, account, keys, microsoft);
     else {
       const opened = await connect(
         account,
@@ -167,7 +178,7 @@ export async function prefetchAccount(
       } catch (error) {
         // An interrupted pass or a failing connection says nothing about
         // this message; it stays a candidate for the next pass.
-        if (stopped || (client ? !client.usable : gmailUnavailable(error)))
+        if (stopped || (client ? !client.usable : providerUnavailable(error)))
           break;
       }
       await withLease(pool, account, async (db) => {

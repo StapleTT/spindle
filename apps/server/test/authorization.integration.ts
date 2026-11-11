@@ -319,6 +319,14 @@ test('route-wide authorization matrix', {
       guard: 'session',
       query: { state: 'c10-state', code: 'c10-code' },
     },
+    'POST /api/mail/oauth/microsoft': {
+      guard: 'session',
+      body: { history: 'all' },
+    },
+    'GET /api/mail/oauth/microsoft/callback': {
+      guard: 'session',
+      query: { state: 'c10-state', code: 'c10-code' },
+    },
     'POST /api/mail/accounts/:id/sync': { guard: 'session', foreign: 'deny' },
     'DELETE /api/mail/accounts/:id': {
       guard: 'session',

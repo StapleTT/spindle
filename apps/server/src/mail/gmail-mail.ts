@@ -1,31 +1,33 @@
 import type { Readable } from 'node:stream';
 import type { Pool } from 'pg';
-import { type ActionKind, moveKinds, settle } from './actions.js';
+import {
+  type ActionKind,
+  moveKinds,
+  settle,
+  writeMemberships,
+} from './actions.js';
 import type { ContentSource } from './content-worker.js';
 import type { MailKeys } from './credentials.js';
 import {
   ARCHIVE,
   type GmailApi,
   GmailPause,
-  headerBlock,
   mirror,
   openGmail,
-  writeMemberships,
 } from './gmail.js';
 import { type GoogleConfig, GoogleError } from './google.js';
-import { MAX_RAW_BYTES, parseReplyHeaders, rawAttachments } from './parse.js';
+import {
+  headerBlock,
+  MAX_RAW_BYTES,
+  parseReplyHeaders,
+  rawAttachments,
+} from './parse.js';
 import {
   claimAccount,
   type MailAccount,
   releaseLease,
   withLease,
 } from './store.js';
-
-// From-header name for a Gmail account: Gmail's default "Send mail as" name,
-// else the Spindle profile name (the IMAP default). SQL over alias `a`.
-export const gmailSenderName = (a: string) =>
-  `COALESCE((SELECT g.display_name FROM mail_gmail_sync g WHERE g.account_id=${a}.id),
-    (SELECT u.name FROM users u WHERE u.id=${a}.user_id),'')`;
 
 // D040: Gmail reader, actions and sending on the shared pipelines. Each job
 // opens one paced client (fresh access token) and holds the account lease.

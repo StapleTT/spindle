@@ -13,9 +13,12 @@ import { cleanupUploads, fetchForwardFile, scanUpload } from './file-worker.js';
 import { syncGmailAccount } from './gmail.js';
 import { applyGmailActions } from './gmail-mail.js';
 import { type GoogleConfig, revokeUnusedGrants } from './google.js';
+import { syncGraphAccount } from './graph.js';
+import { applyGraphActions } from './graph-mail.js';
 import { watchInbox } from './idle.js';
 import { connectImap } from './imap.js';
 import { MAX_ATTACHMENTS } from './media.js';
+import type { MicrosoftConfig } from './microsoft.js';
 import { processOutgoing } from './outgoing-worker.js';
 import { prefetchAccount } from './prefetch.js';
 import { syncProviderDrafts } from './provider-drafts.js';
@@ -38,6 +41,7 @@ export async function startMailWorker(
   google: GoogleConfig | null = null,
   // D042 body prefetch after each completed sync; the worker process enables it.
   options: { prefetch?: boolean } = {},
+  microsoft: MicrosoftConfig | null = null,
 ) {
   const shutdown = new AbortController();
   await boss.createQueue('mail-sync', {
@@ -292,14 +296,19 @@ export async function startMailWorker(
           [data.userId, data.accountId],
         )
       ).rows[0]?.provider;
-      if (provider !== 'imap' && provider !== 'gmail') return false;
+      if (
+        provider !== 'imap' &&
+        provider !== 'gmail' &&
+        provider !== 'microsoft'
+      )
+        return false;
       // User-requested content, actions and sends outrank metadata work.
       if (
         (await pool.query(contentPending, [data.userId, data.accountId]))
           .rowCount
       )
         return false;
-      if (provider === 'gmail' && data.kind === 'idle') return false;
+      if (provider !== 'imap' && data.kind === 'idle') return false;
       if (provider === 'imap' && data.kind === 'idle') {
         const changed = await watchInbox(
           pool,
@@ -325,7 +334,15 @@ export async function startMailWorker(
               data.userId,
               data.accountId,
             )
-          : await syncAccount(pool, keys, data.userId, data.accountId);
+          : provider === 'microsoft'
+            ? await syncGraphAccount(
+                pool,
+                keys,
+                microsoft,
+                data.userId,
+                data.accountId,
+              )
+            : await syncAccount(pool, keys, data.userId, data.accountId);
       // New mail is cached before it is opened (D042). A failed or paused
       // sync keeps its backoff instead.
       if (synced && options.prefetch)
@@ -336,6 +353,8 @@ export async function startMailWorker(
           data.userId,
           data.accountId,
           shutdown.signal,
+          connectImap,
+          microsoft,
         );
       return true;
     }
@@ -378,28 +397,34 @@ export async function startMailWorker(
             data.fileId ?? '',
             connectImap,
             google,
+            microsoft,
           );
         if (data.kind === 'provider-drafts')
           return syncProviderDrafts(pool, keys, userId, accountId);
-        return data.kind === 'outgoing'
-          ? processOutgoing(
-              pool,
-              keys,
-              userId,
-              accountId,
-              connectSmtp,
-              connectImap,
-              google,
-            )
-          : // Provider-specific step only; intents, undo and settling are shared.
-            (
-                await pool.query(
-                  'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
-                  [userId, accountId],
-                )
-              ).rows[0]?.provider === 'gmail'
-            ? applyGmailActions(pool, keys, google, userId, accountId)
-            : applyMailActions(pool, keys, userId, accountId);
+        if (data.kind === 'outgoing')
+          return processOutgoing(
+            pool,
+            keys,
+            userId,
+            accountId,
+            connectSmtp,
+            connectImap,
+            google,
+            microsoft,
+          );
+        const provider = (
+          await pool.query(
+            'SELECT provider FROM mail_accounts WHERE user_id=$1 AND id=$2',
+            [userId, accountId],
+          )
+        ).rows[0]?.provider;
+        if (provider === 'gmail')
+          return applyGmailActions(pool, keys, google, userId, accountId);
+        if (provider === 'microsoft')
+          return applyGraphActions(pool, keys, microsoft, userId, accountId);
+        if (provider === 'imap')
+          return applyMailActions(pool, keys, userId, accountId);
+        return;
       }
       if (
         !data ||
@@ -417,7 +442,14 @@ export async function startMailWorker(
           ))
       )
         throw new Error('Invalid content job');
-      await fetchMessageContent(pool, keys, data, connectImap, google);
+      await fetchMessageContent(
+        pool,
+        keys,
+        data,
+        connectImap,
+        google,
+        microsoft,
+      );
     },
   );
   await boss.work<{ userId: string; fileId: string }>(
