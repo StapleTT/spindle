@@ -459,18 +459,10 @@ a.brand:hover {
 .providers .provider-wordmark {
   height: 20px;
 }
-.providers .soon img {
-  filter: grayscale(1);
-}
 .providers small {
   color: var(--on-var);
   font-size: 13px;
   font-weight: 500;
-}
-.providers .soon {
-  border-style: dashed;
-  background: transparent;
-  color: var(--on-var);
 }
 
 /* Sections */

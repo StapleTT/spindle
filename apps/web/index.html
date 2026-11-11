@@ -7,7 +7,7 @@
     <meta name="color-scheme" content="light dark" />
     <meta
       name="description"
-      content="Spindle syncs your Gmail and IMAP mailboxes into one private, keyboard-first inbox."
+      content="Spindle syncs your Gmail, Outlook and IMAP mailboxes into one private, keyboard-first inbox."
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Spindle · Every inbox, one fast stream</title>
@@ -105,12 +105,12 @@
         <h2 id="providers-title">Works with the mail you already have</h2>
         <ul>
           <li><span class="icon" data-icon="dns" style="color: var(--a3)" aria-hidden="true"></span>Any IMAP server<small>TLS required</small></li>
-          <li><img class="provider-logo" src="/src/assets/gmail.svg" alt="" />Gmail<small>Google sign-in</small></li>
+          <li><img class="provider-logo" src="/src/assets/gmail.svg" alt="" />Gmail<small>OAuth</small></li>
           <li><img class="provider-logo" src="/src/assets/fastmail.svg" alt="" />Fastmail<small>IMAP</small></li>
           <li><img class="provider-logo" src="/src/assets/icloud.svg" alt="" />iCloud Mail<small>IMAP</small></li>
           <li><img class="provider-wordmark" src="/src/assets/yahoo.svg" alt="Yahoo" /><small>IMAP</small></li>
           <li><img class="provider-logo" src="/src/assets/proton.svg" alt="" />Proton Mail<small>IMAP</small></li>
-          <li class="soon"><img class="provider-logo" src="/src/assets/outlook.svg" alt="" />Microsoft 365<small>Coming later</small></li>
+          <li><img class="provider-logo" src="/src/assets/outlook.svg" alt="" />Microsoft 365<small>OAuth</small></li>
         </ul>
       </section>
 
@@ -124,7 +124,7 @@
           <article><span class="tile a2"><span class="icon" data-icon="stacks" aria-hidden="true"></span></span><h3>One unified stream</h3><p>Every connected account merges into one paginated inbox. Filter to a single account or folder when you need to.</p></article>
           <article><span class="tile a3"><span class="icon" data-icon="undo" aria-hidden="true"></span></span><h3>Triage with a safety net</h3><p>Archive, trash, pin, mute, snooze and batch-select at full speed. Mail actions can be undone for five seconds.</p></article>
           <article><span class="tile a4"><span class="icon" data-icon="edit_note" aria-hidden="true"></span></span><h3>Compose that does it right</h3><p>Rich text, drafts that sync to IMAP providers, real reply threading, reply-all, formatted forwards, per-account signatures, Send later and an optional five-second cancel window.</p></article>
-          <article><span class="tile a1"><span class="icon" data-icon="notifications_active" aria-hidden="true"></span></span><h3>Live updates</h3><p>IMAP IDLE watches your inbox between regular checks, Gmail is checked for changes every minute, and changes stream to every open tab as soon as they are synced.</p></article>
+          <article><span class="tile a1"><span class="icon" data-icon="notifications_active" aria-hidden="true"></span></span><h3>Live updates</h3><p>IMAP IDLE watches your inbox between regular checks, Gmail and Outlook are checked for changes every minute, and changes stream to every open tab as soon as they are synced.</p></article>
           <article><span class="tile sc"><span class="icon" data-icon="devices" aria-hidden="true"></span></span><h3>One app, every screen</h3><p>One responsive app with semantic controls, visible focus and keyboard access. There is no separate mobile site to fall behind.</p></article>
         </div>
       </section>
@@ -161,7 +161,7 @@
           <div class="security-grid">
             <div><span class="icon" data-icon="web_asset_off" aria-hidden="true"></span><h3>Isolated message rendering</h3><p>Email HTML is sanitized, then shown from a separate content origin that never receives your app cookies.</p></div>
             <div><span class="icon" data-icon="shield" aria-hidden="true"></span><h3>Private image proxy</h3><p>Remote images are blocked by default. Allowed images use Spindle’s privacy proxy by default. Settings let you choose automatic loading or direct browser loading.</p></div>
-            <div><span class="icon" data-icon="key" aria-hidden="true"></span><h3>Encrypted mail credentials</h3><p>IMAP and SMTP passwords and Gmail sign-in tokens are encrypted at rest with a versioned key ring kept apart from the database.</p></div>
+            <div><span class="icon" data-icon="key" aria-hidden="true"></span><h3>Encrypted mail credentials</h3><p>IMAP and SMTP passwords and Gmail and Microsoft sign-in tokens are encrypted at rest with a versioned key ring kept apart from the database.</p></div>
             <div><span class="icon" data-icon="lock" aria-hidden="true"></span><h3>TLS everywhere</h3><p>IMAP and SMTP must use implicit TLS or required STARTTLS. Spindle never sends a login in cleartext.</p></div>
             <div><span class="icon" data-icon="verified_user" aria-hidden="true"></span><h3>Private by design</h3><p>Every mailbox belongs to exactly one person. There are no shared inboxes, and admins get no access to your mail.</p></div>
             <div><span class="icon" data-icon="coronavirus" aria-hidden="true"></span><h3>Scanned attachments</h3><p>Files you send are checked by a private ClamAV scanner first. Failed or unavailable checks block sending.</p></div>
@@ -226,11 +226,11 @@ npm run dev</code></pre>
         </details>
         <details name="faq">
           <summary>Which providers are supported?</summary>
-          <p>Gmail connects with Google sign-in, so Spindle never sees your Google password. Any IMAP/SMTP server that supports TLS also works, including Fastmail, iCloud and Yahoo with an app password. A native Microsoft 365 connection is planned but not available yet.</p>
+          <p>Gmail connects with Google sign-in, and Outlook.com and Microsoft 365 connect with Microsoft sign-in, so Spindle never sees those passwords. Any IMAP/SMTP server that supports TLS also works, including Fastmail, iCloud and Yahoo with an app password.</p>
         </details>
         <details name="faq">
           <summary>How do new messages arrive?</summary>
-          <p>Spindle watches your inbox with IMAP IDLE where the server supports it and checks every account, including Gmail, about once a minute. Synced changes stream to your open tabs straight away.</p>
+          <p>Spindle watches your inbox with IMAP IDLE where the server supports it and checks every account, including Gmail and Outlook, about once a minute. Synced changes stream to your open tabs straight away.</p>
         </details>
         <details name="faq">
           <summary>Can I undo an action?</summary>
