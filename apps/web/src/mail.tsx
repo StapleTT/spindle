@@ -97,6 +97,8 @@ type Message = {
   pinned: boolean;
   muted: boolean;
   snoozedUntil: string | null;
+  canMove: { archive: boolean | null; trash: boolean | null } | null;
+  canRestore: boolean;
 };
 type Page = {
   messages: Message[];
@@ -305,16 +307,6 @@ export function Mail({
       );
     }
     reload();
-  }
-
-  // Only provider-designated folders are offered, and not from inside that folder.
-  function canMove(message: Message, role: string) {
-    return mailboxes.some(
-      (box) =>
-        box.accountId === message.accountId &&
-        box.role === role &&
-        box.id !== mailbox,
-    );
   }
 
   useEffect(() => {
@@ -653,7 +645,7 @@ export function Mail({
               </p>
             </div>
             <div className="row-actions">
-              {canMove(message, '\\Archive') && (
+              {message.canMove?.archive && (
                 <button
                   type="button"
                   className="icon-button small"
@@ -675,7 +667,7 @@ export function Mail({
               >
                 <Icon src={message.unread ? markEmailRead : markEmailUnread} />
               </button>
-              {['\\Archive', '\\Trash'].includes(selected?.role ?? '') && (
+              {message.canRestore && (
                 <button
                   type="button"
                   className="icon-button small"
@@ -686,7 +678,7 @@ export function Mail({
                   <Icon src={unarchive} />
                 </button>
               )}
-              {canMove(message, '\\Trash') && (
+              {message.canMove?.trash && (
                 <button
                   type="button"
                   className="icon-button small"

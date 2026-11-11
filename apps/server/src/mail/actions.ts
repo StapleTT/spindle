@@ -15,6 +15,16 @@ export const moveKinds = ['archive', 'trash', 'move', 'restore'];
 // Provider-designated (SPECIAL-USE) destinations; folders are never guessed by name.
 export const moveRoles = { archive: '\\Archive', trash: '\\Trash' } as const;
 
+// Row/reader fields for message m and owner $1: designated folders it is not already in,
+// and whether it sits in Archive/Trash, where Restore always has a destination.
+export const moveFields = `(SELECT json_build_object('archive',bool_or(t.role='${moveRoles.archive}'),'trash',bool_or(t.role='${moveRoles.trash}'))
+  FROM mailboxes t WHERE t.user_id=$1 AND t.account_id=m.account_id AND t.role IN ('${moveRoles.archive}','${moveRoles.trash}')
+  AND NOT EXISTS(SELECT 1 FROM mail_memberships here WHERE here.user_id=$1 AND here.message_id=m.id
+    AND COALESCE(here.pending_mailbox_id,here.mailbox_id)=t.id)) AS "canMove",
+  EXISTS(SELECT 1 FROM mail_memberships here JOIN mailboxes t ON t.user_id=here.user_id AND t.account_id=here.account_id
+    AND t.id=COALESCE(here.pending_mailbox_id,here.mailbox_id)
+    WHERE here.user_id=$1 AND here.message_id=m.id AND t.role IN ('${moveRoles.archive}','${moveRoles.trash}')) AS "canRestore"`;
+
 // SQL for a flags array with an action's \Seen change applied; other flags are untouched.
 export function withSeen(flags: string, kind: string) {
   return `CASE ${kind} WHEN 'read' THEN array_append(array_remove(${flags},'\\Seen'),'\\Seen')

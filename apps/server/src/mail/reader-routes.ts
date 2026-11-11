@@ -5,8 +5,8 @@ import {
   type ActionKind,
   actionErrors,
   currentFolder,
+  moveFields,
   moveKinds,
-  moveRoles,
   refreshPendingFolder,
   restoreDestination,
   settle,
@@ -120,10 +120,7 @@ export function registerReaderRoutes(
       ${anchor ? "NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id AND '\\Seen'=ANY(seen.flags))" : unreadCondition} AS unread,
       (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state,'code',x.error_code) FROM mail_actions x
         WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction",
-      (SELECT json_build_object('archive',bool_or(t.role='${moveRoles.archive}'),'trash',bool_or(t.role='${moveRoles.trash}'))
-        FROM mailboxes t WHERE t.user_id=$1 AND t.account_id=m.account_id AND t.role IN ('${moveRoles.archive}','${moveRoles.trash}')
-        AND NOT EXISTS(SELECT 1 FROM mail_memberships here WHERE here.user_id=$1 AND here.message_id=m.id
-          AND COALESCE(here.pending_mailbox_id,here.mailbox_id)=t.id)) AS "canMove"
+      ${moveFields}
       FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
       WHERE (${condition}${anchor ? ' OR (m.user_id=$1 AND m.id=$4)' : ''}) AND m.id=$4`,
           values,

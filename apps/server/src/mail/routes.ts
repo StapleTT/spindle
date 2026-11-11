@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 import type { Auth } from '../auth/auth.js';
 import type { AuthConfig } from '../auth/config.js';
 import { authHeaders } from '../auth/routes.js';
+import { moveFields } from './actions.js';
 import { registerContactRoutes } from './contacts.js';
 import type { ContentConfig } from './content-config.js';
 import { registerConversationStateRoutes } from './conversation-state.js';
@@ -625,7 +626,7 @@ export async function registerMailRoutes(
         `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
        m.received_at AS "receivedAt",m.sent_at AS "sentAt",
        to_char(m.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime",
-       ${unreadCondition} AS unread,${localStateFields}
+       ${unreadCondition} AS unread,${localStateFields},${moveFields}
        FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
        WHERE ${search.condition}
        AND ($4::timestamptz IS NULL OR (m.local_pinned,m.received_at,m.id)<($7::boolean,$4::timestamptz,$5::uuid))

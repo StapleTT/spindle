@@ -313,6 +313,12 @@ test('read/unread actions are durable, owned and synchronized to IMAP', {
           .canMove,
         { archive: false, trash: true },
       );
+      // The sidebar Archive scope is a search, so rows carry their own folder actions.
+      const row = (await request('messages?q=in%3Aarchive'))
+        .json()
+        .messages.find((message: { id: string }) => message.id === third);
+      assert.deepEqual(row.canMove, { archive: false, trash: true });
+      assert.equal(row.canRestore, true);
       assert.equal((await mark(third, 'archive')).statusCode, 409);
       // A metadata pass before dispatch keeps the pending destination.
       await resync();
