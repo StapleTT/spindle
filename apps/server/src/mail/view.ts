@@ -5,6 +5,26 @@ export const receivedMembershipCondition = `b.role IS DISTINCT FROM '\\Drafts'
 export const localStateFields = `m.local_pinned AS pinned,m.local_muted AS muted,
   CASE WHEN m.local_snoozed_until>clock_timestamp() THEN m.local_snoozed_until ELSE NULL END AS "snoozedUntil",
   greatest(m.local_pin_version,m.local_mute_version,m.local_snooze_version)::text AS version`;
+// Needs reply (D046). The user's own addresses are the same identities reply
+// drafts use: account logins, SMTP logins and the Spindle sign-in email.
+const ownAddresses = `(SELECT lower(username) FROM mail_accounts WHERE user_id=$1
+  UNION SELECT lower(username) FROM mail_smtp WHERE user_id=$1
+  UNION SELECT lower(email) FROM users WHERE id=$1)`;
+const senderAddress = (alias: string) =>
+  `lower(coalesce(${alias}.sender->0->>'address',''))`;
+// A manual choice replaces the heuristic, but a later message from the user in
+// the same account's header-linked conversation always counts as a reply.
+export const needsReplyCondition = `(NOT EXISTS(SELECT 1 FROM mail_messages r
+    WHERE r.user_id=$1 AND r.account_id=m.account_id AND r.id<>m.id
+    AND r.thread_tokens && m.thread_tokens AND r.received_at>=m.received_at
+    AND ${senderAddress('r')} IN ${ownAddresses})
+  AND coalesce(m.local_needs_reply,
+    NOT coalesce(m.list_unsubscribe,false)
+    AND m.received_at>clock_timestamp()-interval '30 days'
+    AND ${senderAddress('m')} NOT IN ${ownAddresses}
+    AND split_part(${senderAddress('m')},'@',1) !~ '^(no-?reply|do-?not-?reply|notifications?|mailer-daemon|postmaster|bounces?)([+._-]|$)'
+    AND EXISTS(SELECT 1 FROM jsonb_array_elements(m.recipients->'to') t
+      WHERE lower(t->>'address') IN ${ownAddresses})))`;
 const awake = 'coalesce(m.local_snoozed_until<=clock_timestamp(),true)';
 
 // Every list and reader navigation query uses this same owned membership boundary.

@@ -30,6 +30,7 @@ import {
   unreadCondition,
 } from './search.js';
 import { transaction } from './store.js';
+import { needsReplyCondition } from './view.js';
 
 const params = {
   type: 'object',
@@ -120,7 +121,7 @@ export function registerReaderRoutes(
       ${anchor ? "NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=$1 AND seen.message_id=m.id AND '\\Seen'=ANY(seen.flags))" : unreadCondition} AS unread,
       (SELECT json_build_object('id',x.id,'kind',x.kind,'state',x.state,'code',x.error_code) FROM mail_actions x
         WHERE x.user_id=$1 AND x.message_id=m.id ORDER BY x.seq DESC LIMIT 1) AS "lastAction",
-      ${moveFields}
+      ${needsReplyCondition} AS "needsReply",${moveFields}
       FROM mail_messages m JOIN mail_accounts a ON a.user_id=m.user_id AND a.id=m.account_id
       WHERE (${condition}${anchor ? ' OR (m.user_id=$1 AND m.id=$4)' : ''}) AND m.id=$4`,
           values,
@@ -635,6 +636,31 @@ export function registerReaderRoutes(
             'This attachment could not be fetched. It may have moved, exceeded the 10 MiB attachment or cache limit, or the provider may be unavailable.',
         };
       return reply.code(202).send({ state: result.state });
+    },
+  );
+
+  // Manual Needs reply correction (D046); local only, never sent to providers.
+  app.put<{ Params: { id: string }; Body: { needsReply: boolean } }>(
+    '/api/mail/messages/:id/needs-reply',
+    {
+      schema: {
+        params,
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['needsReply'],
+          properties: { needsReply: { type: 'boolean' } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const updated = await pool.query(
+        'UPDATE mail_messages SET local_needs_reply=$3 WHERE user_id=$1 AND id=$2 RETURNING id',
+        [request.mailUser, request.params.id, request.body.needsReply],
+      );
+      if (!updated.rowCount)
+        return reply.code(404).send({ message: 'Message not found.' });
+      return { needsReply: request.body.needsReply };
     },
   );
 

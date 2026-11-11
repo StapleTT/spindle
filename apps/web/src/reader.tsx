@@ -4,6 +4,7 @@ import {
   archive,
   arrowBack,
   attachFile,
+  check,
   chevronLeft,
   chevronRight,
   download,
@@ -53,6 +54,7 @@ type Detail = {
     canMove: { archive: boolean | null; trash: boolean | null } | null;
     folderId: string | null;
     restoreTo: { id: string; name: string; path: string } | null;
+    needsReply: boolean;
   };
   previous: string | null;
   next: string | null;
@@ -549,6 +551,46 @@ export function Reader({
     }
   }
 
+  // Manual Needs reply correction. Leaving the current view continues with
+  // the neighbouring message, like other actions that change membership.
+  async function setNeedsReply(needsReply: boolean) {
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
+    setActionError('');
+    try {
+      await mailApi(`messages/${id}/needs-reply`, {
+        method: 'PUT',
+        body: JSON.stringify({ needsReply }),
+      });
+      // Re-read the computed state: a later reply outranks a manual mark.
+      let current: Detail | null = null;
+      try {
+        current = await mailApi<Detail>(endpoint);
+      } catch (failure) {
+        if (!(failure instanceof MailApiError && failure.status === 404))
+          throw failure;
+      }
+      if (!responseActive.current) return;
+      if (!current) {
+        navigateMail({ message: detail?.next ?? detail?.previous ?? '' });
+        return;
+      }
+      const computed = current.message.needsReply;
+      setDetail((value) =>
+        value
+          ? { ...value, message: { ...value.message, needsReply: computed } }
+          : value,
+      );
+      onChange();
+    } catch (failure) {
+      setActionError(
+        failure instanceof Error ? failure.message : 'Unable to update mail.',
+      );
+    } finally {
+      actionInFlight.current = false;
+    }
+  }
+
   async function respond(kind: 'reply' | 'replyAll' | 'forward') {
     setResponseBusy(true);
     setActionError('');
@@ -687,6 +729,21 @@ export function Reader({
               <span className="visually-hidden">
                 {detail.message.unread ? 'Mark as read' : 'Mark as unread'}
               </span>
+            </button>
+            <button
+              type="button"
+              className="icon-button"
+              title={
+                detail.message.needsReply
+                  ? 'Mark as not needing a reply'
+                  : 'Mark as needing a reply'
+              }
+              aria-pressed={detail.message.needsReply}
+              disabled={pendingAction}
+              onClick={() => void setNeedsReply(!detail.message.needsReply)}
+            >
+              <Icon src={detail.message.needsReply ? check : reply} />
+              <span className="visually-hidden">Needs reply</span>
             </button>
             {detail.message.restoreTo && (
               <button

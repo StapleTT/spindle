@@ -387,6 +387,11 @@ test('route-wide authorization matrix', {
       body: { retry: false },
       foreign: 'deny',
     },
+    'PUT /api/mail/messages/:id/needs-reply': {
+      guard: 'session',
+      body: { needsReply: true },
+      foreign: 'deny',
+    },
     'POST /api/mail/messages/:id/images': {
       guard: 'session',
       body: { show: true },

@@ -526,3 +526,15 @@ Status: user requested newsletter sorting in the inbox on 2026-11-11, replacing 
 - Search gains `is:newsletter` (and `-is:newsletter`). Below All inboxes and a divider, the drawer's **Primary** item opens `in:inbox -is:newsletter` and **Newsletters** opens `in:inbox is:newsletter`, both across all accounts. Lists and selection behave as in any other local search; drawer unread counts stay per folder, so Primary has no count.
 
 Migrations 0041 and 0042 append the column and a one-time check: `NULL` means not yet checked and counts as not a newsletter. IMAP's continuous metadata scan rereads the header. Gmail and Microsoft sync jobs spend their remaining deadline reading only `List-Unsubscribe` for unchecked mail, newest first, yielding to reader work; messages deleted at the provider record false. A trigger refreshes open views as mail is flagged. Rollback keeps the column; older code ignores it. Needs reply remains open J03 work.
+
+## D046 — Needs reply heuristic with manual correction
+
+Status: user requested the Needs reply filter on 2026-11-11, replacing the disabled "Soon" drawer item. Completes J03's documented heuristic with manual correction. The rule below is the agent's default and the user can still change it.
+
+- Computed at query time from local data only, as `is:needs-reply`. A message qualifies when it is under 30 days old, one of the user's addresses is in To, it is not a newsletter (D045), it is not from the user, and the sender's local part is not an automated name such as `noreply`, `notifications`, `mailer-daemon` or `bounce`.
+- The user's addresses are the reply identities already used for drafts: account logins, SMTP logins and the Spindle sign-in email.
+- A later message from the user in the same account's header-linked conversation (`thread_tokens` overlap) means it was answered. A synchronized Sent copy is enough, and no subject matching is used.
+- Manual correction is per message: `mail_messages.local_needs_reply`, where `NULL` follows the heuristic. The reader toggle sets true or false, which replaces the heuristic, but a later reply still removes the message. A new incoming message in the same conversation is judged on its own. Corrections are local, never sent to providers, and included in data export.
+- The drawer item opens `in:inbox is:needs-reply` across all accounts.
+
+Migration 0043 adds the nullable column and an SSE trigger. Rollback keeps the column; older code ignores it. Replies sent through Spindle to IMAP accounts that keep no Sent copy are not seen, so those messages need the manual toggle.

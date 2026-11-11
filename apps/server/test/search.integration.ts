@@ -569,4 +569,110 @@ test('private local search, saved scopes, stable navigation and bounded batch ac
       );
     },
   );
+  await t.test(
+    'Needs reply follows the documented heuristic, manual corrections and later replies',
+    async () => {
+      const me = 'me@example.test';
+      const replyAccount = await account(owner.cookie, me);
+      const replyInbox = await box(owner.id, replyAccount, 'INBOX', 'inbox');
+      const sent = await box(owner.id, replyAccount, 'Sent', '\\Sent');
+      const now = Date.now();
+      async function message(
+        subject: string,
+        options: {
+          from?: string;
+          to?: string;
+          cc?: string;
+          folder?: string;
+          days?: number;
+          messageId?: string;
+          inReplyTo?: string;
+          newsletter?: boolean;
+        } = {},
+      ) {
+        const id = randomUUID();
+        await pool.query(
+          `INSERT INTO mail_messages(id,user_id,account_id,remote_key,message_id,in_reply_to,subject,sender,recipients,received_at,list_unsubscribe)
+           VALUES($1::uuid,$2,$3,$1::text,$4,$5,$6,$7,$8,$9,$10)`,
+          [
+            id,
+            owner.id,
+            replyAccount,
+            options.messageId ?? `<${id}@example.test>`,
+            options.inReplyTo ?? '',
+            subject,
+            JSON.stringify([
+              { name: '', address: options.from ?? 'alice@example.test' },
+            ]),
+            {
+              to: [{ name: '', address: options.to ?? me }],
+              cc: options.cc ? [{ name: '', address: options.cc }] : [],
+            },
+            new Date(now - (options.days ?? 0) * 86400000),
+            options.newsletter ?? false,
+          ],
+        );
+        await pool.query(
+          "INSERT INTO mail_memberships(user_id,account_id,mailbox_id,message_id,uid_validity,uid) VALUES($1,$2,$3,$4,'1',$5)",
+          [owner.id, replyAccount, options.folder ?? replyInbox, id, ++uid],
+        );
+        return id;
+      }
+      const direct = await message('Direct question', { days: 1 }),
+        ccOnly = await message('Copied', { to: 'bob@example.test', cc: me }),
+        newsletter = await message('Weekly', { newsletter: true }),
+        automated = await message('Receipt', {
+          from: 'No-Reply@shop.example.test',
+        }),
+        old = await message('Old question', { days: 40 }),
+        own = await message('Note to self', { from: me }),
+        answered = await message('Answered', {
+          days: 2,
+          messageId: '<answered@example.test>',
+        });
+      await message('Re: Answered', {
+        from: me,
+        to: 'alice@example.test',
+        folder: sent,
+        days: 1,
+        inReplyTo: '<answered@example.test>',
+      });
+      const needs = async () =>
+        ids(
+          await search('in:inbox is:needs-reply', `&account=${replyAccount}`),
+        );
+      assert.deepEqual(await needs(), [direct]);
+      for (const unused of [ccOnly, newsletter, automated, old, own, answered])
+        assert.ok(!(await needs()).includes(unused));
+      const mark = (id: string, needsReply: boolean, cookie = owner.cookie) =>
+        request(`messages/${id}/needs-reply`, 'PUT', { needsReply }, cookie);
+      assert.equal((await mark(direct, false)).statusCode, 200);
+      assert.equal((await mark(ccOnly, true)).statusCode, 200);
+      assert.equal((await mark(answered, true)).statusCode, 200);
+      assert.deepEqual(
+        await needs(),
+        [ccOnly],
+        'a later reply outranks a mark',
+      );
+      assert.equal(
+        (await request(`messages/${ccOnly}`)).json().message.needsReply,
+        true,
+      );
+      assert.equal(
+        ids(
+          await search('in:inbox -is:needs-reply', `&account=${replyAccount}`),
+        ).includes(direct),
+        true,
+      );
+      assert.equal((await mark(direct, true, other.cookie)).statusCode, 404);
+      assert.equal(
+        (
+          await request(`messages/${direct}/needs-reply`, 'PUT', {
+            needsReply: 'yes',
+          })
+        ).statusCode,
+        400,
+      );
+    },
+  );
 });
