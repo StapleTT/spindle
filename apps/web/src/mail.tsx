@@ -287,6 +287,12 @@ export function Mail({
     reload();
   }
 
+  // A moved message can no longer anchor the open reader; continue with its neighbor.
+  function leaveMoved(ids: string[], next = '') {
+    if (ids.includes(messageId) || ids.includes(conversation))
+      navigateMail({ message: next });
+  }
+
   async function moveMessage(
     message: Message,
     kind: 'archive' | 'trash' | 'restore',
@@ -294,6 +300,7 @@ export function Mail({
     const index = page.messages.findIndex((item) => item.id === message.id);
     focusNext.current =
       page.messages[index + 1]?.id ?? page.messages[index - 1]?.id ?? null;
+    leaveMoved([message.id], focusNext.current ?? '');
     setPage((current) => ({
       ...current,
       messages: current.messages.filter((item) => item.id !== message.id),
@@ -706,7 +713,8 @@ export function Mail({
           selectedIds.includes(message.id),
         )}
         onClear={clearSelection}
-        onComplete={() => {
+        onComplete={(kind, ids) => {
+          if (kind === 'archive' || kind === 'trash') leaveMoved(ids);
           clearSelection();
           refreshActions();
         }}

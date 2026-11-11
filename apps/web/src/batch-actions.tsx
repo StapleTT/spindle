@@ -26,7 +26,7 @@ export function BatchActions({
   children: ReactNode;
   user: string;
   selected: { id: string; subject: string }[];
-  onComplete: () => void;
+  onComplete: (kind: Batch['kind'], ids: string[]) => void;
 }) {
   const key = `spindle:batch:${user}`;
   const [pending, setPending] = useState<Batch | null>(() => {
@@ -74,7 +74,12 @@ export function BatchActions({
       setResults(response.results);
       setPending(null);
       sessionStorage.removeItem(key);
-      onComplete();
+      onComplete(
+        batch.kind,
+        response.results
+          .filter((result) => result.action)
+          .map((result) => result.messageId),
+      );
     } catch (failure) {
       setError(
         failure instanceof Error

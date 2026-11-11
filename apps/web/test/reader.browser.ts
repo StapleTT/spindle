@@ -554,18 +554,34 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await folderCount('INBOX', 50);
     await folderCount('Archive', 2);
     await waitFor(() => server.control.getMailbox('Archive').messages === 2);
+    // Trashing the open message from its list row continues the reader.
     await page
-      .getByRole('link', { name: 'Back to message list', exact: true })
+      .getByRole('list', { name: 'Messages', exact: true })
+      .getByRole('link', { name: 'Reader message 45', exact: true })
       .click();
+    await page
+      .getByRole('heading', { name: 'Reader message 45', exact: true })
+      .waitFor();
     await page
       .getByRole('button', { name: 'Move “Reader message 45” to trash' })
       .click();
     await page
+      .getByRole('list', { name: 'Messages', exact: true })
       .getByRole('link', { name: 'Reader message 45', exact: true })
       .waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: 'Trash (1 unread / 1)' }).waitFor();
+    await page
+      .getByRole('heading', { name: 'Reader message 44', exact: true })
+      .waitFor();
+    await page
+      .getByRole('link', { name: 'Back to message list', exact: true })
+      .click();
+    await page
+      .getByRole('button', { name: /^Trash \(\d unread \/ 1\)$/ })
+      .waitFor();
     await waitFor(() => server.control.getMailbox('Trash').messages === 1);
-    await page.getByRole('button', { name: 'Trash (1 unread / 1)' }).click();
+    await page
+      .getByRole('button', { name: /^Trash \(\d unread \/ 1\)$/ })
+      .click();
     await page
       .getByRole('button', { name: 'Restore “Reader message 45”' })
       .click();
