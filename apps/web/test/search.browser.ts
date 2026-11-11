@@ -224,60 +224,6 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
       },
     );
     await t.test(
-      'the reader corrects Needs reply and the drawer view follows it',
-      async () => {
-        await find('subject:alpha');
-        await row(alpha).locator('.message-open').click();
-        const toggle = page.getByRole('button', {
-          name: 'Needs reply',
-          exact: true,
-        });
-        const reader = page.locator('.reader');
-        await reader
-          .getByRole('button', { name: 'Needs reply', exact: true })
-          .waitFor();
-        assert.equal(
-          await reader
-            .getByRole('button', { name: 'Needs reply', exact: true })
-            .getAttribute('aria-pressed'),
-          'false',
-        );
-        await reader
-          .getByRole('button', { name: 'Needs reply', exact: true })
-          .click();
-        await waitFor(
-          async () =>
-            (await reader
-              .getByRole('button', { name: 'Needs reply', exact: true })
-              .getAttribute('aria-pressed')) === 'true',
-        );
-        await page
-          .getByRole('navigation', { name: 'Mail accounts and folders' })
-          .locator(toggle)
-          .click();
-        await page
-          .locator('#list-title', { hasText: /^Needs reply$/ })
-          .waitFor();
-        await row(alpha).waitFor();
-        assert.equal(await rows.count(), 1);
-        await pool.query(
-          'UPDATE mail_messages SET local_needs_reply=NULL WHERE id=$1',
-          [alpha],
-        );
-        // The extra reader requests count against the per-minute read budget
-        // the later subtests also rely on.
-        await pool.query('DELETE FROM mail_request_limits WHERE user_id=$1', [
-          owner.id,
-        ]);
-        await page
-          .getByRole('button', { name: 'All inboxes', exact: true })
-          .click();
-        await page
-          .locator('#list-title', { hasText: /^All inboxes$/ })
-          .waitFor();
-      },
-    );
-    await t.test(
       'search persists in URL, saved views restore filters, and typing/IME/modifiers cannot mutate mail',
       async () => {
         await find('subject:Project');

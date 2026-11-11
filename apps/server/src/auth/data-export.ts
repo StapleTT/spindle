@@ -61,7 +61,7 @@ const sections: [
     `SELECT json_build_object('id',m.id,'accountId',m.account_id,'messageId',m.message_id,'subject',m.subject,
       'from',m.sender,'recipients',m.recipients,'sentAt',m.sent_at,'receivedAt',m.received_at,'inReplyTo',m.in_reply_to,
       'references',m.reference_ids,'sizeBytes',m.size_bytes,'pinned',m.local_pinned,'muted',m.local_muted,
-      'snoozedUntil',m.local_snoozed_until,'needsReply',m.local_needs_reply,
+      'snoozedUntil',m.local_snoozed_until,
       'folders',(SELECT coalesce(json_agg(json_build_object('folderId',mm.mailbox_id,'flags',mm.flags)),'[]')
         FROM mail_memberships mm WHERE mm.user_id=m.user_id AND mm.message_id=m.id))::text j
      FROM mail_messages m WHERE m.user_id=$1 ORDER BY m.received_at,m.id`,

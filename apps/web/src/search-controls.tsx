@@ -286,7 +286,7 @@ export function SearchControls({
             <summary>Search syntax</summary>
             <p className="muted small">
               Combine words or quoted phrases with from:, to:, subject:, body:,
-              is:read, is:unread, is:newsletter, is:needs-reply, has:attachment,
+              is:read, is:unread, is:newsletter, has:attachment,
               after:YYYY-MM-DD and before:YYYY-MM-DD (UTC). Prefix a term with -
               to exclude it. Search includes received folders, Sent and Archive;
               choose a folder or use in:inbox/archive/sent/trash/spam/anywhere.

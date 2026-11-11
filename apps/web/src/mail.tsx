@@ -48,7 +48,6 @@ import {
   newspaper,
   notificationsOff,
   outbox,
-  reply,
   schedule,
   searchOff,
   send,
@@ -950,9 +949,6 @@ export function Mail({
         {navItem('primary', 'Primary', 'Primary', mail, {
           onClick: goScope('primary'),
         })}
-        {navItem('needs', 'Needs reply', 'Reply', reply, {
-          onClick: goScope('needs'),
-        })}
         {navItem('news', 'Newsletters', 'News', newspaper, {
           onClick: goScope('news'),
         })}
@@ -1315,7 +1311,6 @@ export function Mail({
 }
 
 const scopeQueries = {
-  needs: 'in:inbox is:needs-reply',
   primary: 'in:inbox -is:newsletter',
   news: 'in:inbox is:newsletter',
   pinned: 'in:pinned',
@@ -1327,7 +1322,6 @@ const scopeQueries = {
 };
 const scopeTitles = {
   all: 'All inboxes',
-  needs: 'Needs reply',
   primary: 'Primary',
   news: 'Newsletters',
   pinned: 'Pinned',
@@ -1340,11 +1334,6 @@ const scopeTitles = {
 const emptyStates = {
   all: [doneAll, 'Inbox zero', 'Everything across your accounts is handled.'],
   primary: [doneAll, 'Inbox zero', 'Everything except newsletters is handled.'],
-  needs: [
-    reply,
-    'Nothing needs a reply',
-    'Recent mail sent to you that you have not answered shows up here.',
-  ],
   news: [
     newspaper,
     'No newsletters',
