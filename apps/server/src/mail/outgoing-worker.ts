@@ -7,7 +7,6 @@ import type { GoogleConfig } from './google.js';
 import { graphTransport } from './graph-mail.js';
 import { connectImap } from './imap.js';
 import type { MicrosoftConfig } from './microsoft.js';
-import { checkProviderDraftBeforeSend } from './provider-drafts.js';
 import { connectSmtp } from './smtp.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
 
@@ -123,25 +122,6 @@ export async function processOutgoing(
       } else {
         smtp?.close();
         smtp = undefined;
-        // Native provider drafts stay local; IMAP preflight remains required.
-        const conflict = native
-          ? null
-          : await checkProviderDraftBeforeSend(
-              pool,
-              keys,
-              account,
-              row.source_draft_id,
-              imapConnect,
-            );
-        if (conflict) {
-          await withLease(pool, account, (db) =>
-            db.query(
-              "UPDATE mail_outbox SET state='failed',error_code=$3,completed_at=clock_timestamp() WHERE user_id=$1 AND id=$2 AND state='queued'",
-              [owner, row.id, conflict],
-            ),
-          );
-          return;
-        }
         const claimed = await withLease(pool, account, async (db) => {
           const current = (
             await db.query(

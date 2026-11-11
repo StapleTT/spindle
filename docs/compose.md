@@ -22,7 +22,7 @@ Before each save, the composer keeps its current text, base revision and operati
 
 Every save carries a client operation ID and base revision. Replaying an acknowledged request returns that saved revision without another write. A stale revision cannot overwrite a newer save or recreate a deleted draft. Conflicts stop autosave and preserve local edits, including across reloads. The user can compare the server copy, **Save my edits as a new draft**, or explicitly **Discard my edits and load saved version**. A conflict must be resolved before discarding the server draft.
 
-Removing a connected account preserves draft text, clears its account selection, increments its revision and invalidates stale editors. Autosave writes local data and durable provider-sync intent; the worker synchronizes selected-account drafts separately. Sending queues an immutable snapshot for the separate worker; SMTP settings and Sent-copy policy are described in [sending](sending.md).
+Removing a connected account preserves draft text, clears its account selection, increments its revision and invalidates stale editors. Drafts are saved only in Spindle and are never copied to provider Drafts folders ([D044](decisions.md#d044--drafts-stay-in-spindle)). Sending queues an immutable snapshot for the separate worker; SMTP settings and Sent-copy policy are described in [sending](sending.md).
 
 ## Limits and ownership
 
@@ -36,7 +36,7 @@ Apply `0010_local_drafts.sql`, then deploy API and web together. It adds a table
 
 The disposable-database integration suite verifies ownership, foreign admin/account denial, verification/CSRF, persistence across API instances, sanitization, Unicode/partial recipients, size limits, idempotent replay, concurrent revisions, stale deletion/recreation, quotas, write budgets and preservation after account removal. The Chromium composer journey covers rich/plain editing, safe links/paste, reload/navigation, offline recovery, edits during a save, lost acknowledgements, two-tab conflicts, loading the saved version, saving a copy, safe discard and phone width. All fixtures are synthetic; these tests never send email.
 
-Provider synchronization additionally requires `0016_provider_drafts.sql` and the updated worker; see [upgrade, recovery and limits](provider-drafts.md). Clean open editors adopt synchronized native revisions; unsaved browser recovery is preserved.
+Earlier provider Drafts copies are cleaned up once after upgrading; see [drafts stay in Spindle](provider-drafts.md). Clean open editors adopt newer revisions saved from another tab; unsaved browser recovery is preserved.
 
 Use [Send later](send-later.md) to freeze a saved draft for scheduled SMTP dispatch. Outbox supports guarded rescheduling and Cancel and edit; an unconfirmed submission is recovered with its original operation and time.
 

@@ -80,8 +80,7 @@ export async function watchInbox(
         const pending = await pool.query(
           `SELECT 1 FROM (${contentPending}) requested
           UNION ALL SELECT 1 FROM mail_smtp WHERE user_id=$1 AND account_id=$2 AND state='pending'
-          UNION ALL SELECT 1 FROM mail_draft_links WHERE user_id=$1 AND account_id=$2 AND state NOT IN ('conflict','removed','unknown') AND next_attempt_at<=clock_timestamp()
-          UNION ALL SELECT 1 FROM mail_draft_imports WHERE user_id=$1 AND account_id=$2 AND state='pending' AND next_attempt_at<=clock_timestamp()
+          UNION ALL SELECT 1 FROM mail_draft_links WHERE user_id=$1 AND account_id=$2 AND state IN ('pending','failed') AND next_attempt_at<=clock_timestamp()
           UNION ALL SELECT 1 FROM mail_uploads WHERE user_id=$1 AND state='pending_fetch' AND source->>'accountId'=$2::text LIMIT 1`,
           [owner, id],
         );

@@ -2,7 +2,7 @@
 
 Microsoft accounts connect using Microsoft OAuth and use Microsoft Graph v1.0 for mailbox operations. The API handles authorization code exchange and identity discovery; only the worker reads or changes mail. Spindle sign-in remains verified email/password. Shared/delegated mailboxes, send-as aliases, Exchange on-premises and sovereign Microsoft clouds are outside this integration.
 
-Implemented: connect/reconnect/disconnect, resumable folder and message delta polling, local lists/counts/search, isolated MIME reader, attachments/forwarded files, read/unread/archive/trash/move/restore with five-second undo, local composer drafts, signatures, immutable Outbox sending, Undo send and Send later. Native Outlook Drafts synchronization, subscription/webhook push, large attachment uploads and live personal/work-account acceptance remain open. Outlook mail can be read from Drafts, but is not imported as an editable Spindle draft.
+Implemented: connect/reconnect/disconnect, resumable folder and message delta polling, local lists/counts/search, isolated MIME reader, attachments/forwarded files, read/unread/archive/trash/move/restore with five-second undo, local composer drafts, signatures, immutable Outbox sending, Undo send and Send later. Subscription/webhook push, large attachment uploads and live personal/work-account acceptance remain open. Drafts stay in Spindle by design ([D044](decisions.md#d044--drafts-stay-in-spindle)); the Outlook Drafts folder is hidden and its drafts are not imported.
 
 ## Operator setup
 

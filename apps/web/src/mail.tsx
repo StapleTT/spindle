@@ -1070,7 +1070,7 @@ export function Mail({
                             cursor: '',
                             message: '',
                             draft: '',
-                            view: box.role === '\\Drafts' ? 'drafts' : '',
+                            view: '',
                           });
                         }}
                       >
@@ -1189,8 +1189,7 @@ export function Mail({
               }}
               notificationsSlot={setNotificationsEl}
             />
-          ) : view === 'drafts' ||
-            (!messageId && selected?.role === '\\Drafts') ? (
+          ) : view === 'drafts' ? (
             <>
               <section className="pane list-pane">
                 <div className="list-scroll">

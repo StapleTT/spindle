@@ -2,14 +2,14 @@
 
 Gmail accounts connect with Google OAuth and sync through the Gmail REST API. Decision: [D038](decisions.md#d038--gmail-via-the-gmail-api-slice-1). Gmail ships in vertical slices, and each slice says exactly what works:
 
-| Slice                | Scope                                                                                                                              | Status                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 1                    | Connect, reconnect and disconnect; labels as folders; message list, counts and search over synced metadata; `history.list` polling | Implemented (D038)                            |
-| 2 — reader           | `messages.get?format=raw` into the shared parse/sanitize/cache pipeline, plus attachments and forwarded files                      | Implemented (D040)                            |
-| 3 — actions          | Read/unread, archive, trash, move and restore through `messages.modify`/`trash`/`untrash` under the shared action/undo model       | Implemented (D040)                            |
-| 4 — sending          | `messages.send` with immutable-outbox semantics, scheduling, Undo send and unknown-outcome protection                              | Implemented (D040)                            |
-| 4b — provider drafts | `users.drafts.*`: syncing Spindle drafts to Gmail and importing drafts written in Gmail                                            | Not implemented; drafts stay local in Spindle |
-| 5 — push             | `users.watch` and Pub/Sub, once a public HTTPS domain exists (U05)                                                                 | Not implemented                               |
+| Slice                | Scope                                                                                                                              | Status             |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 1                    | Connect, reconnect and disconnect; labels as folders; message list, counts and search over synced metadata; `history.list` polling | Implemented (D038) |
+| 2 — reader           | `messages.get?format=raw` into the shared parse/sanitize/cache pipeline, plus attachments and forwarded files                      | Implemented (D040) |
+| 3 — actions          | Read/unread, archive, trash, move and restore through `messages.modify`/`trash`/`untrash` under the shared action/undo model       | Implemented (D040) |
+| 4 — sending          | `messages.send` with immutable-outbox semantics, scheduling, Undo send and unknown-outcome protection                              | Implemented (D040) |
+| 4b — provider drafts | Not planned: drafts stay in Spindle by design ([D044](decisions.md#d044--drafts-stay-in-spindle))                                  | Excluded           |
+| 5 — push             | `users.watch` and Pub/Sub, once a public HTTPS domain exists (U05)                                                                 | Not implemented    |
 
 Only SMTP settings and the SMTP test answer `409` for Gmail accounts ("Gmail accounts send through Gmail; SMTP settings do not apply."). Drafts written in Gmail's own interface are not imported, and Spindle drafts are not copied to Gmail's Drafts. Sent mail appears in Gmail's Sent label automatically.
 

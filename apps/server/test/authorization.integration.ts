@@ -126,7 +126,6 @@ test('route-wide authorization matrix', {
     outbox: randomUUID(),
     search: randomUUID(),
     action: randomUUID(),
-    link: randomUUID(),
   };
   const q = (sql: string, values: unknown[] = []) =>
     pool.query(sql, [owner.id, ...values]);
@@ -214,14 +213,6 @@ test('route-wide authorization matrix', {
      VALUES($2,$1,$3,$4,'read','failed',$5)`,
     [ids.action, ids.account, ids.message, `${sentinel}-action`],
   );
-  // Draft creation already maintains the provider link row.
-  ids.link = (
-    await q(
-      `UPDATE mail_draft_links SET subject=$3,state='conflict'
-       WHERE user_id=$1 AND source_draft_id=$2 RETURNING id`,
-      [ids.draft, `${sentinel}-link`],
-    )
-  ).rows[0].id;
   const markers = [sentinel, ...Object.values(ids)];
 
   const fresh = randomUUID;
@@ -470,18 +461,6 @@ test('route-wide authorization matrix', {
     },
     'POST /api/mail/uploads/:id/retry': { guard: 'session', foreign: 'deny' },
     'DELETE /api/mail/uploads/:id': { guard: 'session', foreign: 'allow' },
-    'GET /api/mail/draft-sync/:id/version': {
-      guard: 'session',
-      url: `/api/mail/draft-sync/${ids.link}/version`,
-      foreign: 'deny',
-    },
-    'GET /api/mail/draft-sync': { guard: 'session', foreign: 'allow' },
-    'POST /api/mail/draft-sync/:id': {
-      guard: 'session',
-      url: `/api/mail/draft-sync/${ids.link}`,
-      body: { action: 'keepLocal', revision: 1 },
-      foreign: 'deny',
-    },
     'GET /api/mail/accounts/:id/smtp': { guard: 'session', foreign: 'deny' },
     'PUT /api/mail/accounts/:id/smtp': {
       guard: 'session',

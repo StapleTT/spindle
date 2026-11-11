@@ -27,7 +27,7 @@ Migration `0021_mail_events.sql` adds selective row triggers using transactional
 | `mail`     | Mailboxes, message metadata/memberships, cached-content and attachment readiness |
 | `accounts` | Account sync/status/settings, SMTP identity/readiness and signatures             |
 | `actions`  | Pending/completed/failed/conflict action feedback and dismissal                  |
-| `drafts`   | Draft revisions and provider Drafts reconciliation                               |
+| `drafts`   | Draft revisions and one-time provider Drafts cleanup                             |
 | `outbox`   | Sending, schedule/reschedule and Sent-copy outcomes                              |
 | `files`    | Upload/scanning states and draft attachment links                                |
 | `searches` | Private saved searches                                                           |

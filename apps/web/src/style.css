@@ -2791,8 +2791,7 @@ label.avatar input {
 }
 .composer-card > .notice,
 .composer-card > .error,
-.composer-card > .reply-context,
-.composer-card > section[aria-label="Provider draft status"] {
+.composer-card > .reply-context {
   margin: 8px 12px 0;
   font-size: 13px;
 }
@@ -2802,15 +2801,6 @@ label.avatar input {
   align-items: center;
   gap: 4px 12px;
   color: var(--on-var);
-}
-.composer-card section[aria-label="Provider draft status"] {
-  color: var(--on-var);
-}
-.composer-card section[aria-label="Provider draft status"] button {
-  min-height: 30px;
-  margin: 4px 4px 0 0;
-  padding: 0 12px;
-  font-size: 12px;
 }
 .composer-fields {
   display: flex;
@@ -3073,22 +3063,6 @@ label.avatar input {
   background: var(--sel);
   outline: 2px solid var(--primary);
   outline-offset: -2px;
-}
-
-/* Routine provider sync progress stays available to assistive technology but
-   off screen, like Gmail's quiet "Draft saved"; problems keep their buttons. */
-.composer-card
-  section[aria-label="Provider draft status"]
-  > :is(p, div:not(:has(button)):not(:has([role="alert"]))) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-.composer-card section[aria-label="Provider draft status"]:not(:has(button)) {
-  margin: 0;
 }
 
 /* Compose pop-ups: one floating layer just above the toolbar, outside the

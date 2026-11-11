@@ -32,7 +32,6 @@ export type DraftValue = {
   attachmentIds?: string[];
 };
 export type Draft = DraftValue & {
-  providerSync?: ProviderSync[];
   id: string;
   revision: number;
   saveId: string | null;
@@ -41,16 +40,9 @@ export type Draft = DraftValue & {
   forwarded?: { text: string; imageCount: number; origin?: 'provider' } | null;
   outbox?: { id: string; state: string } | null;
 };
-export type ProviderSync = {
-  id: string;
-  accountId: string;
-  state: string;
-  code: string | null;
-  hasProviderVersion: boolean;
-};
 export type DraftSummary = Pick<
   Draft,
-  'id' | 'accountId' | 'revision' | 'updatedAt' | 'providerSync'
+  'id' | 'accountId' | 'revision' | 'updatedAt'
 > & { subject: string };
 export type Recovery = {
   value: DraftValue;

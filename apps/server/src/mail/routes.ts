@@ -20,7 +20,6 @@ import { registerMicrosoftOAuthRoutes } from './microsoft-oauth.js';
 import { registerNotificationRoutes } from './notifications.js';
 import { registerOutgoingRoutes } from './outgoing-routes.js';
 import { registerPreferenceRoutes } from './preferences.js';
-import { registerProviderDraftRoutes } from './provider-draft-routes.js';
 import { registerReaderRoutes } from './reader-routes.js';
 import {
   cachedBodyCondition,
@@ -543,12 +542,12 @@ export async function registerMailRoutes(
     mailboxes: (
       await pool.query(
         `SELECT b.id,b.account_id AS "accountId",b.name,b.path,b.role,b.initial_complete AS "initialComplete",
-      count(mm.message_id) FILTER(WHERE (b.role='\\Drafts' OR (${receivedMembershipCondition})) AND (b.role IS DISTINCT FROM 'inbox' OR coalesce(m.local_snoozed_until<=clock_timestamp(),true)))::int AS total,
-      count(mm.message_id) FILTER(WHERE (b.role='\\Drafts' OR (${receivedMembershipCondition})) AND NOT('\\Seen'=ANY(mm.flags)) AND (b.role IS DISTINCT FROM 'inbox' OR coalesce(m.local_snoozed_until<=clock_timestamp(),true)))::int AS unread
+      count(mm.message_id) FILTER(WHERE (${receivedMembershipCondition}) AND (b.role IS DISTINCT FROM 'inbox' OR coalesce(m.local_snoozed_until<=clock_timestamp(),true)))::int AS total,
+      count(mm.message_id) FILTER(WHERE (${receivedMembershipCondition}) AND NOT('\\Seen'=ANY(mm.flags)) AND (b.role IS DISTINCT FROM 'inbox' OR coalesce(m.local_snoozed_until<=clock_timestamp(),true)))::int AS unread
       FROM mailboxes b LEFT JOIN mail_memberships mm ON mm.user_id=b.user_id AND mm.account_id=b.account_id
         AND COALESCE(mm.pending_mailbox_id,mm.mailbox_id)=b.id
       LEFT JOIN mail_messages m ON m.user_id=mm.user_id AND m.id=mm.message_id
-      WHERE b.user_id=$1 GROUP BY b.id ORDER BY b.account_id,CASE WHEN b.role='inbox' THEN 0 ELSE 1 END,lower(b.name),b.path`,
+      WHERE b.user_id=$1 AND b.role IS DISTINCT FROM '\\Drafts' GROUP BY b.id ORDER BY b.account_id,CASE WHEN b.role='inbox' THEN 0 ELSE 1 END,lower(b.name),b.path`,
         [request.mailUser],
       )
     ).rows,
@@ -674,6 +673,5 @@ export async function registerMailRoutes(
   registerSignatureRoutes(app, pool);
   registerDraftRoutes(app, pool, content);
   registerUploadRoutes(app, pool);
-  registerProviderDraftRoutes(app, pool);
   registerOutgoingRoutes(app, pool, keys);
 }

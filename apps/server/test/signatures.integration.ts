@@ -7,7 +7,6 @@ import { migrateDatabase } from '../src/db/migrate.js';
 import { fetchMessageContent } from '../src/mail/content-worker.js';
 import { readMailKeys } from '../src/mail/credentials.js';
 import { outgoingMessage } from '../src/mail/outgoing-message.js';
-import { syncProviderDrafts } from '../src/mail/provider-drafts.js';
 import { syncAccount } from '../src/mail/sync.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
 import { imapFixture, imapPassword } from './imap-fixture.js';
@@ -185,7 +184,7 @@ test('private account signatures and one-time response insertion', {
     version,
   });
   await t.test(
-    'reply/all/forward creation inserts once above originals, while autosave, provider sync and settings changes preserve edits',
+    'reply/all/forward creation inserts once above originals, while autosave and settings changes preserve edits',
     async () => {
       for (const kind of ['reply', 'replyAll', 'forward']) {
         const id = randomUUID();
@@ -222,25 +221,15 @@ test('private account signatures and one-time response insertion', {
           saveId: randomUUID(),
         });
         assert.equal(saved.statusCode, 200, saved.body);
-        await pool.query(
-          'UPDATE mail_draft_links SET next_attempt_at=clock_timestamp() WHERE source_draft_id=$1',
-          [id],
+        assert.equal(
+          (
+            await pool.query(
+              'SELECT 1 FROM mail_draft_links WHERE source_draft_id=$1',
+              [id],
+            )
+          ).rowCount,
+          0,
         );
-        await syncProviderDrafts(pool, keys, owner.id, account);
-        const copy = (
-          await pool.query(
-            'SELECT c.* FROM mail_draft_copies c JOIN mail_draft_links l ON l.active_copy_id=c.id WHERE l.source_draft_id=$1',
-            [id],
-          )
-        ).rows[0];
-        assert.ok(copy);
-        const raw = imap.server.control.getMessage(
-          'Drafts',
-          Number(copy.uid),
-        ).raw;
-        assert.ok(raw);
-        const parsed = await simpleParser(raw);
-        assert.equal((parsed.text?.match(/Edited signature/g) ?? []).length, 1);
         const row = (
           await pool.query('SELECT * FROM mail_drafts WHERE id=$1', [id])
         ).rows[0];

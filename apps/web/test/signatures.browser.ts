@@ -8,7 +8,6 @@ import { chromium, type Page, type Route } from 'playwright';
 import { createServer } from 'vite';
 import { migrateDatabase } from '../../server/src/db/migrate.js';
 import { readMailKeys } from '../../server/src/mail/credentials.js';
-import { syncProviderDrafts } from '../../server/src/mail/provider-drafts.js';
 import { syncAccount } from '../../server/src/mail/sync.js';
 import {
   createTestUser,
@@ -17,7 +16,7 @@ import {
 } from '../../server/test/auth-fixture.js';
 import { imapFixture, imapPassword } from '../../server/test/imap-fixture.js';
 
-test('account signatures insert once, stay editable across rich/plain, recovery and provider sync, and respect separate defaults', {
+test('account signatures insert once, stay editable across rich/plain, and recovery, and respect separate defaults', {
   timeout: 90000,
 }, async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
@@ -200,24 +199,15 @@ test('account signatures insert once, stay editable across rich/plain, recovery 
       async () => (await stored()).content.text === 'New note\nAda edited',
     );
     await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
-    await pool.query(
-      'UPDATE mail_draft_links SET next_attempt_at=clock_timestamp() WHERE source_draft_id=$1',
-      [id],
+    assert.equal(
+      (
+        await pool.query(
+          'SELECT 1 FROM mail_draft_links WHERE source_draft_id=$1',
+          [id],
+        )
+      ).rowCount,
+      0,
     );
-    await syncProviderDrafts(pool, keys, owner.id, account);
-    const remote = (
-      await pool.query(
-        'SELECT c.uid FROM mail_draft_copies c JOIN mail_draft_links l ON l.active_copy_id=c.id WHERE l.source_draft_id=$1',
-        [id],
-      )
-    ).rows[0];
-    assert.ok(remote);
-    const raw = imap.server.control.getMessage(
-      'Drafts',
-      Number(remote.uid),
-    ).raw;
-    assert.ok(raw);
-    assert.match(raw.toString(), /Ada edited/);
     await page.reload();
     await body.waitFor();
     assert.equal((await body.inputValue()).trimEnd(), 'New note\nAda edited');

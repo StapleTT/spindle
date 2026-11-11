@@ -281,6 +281,13 @@
       "when": 1793550000008,
       "tag": "0039_microsoft_graph",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1793550000009,
+      "tag": "0040_local_only_drafts",
+      "breakpoints": true
     }
   ]
 }

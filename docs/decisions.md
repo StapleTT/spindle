@@ -178,7 +178,7 @@ Store a bounded display name with each owned SMTP configuration and use Nodemail
 
 ## D016 — IMAP provider Drafts synchronization
 
-Status: agent implementation choices for the user's requested drafts synchronization.
+Status: superseded on 2026-11-11 by [D044](#d044--drafts-stay-in-spindle). Retained as history; the behavior below no longer runs.
 
 Extend local revisions and pg-boss with owned durable links/copy intents/import intents. The worker mirrors selected-account drafts to designated SPECIAL-USE Drafts folders and imports native drafts from synchronized metadata within the chosen history horizon. Clean revisions adopt outside edits; concurrent changes and remote removals become visible conflicts. Unknown APPENDs reconcile by operation/Message-ID without a second blind write. Replacement/cleanup require UIDPLUS and content rechecks. SMTP preflight refuses known outside changes; full acceptance, discard and account changes schedule tracked-copy cleanup, while uncertain delivery preserves drafts.
 
@@ -505,3 +505,14 @@ Support Outlook.com personal and Microsoft 365 mailbox connections through deleg
 - Bound outgoing MIME to 3,000,000 bytes before transport base64 for Graph's 4 MB request limit. Larger attachment upload sessions, native Outlook Drafts synchronization and subscriptions/push remain separate. No shared/delegated mailboxes, aliases, on-premises Exchange or national clouds.
 
 Append migration 0039; deploy API/worker/web together. Old workers must never run against Microsoft accounts. Live personal/Microsoft 365 acceptance and tenant consent/publisher verification remain open; K01/K02/M5 are not marked complete. See [Outlook setup and behavior](outlook.md).
+
+## D044 — drafts stay in Spindle
+
+Status: confirmed by the user on 2026-11-11 ("Syncing with providers can cause some issues depending on who it is, so let's just keep drafts synced with Spindle"). Supersedes D016. The user chose a one-time cleanup of earlier copies and hiding provider Drafts folders.
+
+- Drafts are saved only in Spindle for IMAP, Gmail and Microsoft accounts. There is no provider Drafts upload, no import of drafts written in other clients, and no provider-copy check before sending. Gmail slice 4b and native Outlook Drafts synchronization are excluded rather than pending.
+- Provider `\Drafts` folders are omitted from the folder list for every provider. Drafts written in other clients stay at the provider, untouched.
+- Migration 0040 drops the draft save/delete triggers and marks earlier tracked IMAP copies for one-time cleanup. It detaches links from local drafts so nothing can re-upload them, and releases conflict-file references. Link, copy and import history is retained.
+- The worker deletes a copy only when its bytes are unchanged and UIDPLUS allows a targeted expunge. It uses a conditional STORE when CONDSTORE is available, under the existing lease and connection budget. Changed, ambiguous, oversized, unlisted-folder, non-UIDPLUS and user-kept copies are kept. Transient failures retry at most five times, then the copies are kept.
+
+Older workers must not run after 0040. See [drafts stay in Spindle](provider-drafts.md).

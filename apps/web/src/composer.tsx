@@ -16,7 +16,6 @@ import {
 } from './icons.js';
 import { MailApiError, mailApi } from './mail-api.js';
 import { mailHref, navigateMail, useMailLocation } from './mail-navigation.js';
-import { ProviderDraftStatus } from './provider-draft-status.js';
 import { RecipientInput } from './recipient-input.js';
 import { RichEditor } from './rich-editor.js';
 import { useDraft } from './use-draft.js';
@@ -183,11 +182,6 @@ export function Composer({
     busy ||
     Boolean(draft.outbox) ||
     !attachmentsReady ||
-    draft.providerSync.some(
-      (item) =>
-        item.accountId === value.accountId &&
-        ['conflict', 'unknown'].includes(item.state),
-    ) ||
     draft.status === 'conflict' ||
     selectedAccount?.smtpState !== 'ready';
   const saveStatus = {
@@ -289,36 +283,6 @@ export function Composer({
             </p>
           </div>
         )}
-        <ProviderDraftStatus
-          items={draft.providerSync}
-          accountId={value.accountId}
-          disabled={
-            busy || draft.status === 'conflict' || Boolean(draft.outbox)
-          }
-          onResolve={async (id, action) => {
-            setBusy(true);
-            setSendError('');
-            try {
-              if (!(await draft.flush())) return;
-              await mailApi(`draft-sync/${id}`, {
-                method: 'POST',
-                body: JSON.stringify({
-                  action,
-                  revision: draft.currentRevision(),
-                }),
-              });
-              await draft.loadSaved();
-            } catch (error) {
-              setSendError(
-                error instanceof Error
-                  ? error.message
-                  : 'Unable to resolve provider draft.',
-              );
-            } finally {
-              setBusy(false);
-            }
-          }}
-        />
         {draft.recoveryFailed && (
           <p role="alert" className="error">
             Browser recovery storage is unavailable or full. Keep this page open
