@@ -548,7 +548,7 @@ export async function registerMailRoutes(
       FROM mailboxes b LEFT JOIN mail_memberships mm ON mm.user_id=b.user_id AND mm.account_id=b.account_id
         AND COALESCE(mm.pending_mailbox_id,mm.mailbox_id)=b.id
       LEFT JOIN mail_messages m ON m.user_id=mm.user_id AND m.id=mm.message_id
-      WHERE b.user_id=$1 GROUP BY b.id ORDER BY b.account_id,CASE WHEN b.role='inbox' THEN 0 ELSE 1 END,b.path`,
+      WHERE b.user_id=$1 GROUP BY b.id ORDER BY b.account_id,CASE WHEN b.role='inbox' THEN 0 ELSE 1 END,lower(b.name),b.path`,
         [request.mailUser],
       )
     ).rows,

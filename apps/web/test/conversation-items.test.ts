@@ -15,7 +15,13 @@ function item(id: string, copyKey = id, folder = 'INBOX'): ConversationItem {
     unread: true,
     matchesView: folder === 'INBOX',
     headersPending: false,
-    folders: [{ path: folder, role: folder === 'All Mail' ? '\\All' : null }],
+    folders: [
+      {
+        name: folder,
+        path: folder,
+        role: folder === 'All Mail' ? '\\All' : null,
+      },
+    ],
   };
 }
 
@@ -48,7 +54,7 @@ test('real replies remain distinct and matching folder copies appear once with a
   const sent = {
     ...reply,
     matchesView: false,
-    folders: [{ path: 'Sent', role: '\\Sent' }],
+    folders: [{ name: 'Sent', path: 'Sent', role: '\\Sent' }],
   };
   assert.equal(
     relatedConversationItems([copy, sent, root], 'root')[0]?.id,
@@ -73,5 +79,25 @@ test('same-folder redeliveries, different metadata, missing fingerprints and sub
       (entry) => entry.id,
     ),
     ['changed', 'unknown'],
+  );
+});
+
+test('matching folder display names do not replace folder identity', () => {
+  const root = item('root');
+  const first = item('first', 'copy', 'AQMkFolderOne=');
+  const second = item('second', 'copy', 'AQMkFolderTwo=');
+  for (const message of [first, second])
+    message.folders = message.folders.map((folder) => ({
+      ...folder,
+      name: 'Receipts',
+    }));
+  const [related] = relatedConversationItems([root, first, second], root.id);
+  assert.deepEqual(
+    related?.folders.map((folder) => folder.path),
+    ['AQMkFolderOne=', 'AQMkFolderTwo='],
+  );
+  assert.deepEqual(
+    related?.folders.map((folder) => folder.name),
+    ['Receipts', 'Receipts'],
   );
 });

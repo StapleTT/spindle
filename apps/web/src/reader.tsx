@@ -52,7 +52,7 @@ type Detail = {
     lastAction: MailAction | null;
     canMove: { archive: boolean | null; trash: boolean | null } | null;
     folderId: string | null;
-    restoreTo: { id: string; path: string } | null;
+    restoreTo: { id: string; name: string; path: string } | null;
   };
   previous: string | null;
   next: string | null;
@@ -233,7 +233,7 @@ export function Reader({
   conversation?: string;
   account: string;
   mailbox: string;
-  folders: { id: string; accountId: string; path: string }[];
+  folders: { id: string; accountId: string; name: string; path: string }[];
   onChange: () => void;
   onAction: (action: Undoable) => void;
   actionRevision: number;
@@ -692,13 +692,13 @@ export function Reader({
               <button
                 type="button"
                 className="icon-button"
-                title={`Restore to ${detail.message.restoreTo.path}`}
+                title={`Restore to ${detail.message.restoreTo.name}`}
                 disabled={pendingAction}
                 onClick={() => void mark('restore')}
               >
                 <Icon src={unarchive} />
                 <span className="visually-hidden">
-                  Restore to {detail.message.restoreTo.path}
+                  Restore to {detail.message.restoreTo.name}
                 </span>
               </button>
             )}
@@ -718,7 +718,7 @@ export function Reader({
                   )
                   .map((folder) => (
                     <option key={folder.id} value={folder.id}>
-                      {folder.path}
+                      {folder.name}
                     </option>
                   ))}
               </select>

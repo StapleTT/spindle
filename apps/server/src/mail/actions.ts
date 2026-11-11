@@ -99,7 +99,7 @@ export const actionErrors: Record<string, string> = {
 };
 
 type Db = Pick<PoolClient, 'query'>;
-type Folder = { id: string; path: string };
+type Folder = { id: string; name: string; path: string };
 
 // The effective folder: a pending move already counts as the message's location.
 export async function currentFolder(db: Db, owner: string, message: string) {
@@ -125,7 +125,7 @@ export async function restoreDestination(
 ) {
   const origin = (
     await db.query<Folder>(
-      `SELECT b.id,b.path FROM mail_actions a JOIN mailboxes b
+      `SELECT b.id,b.name,b.path FROM mail_actions a JOIN mailboxes b
       ON b.user_id=a.user_id AND b.account_id=a.account_id AND b.id=a.source_mailbox_id
       WHERE a.user_id=$1 AND a.message_id=$2 AND a.target_mailbox_id=$3 AND a.state IN ('pending','applied')
       ORDER BY a.seq DESC LIMIT 1`,
@@ -137,7 +137,7 @@ export async function restoreDestination(
     return undefined;
   return (
     await db.query<Folder>(
-      `SELECT id,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND role='inbox' LIMIT 1`,
+      `SELECT id,name,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND role='inbox' LIMIT 1`,
       [owner, account],
     )
   ).rows[0];
@@ -166,14 +166,14 @@ export async function moveDestination(
       : (
           await db.query<Folder>(
             kind === 'move'
-              ? 'SELECT id,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND id=$3'
-              : 'SELECT id,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND role=$3 ORDER BY path LIMIT 1',
+              ? 'SELECT id,name,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND id=$3'
+              : 'SELECT id,name,path FROM mailboxes WHERE user_id=$1 AND account_id=$2 AND role=$3 ORDER BY path LIMIT 1',
             [owner, account, kind === 'move' ? chosen : moveRoles[kind]],
           )
         ).rows[0];
   if (!target) return { error: unavailable[kind] };
   if (target.id === current.id)
-    return { error: `This message is already in ${target.path}.` };
+    return { error: `This message is already in ${target.name}.` };
   return { source: current.id, target };
 }
 

@@ -7,7 +7,7 @@ export type ConversationItem = {
   unread: boolean;
   matchesView: boolean;
   headersPending: boolean;
-  folders: { path: string; role: string | null }[];
+  folders: { name: string; path: string; role: string | null }[];
 };
 
 // Collapse matching cross-folder envelopes for display, never storage or actions.

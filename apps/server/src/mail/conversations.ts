@@ -125,7 +125,7 @@ export function registerConversationRoutes(app: FastifyInstance, pool: Pool) {
         NOT EXISTS(SELECT 1 FROM mail_memberships seen WHERE seen.user_id=m.user_id AND seen.message_id=m.id AND '\\Seen'=ANY(seen.flags)) AS unread,
         (${condition}) AS "matchesView",
         m.reference_ids IS NULL AS "headersPending",
-        (SELECT json_agg(folder ORDER BY folder.path) FROM (SELECT DISTINCT b.path,b.role FROM mail_memberships mm JOIN mailboxes b
+        (SELECT json_agg(folder ORDER BY folder.path) FROM (SELECT DISTINCT b.path,b.name,b.role FROM mail_memberships mm JOIN mailboxes b
           ON b.user_id=mm.user_id AND b.account_id=mm.account_id AND b.id=COALESCE(mm.pending_mailbox_id,mm.mailbox_id)
           WHERE mm.user_id=m.user_id AND mm.message_id=m.id) folder) AS folders
         FROM mail_messages m WHERE m.user_id=$1 AND m.id=ANY(${idsParam}::uuid[]) AND $4::uuid=ANY(${idsParam}::uuid[])

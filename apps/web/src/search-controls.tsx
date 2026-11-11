@@ -29,6 +29,7 @@ export function SearchControls({
   folders: {
     id: string;
     accountId: string;
+    name: string;
     path: string;
     role: string | null;
   }[];
@@ -257,7 +258,7 @@ export function SearchControls({
                         accounts.find((item) => item.id === folder.accountId)
                           ?.name
                       }{' '}
-                      / {folder.path}
+                      / {folder.name}
                     </option>
                   ))}
               </select>

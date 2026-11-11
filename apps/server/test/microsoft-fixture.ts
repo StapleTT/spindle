@@ -52,6 +52,7 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
       ['receipts', 'Receipts 日本'],
     ].map(([id, name]) => [id as string, name as string]),
   );
+  const folderAliases = new Map<string, string>();
   const sent: string[] = [];
   const requests: { method: string; url: string }[] = [];
   const changes: {
@@ -247,9 +248,10 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
   app.get<{ Params: { id: string } }>(
     '/v1.0/me/mailFolders/:id',
     async (request, reply) => {
-      const displayName = folders.get(request.params.id);
+      const id = folderAliases.get(request.params.id) ?? request.params.id;
+      const displayName = folders.get(id);
       return displayName
-        ? { id: request.params.id, displayName, childFolderCount: 0 }
+        ? { id, displayName, childFolderCount: 0 }
         : reply.code(404).send({ error: { code: 'ErrorItemNotFound' } });
     },
   );
@@ -366,15 +368,16 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
     const raw = Buffer.from(request.body, 'base64').toString();
     sent.push(raw);
     const remote = `sent-${sent.length}`;
+    const sentFolder = folderAliases.get('sentitems') ?? 'sentitems';
     messages.set(remote, {
-      folder: 'sentitems',
+      folder: sentFolder,
       subject: 'sent',
       received: Date.now(),
       read: true,
       messageId: raw.match(/^Message-ID: (<[^>]+>)/im)?.[1] ?? '',
       raw,
     });
-    record('sentitems', remote);
+    record(sentFolder, remote);
     if (state.send === 'lost')
       return reply.code(503).send({ error: { code: 'ServiceUnavailable' } });
     return reply.code(202).send();
@@ -389,7 +392,9 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
         value: [...messages]
           .filter(
             ([, message]) =>
-              message.folder === 'sentitems' && message.messageId === expected,
+              message.folder ===
+                (folderAliases.get('sentitems') ?? 'sentitems') &&
+              message.messageId === expected,
           )
           .map(([id, message]) => resource(id, message)),
       };
@@ -416,6 +421,7 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
     accessTokens,
     messages,
     folders,
+    folderAliases,
     state,
     sent,
     requests,

@@ -309,7 +309,7 @@ export function registerReaderRoutes(
       const rows = (
         await pool.query(
           `SELECT a.id,a.kind,a.state,a.subject,a.message_id AS "messageId",a.target_mailbox_id AS "targetId",
-        t.path AS target,a.error_code AS code,${undoMs},a.seq::text AS seq,
+        t.name AS target,a.error_code AS code,${undoMs},a.seq::text AS seq,
         CASE WHEN a.state='applied' THEN 1 ELSE 0 END AS priority FROM mail_actions a
         LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.id=a.target_mailbox_id
         WHERE a.user_id=$1 AND a.state<>'cancelled' AND a.dismissed_at IS NULL

@@ -41,6 +41,15 @@ test('Microsoft connects through consent, reads and archives Graph mail, then re
     }),
   });
   const microsoft = await fakeMicrosoft(config.appUrl);
+  for (const [index, [alias, name]] of [...microsoft.folders].entries()) {
+    const id = `AQMkSyntheticGraphFolder${index}=`;
+    microsoft.folderAliases.set(alias, id);
+    microsoft.folders.delete(alias);
+    microsoft.folders.set(id, name);
+  }
+  const inboxId = microsoft.folderAliases.get('inbox');
+  const archiveId = microsoft.folderAliases.get('archive');
+  assert.ok(inboxId && archiveId);
   t.after(() => microsoft.app.close());
   const app = testApp(
     pool,
@@ -64,7 +73,7 @@ test('Microsoft connects through consent, reads and archives Graph mail, then re
     name: 'Microsoft Browser Reader',
   };
   microsoft.messages.set('browser-graph', {
-    folder: 'inbox',
+    folder: inboxId,
     subject: 'Microsoft browser message',
     received: Date.now(),
     read: false,
@@ -116,7 +125,7 @@ test('Microsoft connects through consent, reads and archives Graph mail, then re
           name: 'Connect Microsoft account',
         });
         await connect.waitFor();
-        assert.equal(await connect.isDisabled(), false);
+        await until(async () => !(await connect.isDisabled()));
         await connect.click();
         await page.getByLabel('Mail history').selectOption('all');
         await page
@@ -174,6 +183,69 @@ test('Microsoft connects through consent, reads and archives Graph mail, then re
           ),
         );
         await page.goto(`${config.appUrl}/inbox`);
+        const account = page.getByRole('region', {
+          name: 'reader@outlook.test',
+          exact: true,
+        });
+        await until(
+          async () =>
+            (await account
+              .locator('.account-heading .nav-count')
+              .textContent()) === '1',
+        );
+        const inbox = account.getByRole('button', {
+          name: 'Inbox (1 unread / 1)',
+          exact: true,
+        });
+        await inbox.waitFor();
+        const receipts = account.getByRole('button', {
+          name: 'Receipts 日本 (0 unread / 0)',
+          exact: true,
+        });
+        await receipts.click();
+        await until(
+          async () =>
+            (await page.locator('#list-title').textContent()) ===
+            'Receipts 日本',
+        );
+        assert.doesNotMatch(
+          (await account.textContent()) ?? '',
+          /AQMkSyntheticGraphFolder/,
+        );
+        await page
+          .getByRole('button', { name: 'Search options', exact: true })
+          .click();
+        const searchFolder = page
+          .locator('#search-options label', { hasText: 'Search folder' })
+          .locator('select');
+        await searchFolder.waitFor();
+        const searchLabels = await searchFolder
+          .locator('option')
+          .allTextContents();
+        assert.ok(
+          searchLabels.includes('reader@outlook.test / Inbox'),
+          JSON.stringify(searchLabels),
+        );
+        assert.ok(searchLabels.includes('reader@outlook.test / Receipts 日本'));
+        assert.ok(
+          searchLabels.every(
+            (label) => !label.includes('AQMkSyntheticGraphFolder'),
+          ),
+        );
+        assert.match(
+          (await searchFolder
+            .locator('option', { hasText: ' / Receipts 日本' })
+            .getAttribute('value')) ?? '',
+          /^[a-f\d-]{36}$/i,
+        );
+        await page
+          .getByRole('button', { name: 'Search options', exact: true })
+          .click();
+        await inbox.click();
+        await until(
+          async () =>
+            (await page.locator('#list-title').textContent()) === 'Inbox',
+        );
         await page
           .getByRole('link', { name: 'Microsoft browser message', exact: true })
           .click();
@@ -203,6 +275,16 @@ test('Microsoft connects through consent, reads and archives Graph mail, then re
         await reader
           .getByText('Synthetic Microsoft body for browser-graph')
           .waitFor();
+        const moveLabels = await reader
+          .locator('.move-select select option')
+          .allTextContents();
+        assert.ok(moveLabels.includes('Receipts 日本'));
+        assert.ok(moveLabels.includes('Archive'));
+        assert.ok(
+          moveLabels.every(
+            (label) => !label.includes('AQMkSyntheticGraphFolder'),
+          ),
+        );
         assert.equal(
           await reader
             .getByRole('button', { name: 'Reply', exact: true })
@@ -236,7 +318,7 @@ test('Microsoft connects through consent, reads and archives Graph mail, then re
         );
         assert.equal(
           microsoft.messages.get('browser-graph')?.folder,
-          'archive',
+          archiveId,
         );
         assert.equal(
           (
@@ -247,6 +329,40 @@ test('Microsoft connects through consent, reads and archives Graph mail, then re
           ).rows[0].state,
           'applied',
         );
+        await account
+          .getByRole('button', { name: /^Archive \(\d+ unread \/ 1\)$/ })
+          .click();
+        await page
+          .getByRole('link', { name: 'Microsoft browser message', exact: true })
+          .click();
+        const restore = page
+          .locator('.reader')
+          .getByRole('button', { name: 'Restore to Inbox', exact: true });
+        await restore.waitFor();
+        assert.equal(await restore.getAttribute('title'), 'Restore to Inbox');
+        await restore.click();
+        await until(async () =>
+          Boolean(
+            (
+              await pool.query(
+                "SELECT 1 FROM mail_actions WHERE account_id=$1 AND kind='restore' AND state='pending'",
+                [accountId],
+              )
+            ).rowCount,
+          ),
+        );
+        await pool.query(
+          "UPDATE mail_actions SET next_attempt_at=clock_timestamp() WHERE account_id=$1 AND state='pending'",
+          [accountId],
+        );
+        await applyGraphActions(
+          pool,
+          keys,
+          microsoft.config,
+          owner.id,
+          accountId,
+        );
+        assert.equal(microsoft.messages.get('browser-graph')?.folder, inboxId);
       },
     );
 

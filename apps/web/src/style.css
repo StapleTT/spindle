@@ -3316,6 +3316,9 @@ dialog.account-menu[open] {
   font-size: 18px;
 }
 .folder-toggle .icon {
+  /* Whole-pixel box: Firefox draws a hairline edge when a fractional masked icon rotates. */
+  width: 20px;
+  height: 20px;
   transition: transform 0.15s var(--ease);
 }
 .folder-toggle[aria-expanded="true"] .icon {

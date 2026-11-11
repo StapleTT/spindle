@@ -26,7 +26,7 @@ export async function queueAction(
     )
   ).rows[0];
   if (!message) return null;
-  const recorded = `SELECT a.id,a.kind,a.state,t.path AS target,a.message_id,a.target_mailbox_id,${undoMs}
+  const recorded = `SELECT a.id,a.kind,a.state,t.name AS target,a.message_id,a.target_mailbox_id,${undoMs}
           FROM mail_actions a LEFT JOIN mailboxes t ON t.user_id=a.user_id AND t.id=a.target_mailbox_id
           WHERE a.id=$1 AND a.user_id=$2`;
   // A retried request with the same operation ID returns the original intent.

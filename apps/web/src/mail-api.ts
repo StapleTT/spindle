@@ -48,7 +48,7 @@ export type MailAction = {
 };
 
 // Each user intent gets one operation ID, so a repeated request cannot duplicate it.
-// Moves answer with the destination folder path; read changes have none.
+// Moves answer with the destination folder name; read changes have none.
 export async function requestAction(
   id: string,
   kind: MailAction['kind'],

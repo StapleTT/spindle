@@ -433,7 +433,7 @@ export function Mail({
     return accountColorStyle(accounts[index]?.color, index);
   };
   const isInbox = (box: Mailbox) =>
-    box.role === '\\Inbox' || box.path.toUpperCase() === 'INBOX';
+    box.role === 'inbox' || box.path.toUpperCase() === 'INBOX';
   const inboxUnread = (accountId?: string) =>
     mailboxes
       .filter(
@@ -451,7 +451,7 @@ export function Mail({
           )?.[0] ?? '');
   const accountName = accounts.find((item) => item.id === account)?.name;
   const title = selected
-    ? selected.path
+    ? selected.name
     : scope === 'all' && accountName
       ? `${accountName} inbox`
       : scope && scope in scopeTitles
@@ -1062,7 +1062,7 @@ export function Mail({
                         type="button"
                         className="nav-item folder"
                         aria-pressed={mailbox === box.id}
-                        aria-label={`${box.path} (${box.unread} unread / ${box.total})`}
+                        aria-label={`${box.name} (${box.unread} unread / ${box.total})`}
                         onClick={() => {
                           navigateMail({
                             account: item.id,
@@ -1074,7 +1074,7 @@ export function Mail({
                           });
                         }}
                       >
-                        <span className="nav-label">{box.path}</span>
+                        <span className="nav-label">{box.name}</span>
                         {box.unread > 0 && (
                           <span className="nav-count" aria-hidden="true">
                             {box.unread}

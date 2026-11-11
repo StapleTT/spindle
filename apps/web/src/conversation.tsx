@@ -190,7 +190,7 @@ export function Conversation({
                           </a>
                           <span className="thread-meta">
                             {item.folders
-                              .map((folder) => folder.path)
+                              .map((folder) => folder.name)
                               .join(', ')}
                             {item.unread ? ' · Unread' : ''}
                             {!item.matchesView ? ' · Outside current view' : ''}
