@@ -198,6 +198,17 @@ test('private local search, saved scopes, stable navigation and bounded batch ac
       assert.equal(ids(await search('project is:read')).length, 1);
       assert.equal(ids(await search('project is:unread')).length, 3);
       assert.deepEqual(ids(await search('has:attachment')), [bodyOnly]);
+      await pool.query(
+        'UPDATE mail_messages SET list_unsubscribe=true WHERE id=ANY($1::uuid[])',
+        [[tie, archived, foreignId]],
+      );
+      assert.deepEqual(ids(await search('in:inbox is:newsletter')), [tie]);
+      assert.equal(ids(await search('is:newsletter')).length, 2);
+      assert.equal(ids(await search('project -is:newsletter')).length, 2);
+      await pool.query(
+        'UPDATE mail_messages SET list_unsubscribe=false WHERE id=ANY($1::uuid[])',
+        [[tie, archived, foreignId]],
+      );
       assert.equal(ids(await search('after:2026-10-29')).length, 0);
       assert.equal(ids(await search('before:2026-10-29')).length, 6);
       assert.deepEqual(ids(await search('in:trash project')), [trashed]);

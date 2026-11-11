@@ -286,11 +286,11 @@ export function SearchControls({
             <summary>Search syntax</summary>
             <p className="muted small">
               Combine words or quoted phrases with from:, to:, subject:, body:,
-              is:read, is:unread, has:attachment, after:YYYY-MM-DD and
-              before:YYYY-MM-DD (UTC). Prefix a term with - to exclude it.
-              Search includes received folders, Sent and Archive; choose a
-              folder or use in:inbox/archive/sent/trash/spam/anywhere. Bcc
-              headers are not indexed.
+              is:read, is:unread, is:newsletter, has:attachment,
+              after:YYYY-MM-DD and before:YYYY-MM-DD (UTC). Prefix a term with -
+              to exclude it. Search includes received folders, Sent and Archive;
+              choose a folder or use in:inbox/archive/sent/trash/spam/anywhere.
+              Bcc headers are not indexed.
             </p>
           </details>
           <div className="save-search">

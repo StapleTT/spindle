@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { hasListUnsubscribe } from '../src/mail/parse.js';
 import { parseSearch, searchCondition, searchKey } from '../src/mail/search.js';
 
 test('bounded search syntax keeps field values and hostile text in parameters', () => {
@@ -30,6 +31,13 @@ test('bounded search syntax keeps field values and hostile text in parameters', 
     'bad\0value',
   ])
     assert.throws(() => parseSearch(value), Error, value);
+  assert.equal(parseSearch('-is:newsletter')[0]?.exclude, true);
+  assert.ok(
+    hasListUnsubscribe(
+      Buffer.from('References: <a@b>\r\nLIST-UNSUBSCRIBE : <mailto:x@y>\r\n'),
+    ),
+  );
+  assert.ok(!hasListUnsubscribe(Buffer.from('X-List-Unsubscribe: <x>\r\n')));
   assert.notEqual(
     searchKey('a', undefined, undefined, 'hello'),
     searchKey('b', undefined, undefined, 'hello'),

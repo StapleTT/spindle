@@ -39,6 +39,11 @@ export function headerBlock(headers: unknown, names: string[]) {
   return { values, block };
 }
 
+// Newsletter rule: senders of bulk mail declare RFC 2369 List-Unsubscribe.
+export function hasListUnsubscribe(headers: Buffer) {
+  return /^list-unsubscribe[ \t]*:/im.test(headers.toString('latin1'));
+}
+
 export async function parseReplyHeaders(headers: Buffer) {
   if (headers.length > 64 * 1024) throw new Error('Header size limit');
   return replyMetadata(
@@ -92,6 +97,7 @@ export async function parseMessage(source: Buffer) {
     html: safe.html,
     resources: safe.resources,
     images,
+    listUnsubscribe: parsed.headers.has('list-unsubscribe'),
     bytes:
       Buffer.byteLength(plain) +
       Buffer.byteLength(safe.html) +

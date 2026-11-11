@@ -14,6 +14,7 @@ Use **Search mail**, optionally choose an account/folder, and submit. Query, sco
 | `from:alice`, `to:"Bob Example"`                                 | Sender or To display names/addresses; To excludes Cc   |
 | `subject:project`, `body:minutes`                                | Restrict the full-text term to that field              |
 | `is:read`, `is:unread`                                           | Current local read state, including pending actions    |
+| `is:newsletter`                                                  | Headers declare `List-Unsubscribe` (D045)              |
 | `has:attachment`                                                 | Attachment metadata in a current cached body           |
 | `after:2026-10-01`, `before:2026-11-01`                          | Received date, inclusive after / exclusive before, UTC |
 | `in:inbox/archive/sent/trash/spam/anywhere/pinned/muted/snoozed` | Choose one role scope, without a minus                 |
@@ -26,7 +27,7 @@ Folder copies retain distinct local message IDs. If a provider exposes the same 
 
 ## Saved and split views
 
-Apply a search, enter a name and choose **Save current search**. Up to 50 private named searches store query, optional account and folder. Names are unique per user; delete/recreate to change a saved search. Removing its account/folder deletes the saved view instead of broadening its scope. The **Split reader** preference is stored per user in this browser; desktop shows list and reader together, narrow screens stack them. Automatic “Needs reply” and “Newsletters” heuristics remain separate J03 work.
+Apply a search, enter a name and choose **Save current search**. Up to 50 private named searches store query, optional account and folder. Names are unique per user; delete/recreate to change a saved search. Removing its account/folder deletes the saved view instead of broadening its scope. The **Split reader** preference is stored per user in this browser; desktop shows list and reader together, narrow screens stack them. The drawer's **Newsletters** view is the local search `in:inbox is:newsletter`: inbox mail whose headers declare `List-Unsubscribe`, recorded during metadata sync or body parsing (D045). IMAP mail synchronized before migration 0041 fills in as background scans revisit it; older Gmail and Microsoft mail fills in when its body is cached or its metadata changes. An automatic “Needs reply” heuristic remains separate J03 work.
 
 ## Keyboard controls
 

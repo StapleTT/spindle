@@ -516,3 +516,13 @@ Status: confirmed by the user on 2026-11-11 ("Syncing with providers can cause s
 - The worker deletes a copy only when its bytes are unchanged and UIDPLUS allows a targeted expunge. It uses a conditional STORE when CONDSTORE is available, under the existing lease and connection budget. Changed, ambiguous, oversized, unlisted-folder, non-UIDPLUS and user-kept copies are kept. Transient failures retry at most five times, then the copies are kept.
 
 Older workers must not run after 0040. See [drafts stay in Spindle](provider-drafts.md).
+
+## D045 — Newsletters view uses List-Unsubscribe
+
+Status: user requested newsletter sorting in the inbox on 2026-11-11, replacing the disabled "Coming soon" drawer item. Implements the Newsletters half of J03 with the explicit rule J03 asks for, not a classifier.
+
+- A message is a newsletter when its own headers contain RFC 2369 `List-Unsubscribe`. Sender, subject, body and other heuristics are not used, and there is no manual override.
+- Metadata sync requests that one extra header from IMAP, Gmail and Graph and stores `mail_messages.list_unsubscribe`. Parsing a fetched body also sets it. The flag only turns on, because a provider message's headers do not change.
+- Search gains `is:newsletter` (and `-is:newsletter`). The drawer's Newsletters item opens `in:inbox is:newsletter`; lists, counts and selection behave as in any other local search.
+
+Append migration 0041 (a constant-default column, no table rewrite). IMAP mail gets the flag when background metadata scans revisit it. Gmail and Microsoft mail synchronized before the upgrade gets it only when its body is cached or its metadata changes. Rollback keeps the column; older code ignores it. Needs reply remains open J03 work.

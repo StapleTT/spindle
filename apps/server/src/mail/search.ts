@@ -49,10 +49,10 @@ export function parseSearch(query: string): Term[] {
       ].includes(field)
     )
       throw new SearchError(
-        'Use words, quoted phrases, from:, to:, subject:, body:, is:read/unread, has:attachment, after:, before: or in:.',
+        'Use words, quoted phrases, from:, to:, subject:, body:, is:read/unread/newsletter, has:attachment, after:, before: or in:.',
       );
-    if (field === 'is' && !['read', 'unread'].includes(value))
-      throw new SearchError('Use is:read or is:unread.');
+    if (field === 'is' && !['read', 'unread', 'newsletter'].includes(value))
+      throw new SearchError('Use is:read, is:unread or is:newsletter.');
     if (field === 'has' && value !== 'attachment')
       throw new SearchError(
         'Use has:attachment for attachments in cached bodies.',
@@ -105,7 +105,12 @@ export function searchCondition(query: string, values: unknown[]) {
     let sql = '';
     if (field === 'in') continue;
     if (field === 'is')
-      sql = value === 'unread' ? unreadCondition : `NOT (${unreadCondition})`;
+      sql =
+        value === 'newsletter'
+          ? 'm.list_unsubscribe'
+          : value === 'unread'
+            ? unreadCondition
+            : `NOT (${unreadCondition})`;
     else if (field === 'has')
       sql = `EXISTS(SELECT 1 FROM mail_content c WHERE ${cachedBodyCondition} AND jsonb_array_length(c.attachments)>0)`;
     else if (field === 'after' || field === 'before')

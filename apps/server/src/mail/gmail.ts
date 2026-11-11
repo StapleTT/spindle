@@ -10,7 +10,7 @@ import {
   googleJson,
   refreshAccessToken,
 } from './google.js';
-import { headerBlock, parseReplyHeaders } from './parse.js';
+import { hasListUnsubscribe, headerBlock, parseReplyHeaders } from './parse.js';
 import { defaultSenderName } from './smtp.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import { text, upsertMessage, validDate } from './sync.js';
@@ -53,6 +53,7 @@ const HEADERS = [
   'Message-ID',
   'In-Reply-To',
   'References',
+  'List-Unsubscribe',
 ];
 const PAGE = 100;
 // Gmail allows 250 quota units per user per second and messages.get costs 5.
@@ -179,6 +180,7 @@ async function saveGmailMessage(
         ? Math.max(0, message.sizeEstimate as number)
         : 0,
       references: meta?.references ?? null,
+      listUnsubscribe: hasListUnsubscribe(block),
     },
     notify &&
       labels.includes('INBOX') &&

@@ -172,7 +172,7 @@ export async function withMailbox<T>(
 }
 
 // After a body row became ready, inside the transaction that wrote it:
-// conversation references, inline images and the owner's cache budget.
+// conversation references, the newsletter header, inline images and the owner's cache budget.
 export async function publishContent(
   db: PoolClient,
   owner: string,
@@ -181,8 +181,14 @@ export async function publishContent(
   parsed: Awaited<ReturnType<typeof parseMessage>>,
 ) {
   await db.query(
-    'UPDATE mail_messages SET reference_ids=$4 WHERE user_id=$1 AND account_id=$2 AND id=$3',
-    [owner, accountId, messageId, parsed.reply.references],
+    'UPDATE mail_messages SET reference_ids=$4,list_unsubscribe=list_unsubscribe OR $5 WHERE user_id=$1 AND account_id=$2 AND id=$3',
+    [
+      owner,
+      accountId,
+      messageId,
+      parsed.reply.references,
+      parsed.listUnsubscribe,
+    ],
   );
   await reconcileConversationState(db, owner, accountId, [messageId]);
   for (const image of parsed.images)

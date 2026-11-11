@@ -482,7 +482,10 @@ test('account-scoped local conversation graph, context authorization, pagination
     async () => {
       const imap = await imapFixture(t, true, true, [], true);
       imap.server.control.addMessage('INBOX', {
-        raw: rawMail('Header root', 'provider-root@example.test'),
+        raw: rawMail('Header root', 'provider-root@example.test').replace(
+          'Content-Type:',
+          'List-Unsubscribe: <mailto:leave@example.test>\r\nContent-Type:',
+        ),
         internaldate: new Date(),
         flags: [],
       });
@@ -498,11 +501,15 @@ test('account-scoped local conversation graph, context authorization, pagination
       await syncAccount(pool, keys, owner.id, id);
       const messages = (
         await pool.query(
-          'SELECT id,reference_ids FROM mail_messages WHERE user_id=$1 AND account_id=$2 ORDER BY subject',
+          'SELECT id,reference_ids,list_unsubscribe FROM mail_messages WHERE user_id=$1 AND account_id=$2 ORDER BY subject',
           [owner.id, id],
         )
       ).rows;
       assert.equal(messages.length, 2);
+      assert.deepEqual(
+        messages.map((message) => message.list_unsubscribe),
+        [false, true],
+      );
       assert.equal(
         (await conversationIds(pool, owner.id, messages[0].id)).length,
         2,

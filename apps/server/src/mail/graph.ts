@@ -10,7 +10,7 @@ import {
   MicrosoftPause,
   openMicrosoft,
 } from './microsoft.js';
-import { headerBlock, parseReplyHeaders } from './parse.js';
+import { hasListUnsubscribe, headerBlock, parseReplyHeaders } from './parse.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import { text, upsertMessage, validDate } from './sync.js';
 import { bodyPending } from './work-pending.js';
@@ -82,6 +82,7 @@ export async function saveGraphMessage(
     'Message-ID',
     'In-Reply-To',
     'References',
+    'List-Unsubscribe',
   ]);
   let headers: Awaited<ReturnType<typeof parseReplyHeaders>> | null = null;
   try {
@@ -116,6 +117,7 @@ export async function saveGraphMessage(
       receivedAt: received,
       inReplyTo: headers?.inReplyTo ?? undefined,
       references: headers?.references ?? null,
+      listUnsubscribe: hasListUnsubscribe(block),
       // Graph has no ordinary size property; raw content is bounded separately.
       size: 0,
     },

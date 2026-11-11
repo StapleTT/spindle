@@ -288,6 +288,13 @@
       "when": 1793550000009,
       "tag": "0040_local_only_drafts",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1793550000010,
+      "tag": "0041_newsletters",
+      "breakpoints": true
     }
   ]
 }

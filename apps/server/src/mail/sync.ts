@@ -4,7 +4,7 @@ import { pendingKind, withSeen } from './actions.js';
 import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 import { connectImap } from './imap.js';
-import { parseReplyHeaders } from './parse.js';
+import { hasListUnsubscribe, parseReplyHeaders } from './parse.js';
 import {
   claimAccount,
   type MailAccount,
@@ -50,6 +50,7 @@ export type MessageMeta = {
   inReplyTo: string | undefined;
   size: number;
   references: string[] | null;
+  listUnsubscribe: boolean;
 };
 
 // Shared by IMAP and Gmail: one local message per provider remote key.
@@ -61,12 +62,13 @@ export async function upsertMessage(
   notify: boolean,
 ) {
   const result = await client.query(
-    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes,reference_ids,notification_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN clock_timestamp() ELSE NULL END)
+    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes,reference_ids,notification_at,list_unsubscribe)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN clock_timestamp() ELSE NULL END,$14)
      ON CONFLICT (account_id,remote_key) DO UPDATE SET subject=EXCLUDED.subject,
        sender=EXCLUDED.sender, recipients=EXCLUDED.recipients, sent_at=EXCLUDED.sent_at,
        received_at=EXCLUDED.received_at, size_bytes=EXCLUDED.size_bytes,
-       reference_ids=COALESCE(EXCLUDED.reference_ids,mail_messages.reference_ids)
+       reference_ids=COALESCE(EXCLUDED.reference_ids,mail_messages.reference_ids),
+       list_unsubscribe=mail_messages.list_unsubscribe OR EXCLUDED.list_unsubscribe
      RETURNING id`,
     [
       account.user_id,
@@ -82,6 +84,7 @@ export async function upsertMessage(
       meta.size,
       meta.references,
       notify,
+      meta.listUnsubscribe,
     ],
   );
   return result.rows[0].id as string;
@@ -122,6 +125,8 @@ async function saveMessage(
       inReplyTo: envelope?.inReplyTo,
       size: mail.size ?? 0,
       references,
+      listUnsubscribe:
+        Buffer.isBuffer(mail.headers) && hasListUnsubscribe(mail.headers),
     },
     arrival &&
       !mail.flags?.has('\\Seen') &&
@@ -248,7 +253,7 @@ export async function syncAccount(
               flags: true,
               internalDate: true,
               size: true,
-              headers: ['references'],
+              headers: ['references', 'list-unsubscribe'],
             },
             { uid: true },
           )) {

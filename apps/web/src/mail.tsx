@@ -947,7 +947,9 @@ export function Mail({
             }),
         })}
         {navItem('needs', 'Needs reply', 'Reply', reply, { disabled: true })}
-        {navItem('news', 'Newsletters', 'News', newspaper, { disabled: true })}
+        {navItem('news', 'Newsletters', 'News', newspaper, {
+          onClick: goScope('news'),
+        })}
         {navItem('pinned', 'Pinned', 'Pinned', keep, {
           onClick: goScope('pinned'),
         })}
@@ -1307,6 +1309,7 @@ export function Mail({
 }
 
 const scopeQueries = {
+  news: 'in:inbox is:newsletter',
   pinned: 'in:pinned',
   snoozed: 'in:snoozed',
   muted: 'in:muted',
@@ -1316,6 +1319,7 @@ const scopeQueries = {
 };
 const scopeTitles = {
   all: 'All inboxes',
+  news: 'Newsletters',
   pinned: 'Pinned',
   snoozed: 'Snoozed',
   muted: 'Muted',
@@ -1325,6 +1329,11 @@ const scopeTitles = {
 };
 const emptyStates = {
   all: [doneAll, 'Inbox zero', 'Everything across your accounts is handled.'],
+  news: [
+    newspaper,
+    'No newsletters',
+    'Inbox mail with an unsubscribe link shows up here.',
+  ],
   pinned: [keep, 'Nothing pinned', 'Pin a conversation to keep it on top.'],
   snoozed: [
     schedule,
