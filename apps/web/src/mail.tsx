@@ -39,16 +39,12 @@ import {
   draft,
   edit,
   inbox,
-  keep,
   keepFill,
   mail,
   markEmailRead,
   markEmailUnread,
   menu,
   newspaper,
-  notificationsOff,
-  outbox,
-  schedule,
   searchOff,
   send,
   settings,
@@ -952,16 +948,6 @@ export function Mail({
         {navItem('news', 'Newsletters', 'News', newspaper, {
           onClick: goScope('news'),
         })}
-        {navItem('pinned', 'Pinned', 'Pinned', keep, {
-          onClick: goScope('pinned'),
-        })}
-        {navItem('snoozed', 'Snoozed', 'Snoozed', schedule, {
-          onClick: goScope('snoozed'),
-        })}
-        {navItem('muted', 'Muted', 'Muted', notificationsOff, {
-          onClick: goScope('muted'),
-          hideOnRail: true,
-        })}
         {navItem('sent', 'Sent', 'Sent', send, { onClick: goScope('sent') })}
         {navItem('drafts', 'Drafts', 'Drafts', draft, {
           command: 'drafts',
@@ -975,12 +961,6 @@ export function Mail({
               view: 'drafts',
               message: '',
             }),
-        })}
-        {navItem('outbox', 'Outbox', 'Outbox', outbox, {
-          command: 'outbox',
-          hideOnRail: true,
-          onClick: () =>
-            navigateMail({ view: 'outbox', draft: '', message: '' }),
         })}
         {navItem('archive', 'Archive', 'Archive', archive, {
           onClick: goScope('archive'),
@@ -1313,9 +1293,6 @@ export function Mail({
 const scopeQueries = {
   primary: 'in:inbox -is:newsletter',
   news: 'in:inbox is:newsletter',
-  pinned: 'in:pinned',
-  snoozed: 'in:snoozed',
-  muted: 'in:muted',
   sent: 'in:sent',
   archive: 'in:archive',
   trash: 'in:trash',
@@ -1324,9 +1301,6 @@ const scopeTitles = {
   all: 'All inboxes',
   primary: 'Primary',
   news: 'Newsletters',
-  pinned: 'Pinned',
-  snoozed: 'Snoozed',
-  muted: 'Muted',
   sent: 'Sent',
   archive: 'Archive',
   trash: 'Trash',
@@ -1338,12 +1312,6 @@ const emptyStates = {
     newspaper,
     'No newsletters',
     'Inbox mail with an unsubscribe link shows up here.',
-  ],
-  pinned: [keep, 'Nothing pinned', 'Pin a conversation to keep it on top.'],
-  snoozed: [
-    schedule,
-    'Nothing snoozed',
-    'Snoozed mail comes back when you asked it to.',
   ],
   trash: [trash, 'Trash is empty', 'Mail you move to Trash shows up here.'],
 } as const;

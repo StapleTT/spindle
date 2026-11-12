@@ -10,7 +10,7 @@ Open a message and use **Conversation settings** above its timeline. These setti
 
 These settings never change provider flags, folders or provider-native pin/mute/snooze state. Snooze leaves unread flags intact. When it expires or is cancelled, mail that still belongs to the inbox becomes visible again. Archived, moved, trashed or deleted mail is not moved back to the inbox. Pinning does not override an active inbox snooze. Pinned/Muted/Snoozed views exclude Trash/Junk unless a folder is explicitly selected; `in:anywhere` can find those messages.
 
-The sidebar views use the existing searchable scopes `in:pinned`, `in:muted` and `in:snoozed`. They can be combined with other search terms or saved as private searches. Selecting an inbox folder still hides snoozed messages. Opening another conversation member changes the message, while the conversation settings stay attached to the original owned conversation source.
+The drawer no longer lists Pinned, Snoozed or Muted (D047); search with `in:pinned`, `in:muted` or `in:snoozed`. They can be combined with other search terms or saved as private searches. Selecting an inbox folder still hides snoozed messages. Opening another conversation member changes the message, while the conversation settings stay attached to the original owned conversation source.
 
 ## Time and recovery
 
@@ -20,7 +20,7 @@ A persisted database timestamp is the durable due-time intent. The existing work
 
 Inbox visibility also compares the stored deadline with the database clock, so polling/refetch recovers due mail even while the worker is stopped. The worker clears the deadline and emits the usual committed SSE invalidation when it returns. Background delivery, API connectivity and browser polling/coalescing mean this is not a precise alarm service.
 
-Controls submit one explicit change with the last-read version. A stale tab receives a conflict rather than overwriting another tab. **Reload settings** fetches the current state before retrying. Unknown-response failures leave the outcome to subsequent local refresh; repeating a stale request cannot toggle the state again. SSE and polling update other tabs while retaining typed search, draft recovery and reader image consent. Snooze/unsnooze returns to the source list; choose the appropriate sidebar view to find its changed membership.
+Controls submit one explicit change with the last-read version. A stale tab receives a conflict rather than overwriting another tab. **Reload settings** fetches the current state before retrying. Unknown-response failures leave the outcome to subsequent local refresh; repeating a stale request cannot toggle the state again. SSE and polling update other tabs while retaining typed search, draft recovery and reader image consent. Snooze/unsnooze returns to the source list; search the matching `in:` scope to find its changed membership.
 
 ## State and inheritance
 

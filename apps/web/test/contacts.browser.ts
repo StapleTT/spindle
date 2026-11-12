@@ -157,7 +157,10 @@ test('recipient suggestions select only the active address, preserve autosave an
       cc = page.getByRole('combobox', { name: 'Cc', exact: true }),
       bcc = page.getByRole('combobox', { name: 'Bcc', exact: true });
     await to.waitFor();
-    await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
+    // A new message is saved only after its first edit.
+    await page
+      .getByText('Saved once you start writing.', { exact: true })
+      .waitFor();
     const id = new URLSearchParams(new URL(page.url()).hash.slice(1)).get(
       'draft',
     );

@@ -16,6 +16,7 @@ import {
 } from './reply.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import { accountSignature, signatureContent } from './signatures.js';
+import { smtpErrors } from './smtp.js';
 import { transaction } from './store.js';
 
 type Content = {
@@ -311,14 +312,30 @@ export function registerDraftRoutes(
     },
   );
 
+  // Drafts frozen in Outbox (queued, scheduled, sending or uncertain) leave
+  // this list; a definite failure or cancellation unlocks them and they return.
+  // A failure is reported only while the draft is still the revision it froze.
   app.get('/api/mail/drafts', async (request) => ({
     drafts: (
       await pool.query(
-        `SELECT id,account_id AS "accountId",content->>'subject' AS subject,revision,updated_at AS "updatedAt"
-       FROM mail_drafts WHERE user_id=$1 ORDER BY updated_at DESC,id LIMIT 100`,
+        `SELECT d.id,d.account_id AS "accountId",d.content->>'subject' AS subject,d.revision,d.updated_at AS "updatedAt",
+         CASE WHEN o.state='failed' AND o.draft_revision=d.revision THEN coalesce(o.error_code,'') END AS "sendFailed"
+       FROM mail_drafts d
+       LEFT JOIN LATERAL (SELECT state,draft_revision,error_code FROM mail_outbox
+         WHERE user_id=d.user_id AND draft_id=d.id ORDER BY seq DESC LIMIT 1) o ON true
+       WHERE d.user_id=$1 AND NOT EXISTS(SELECT 1 FROM mail_outbox x WHERE x.user_id=d.user_id
+         AND x.draft_id=d.id AND x.state NOT IN ('failed','cancelled'))
+       ORDER BY d.updated_at DESC,d.id LIMIT 100`,
         [request.mailUser],
       )
-    ).rows,
+    ).rows.map(({ sendFailed, ...draft }) => ({
+      ...draft,
+      sendError:
+        sendFailed === null
+          ? null
+          : (smtpErrors[sendFailed] ??
+            'Sending failed. Review and send again.'),
+    })),
   }));
 
   app.post<{ Params: { id: string }; Body: { images?: boolean } }>(

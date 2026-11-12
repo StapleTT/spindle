@@ -529,11 +529,24 @@ test('owned SMTP settings, immutable outbox and safe provider delivery', {
       await setup();
       const id = await draft(),
         operation = (await queue(id)).json().outbox.id;
+      const listed = async () =>
+        (
+          (await request('drafts')).json().drafts as {
+            id: string;
+            sendError: string | null;
+          }[]
+        ).find((item) => item.id === id);
+      assert.equal(await listed(), undefined, 'queued drafts leave Drafts');
       smtp.controls.rejectData = true;
       await apply();
       assert.equal((await row(operation)).state, 'failed');
       assert.equal(smtp.received.length, 0);
       assert.equal((await request(`drafts/${id}`)).statusCode, 200);
+      assert.match(
+        (await listed())?.sendError ?? '',
+        /rejected this message/,
+        'a failed send returns to Drafts with its reason',
+      );
       smtp.controls.rejectData = false;
       smtp.controls.rejectRecipient = true;
       const partial = await draft({

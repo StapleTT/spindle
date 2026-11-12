@@ -2625,7 +2625,8 @@ textarea:focus-visible,
   flex-direction: column;
   gap: 4px;
   margin-bottom: 2px;
-  padding: 12px 14px;
+  position: relative;
+  padding: 12px 48px 12px 14px;
   border-radius: 16px;
   color: var(--on-var);
   font-size: 13px;
@@ -2649,6 +2650,16 @@ textarea:focus-visible,
   min-height: 32px;
   padding: 0 12px;
   font-size: 13px;
+}
+.list-scroll .message-list > li:not(.row) button.draft-delete-start {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 0;
+}
+.draft-delete {
+  display: flex;
+  gap: 8px;
 }
 .list-scroll > section {
   display: flex;

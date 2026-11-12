@@ -533,3 +533,14 @@ Status: user decision on 2026-11-11 ("this is incredibly hard to filter correctl
 
 - No Needs reply drawer item, `is:needs-reply` search term, reader toggle or API route. J03's Needs reply requirement is dropped rather than left open.
 - 0043 was already applied, so it stays; append-only migration 0044 drops its `local_needs_reply` column and trigger. Manual marks made in the meantime are discarded with the column.
+
+## D047 — leaner drawer and drafts that return on failure
+
+Status: user decision on 2026-11-11 ("Removed Pinned, Snoozed, Muted, and Outbox sections from the side panel. Return a message to drafts automatically if it failed to send", plus quick draft deletion and no empty drafts).
+
+- The drawer drops Pinned, Snoozed, Muted and Outbox. Pin/mute/snooze controls stay in the reader, and their `in:` search scopes still work. The Outbox view still exists, reached from the status notice and composer messages, and it remains where scheduled sends are rescheduled or cancelled. The command palette loses its Outbox entry.
+- Send closes the composer. `GET /api/mail/drafts` omits drafts frozen in Outbox (any state except failed/cancelled), so a definite failure or cancellation brings the draft back automatically. Failed drafts carry `sendError` while their revision still matches the failed snapshot. Partial and unknown outcomes stay frozen and out of Drafts, because they must never be blindly resent.
+- New Compose windows are not autosaved until the first edit. The tab-scoped recovery entry is marked `pristine` and hidden from lists, and closing the window untouched removes it. Reply and forward drafts are still created by the server when started.
+- The Drafts list offers a two-click delete using the existing revision-checked `DELETE`. The draft open in the composer keeps using **Discard draft**.
+
+No migration. Older clients keep working; they just see fewer drafts while sends are in flight.

@@ -304,6 +304,11 @@ test('attachments survive autosave, reload and conflict copies; checks gate send
     );
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     await apply();
     const sent = await simpleParser(smtp.received[0]?.raw ?? Buffer.alloc(0));
@@ -336,6 +341,11 @@ test('attachments survive autosave, reload and conflict copies; checks gate send
     await page.getByLabel('To', { exact: true }).fill('friend@example.test');
     await ready();
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     await apply();
     const forwarded = await simpleParser(

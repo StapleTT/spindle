@@ -141,6 +141,18 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
       }
       assert.fail('Draft did not reach expected saved state');
     };
+    // An untouched new message is not saved, even after the autosave delay,
+    // and a reload of this tab reopens it.
+    await page
+      .getByText('Saved once you start writing.', { exact: true })
+      .waitFor();
+    await page.waitForTimeout(1500);
+    assert.equal(await stored(), undefined);
+    await page.reload();
+    await page
+      .getByRole('heading', { name: 'New message', exact: true })
+      .waitFor();
+    assert.equal(await stored(), undefined);
     await page
       .getByLabel('To', { exact: true })
       .fill('Recipient <recipient@example.test>, unfinished');
@@ -443,6 +455,44 @@ test('composer autosaves rich/plain drafts and recovers safely across navigation
       ),
       false,
     );
+    // Closing an untouched Compose window leaves no draft behind.
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page
+      .getByRole('button', { name: 'Save and close', exact: true })
+      .click();
+    await page.locator('.composer').waitFor({ state: 'detached' });
+    const count = async () =>
+      Number(
+        (
+          await pool.query(
+            'SELECT count(*) FROM mail_drafts WHERE user_id=$1',
+            [owner.id],
+          )
+        ).rows[0].count,
+      );
+    const before = await count();
+    await page.getByRole('button', { name: 'Compose', exact: true }).click();
+    await page
+      .getByRole('heading', { name: 'New message', exact: true })
+      .waitFor();
+    await page
+      .getByRole('button', { name: 'Save and close', exact: true })
+      .click();
+    await page.locator('.composer').waitFor({ state: 'detached' });
+    await page.waitForTimeout(1000);
+    assert.equal(await count(), before);
+    const drafts = page.getByRole('list', { name: 'Local drafts' });
+
+    // Quick delete asks for one confirming click, then removes the draft.
+    const row = drafts
+      .getByRole('listitem')
+      .filter({ has: page.locator(`a[href*="draft=${id}"]`) });
+    await row.getByRole('button', { name: /^Delete draft / }).click();
+    await row
+      .getByRole('button', { name: 'Delete permanently', exact: true })
+      .click();
+    await row.waitFor({ state: 'detached' });
+    assert.equal(await stored(), undefined);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

@@ -197,6 +197,11 @@ test('Send later recovers lost responses, persists schedules, supports edit/canc
     await page
       .getByRole('button', { name: 'Recover send request', exact: true })
       .click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     assert.equal(submitted.length, 2);
     assert.deepEqual(submitted[0], submitted[1]);
@@ -270,6 +275,11 @@ test('Send later recovers lost responses, persists schedules, supports edit/canc
     await page
       .getByRole('button', { name: 'Schedule send', exact: true })
       .click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     const edited = await stored('Edited scheduled mail');
     assert.notEqual(edited.id, first.id);

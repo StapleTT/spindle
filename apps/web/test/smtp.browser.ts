@@ -206,6 +206,11 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
     await page
       .getByRole('button', { name: 'Recover send request', exact: true })
       .click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     assert.equal(
       Number(
@@ -232,6 +237,11 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
       .getByRole('link', { name: 'Open draft', exact: true })
       .click();
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     await apply();
     await outboxRow('Browser queued mail')
@@ -259,12 +269,30 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
     assert.equal(smtp.received.length, 1);
     await page.getByLabel('To', { exact: true }).fill('recipient@example.test');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     smtp.controls.rejectData = true;
     await apply();
     await outboxRow('Browser failure')
       .getByText('Failed: Browser failure', { exact: true })
       .waitFor();
+    // The failed send returns to Drafts with its reason.
+    await page.evaluate(() => {
+      location.hash = 'view=drafts';
+    });
+    await page
+      .getByRole('list', { name: 'Local drafts' })
+      .getByRole('listitem')
+      .filter({ hasText: 'Browser failure' })
+      .getByText(/^Not sent: /)
+      .waitFor();
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     smtp.controls.rejectData = false;
     await outboxRow('Browser failure')
       .getByRole('button', { name: 'Retry send', exact: true })
@@ -280,6 +308,11 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
 
     await compose('Browser unknown outcome');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     smtp.controls.dropAfterData = true;
     smtp.controls.autoSaveSent = true;
@@ -315,7 +348,9 @@ test('SMTP setup, send/undo, failure retry and unknown outcomes survive navigati
         .isDisabled(),
       true,
     );
-    await page.getByRole('button', { name: 'Outbox', exact: true }).click();
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.setViewportSize({ width: 390, height: 844 });
     assert.ok(
       await page.evaluate(

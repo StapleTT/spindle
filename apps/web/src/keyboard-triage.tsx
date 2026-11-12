@@ -25,7 +25,6 @@ export const commands = [
   ['newest', 'Newest list page', 'p'],
   ['inbox', 'All inboxes', ''],
   ['drafts', 'Drafts', ''],
-  ['outbox', 'Outbox', ''],
 ] as const;
 export function KeyboardTriage({
   root,

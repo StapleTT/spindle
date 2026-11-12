@@ -90,8 +90,12 @@ export function Composer({
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
   const value = draft.value;
-  const close = () =>
+  const close = () => {
+    // An untouched new message is forgotten rather than kept as a draft.
+    // Other ways of leaving keep its hidden recovery entry for this tab only.
+    if (draft.isNew()) removeRecovery(user, id);
     navigateMail({ draft: '', view: 'drafts', conversation: '' });
+  };
   if (!value)
     return (
       <section aria-label="Composer">
@@ -127,6 +131,10 @@ export function Composer({
         scheduledAt?: string;
       } | null = JSON.parse(sessionStorage.getItem(cacheKey) ?? 'null');
       if (!operation) {
+        if (draft.isNew()) {
+          setSendError('Add at least one recipient before sending.');
+          return;
+        }
         if (!(await draft.flush())) return;
         operation = {
           id: crypto.randomUUID(),
@@ -148,7 +156,8 @@ export function Composer({
         );
         return;
       }
-      navigateMail({ draft: '', view: 'outbox', message: '' });
+      // Queued: the draft leaves Drafts and returns there if sending fails.
+      navigateMail({ draft: '', view: '', message: '' });
     } catch (error) {
       if (error instanceof MailApiError && error.status < 500) {
         sessionStorage.removeItem(cacheKey);
@@ -186,6 +195,7 @@ export function Composer({
     selectedAccount?.smtpState !== 'ready';
   const saveStatus = {
     loading: 'Loading draft…',
+    new: 'Saved once you start writing.',
     saved: 'Saved to Spindle.',
     unsaved: 'Unsaved changes…',
     saving: 'Saving draft…',

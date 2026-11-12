@@ -277,6 +277,11 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
     await page.getByRole('heading', { name: 'Reply', exact: true }).waitFor();
     assert.match((await body.textContent()) ?? '', /My reply response/);
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     await apply();
     const received = smtp.received[0];
@@ -396,6 +401,11 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
     );
     await page.getByLabel('To', { exact: true }).fill('friend@example.test');
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     await apply();
     const forward = await simpleParser(
@@ -494,6 +504,11 @@ test('reader replies and forwarding preserve recipients, draft recovery and rece
       .getByRole('heading', { name: 'Business newsletter', exact: true })
       .waitFor();
     await page.getByRole('button', { name: 'Send', exact: true }).click();
+    // Send closes the composer; Outbox is no longer in the drawer.
+    await page.waitForFunction(() => !location.hash.includes('draft='));
+    await page.evaluate(() => {
+      location.hash = 'view=outbox';
+    });
     await page.getByRole('heading', { name: 'Outbox', exact: true }).waitFor();
     await apply();
     const styled = await simpleParser(

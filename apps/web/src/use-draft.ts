@@ -15,6 +15,7 @@ import { useMailRevision } from './mail-events.js';
 
 type Status =
   | 'loading'
+  | 'new'
   | 'saved'
   | 'unsaved'
   | 'saving'
@@ -47,6 +48,17 @@ export function useDraft(user: string, id: string) {
   const blocked = useRef(false);
   const pending = useRef<Attempt | null>(null);
   const saving = useRef<Promise<boolean> | null>(null);
+
+  // Never saved and never edited: an empty Compose window.
+  const isNew = useCallback(
+    () =>
+      revision.current === 0 &&
+      !dirty.current &&
+      !pending.current &&
+      !saving.current &&
+      !blocked.current,
+    [],
+  );
 
   const remember = useCallback(() => {
     if (!latest.current) return;
@@ -181,8 +193,11 @@ export function useDraft(user: string, id: string) {
           recovery && !canRecover ? recovery.revision : (remote?.revision ?? 0);
         latest.current = recovery?.value ?? (remote && draftValue(remote));
         editId.current = recovery?.editId ?? crypto.randomUUID();
+        const pristine = Boolean(recovery?.pristine && !remote);
         dirty.current = Boolean(
-          recovery && (!remote || !sameValue(recovery.value, remote)),
+          recovery &&
+            !pristine &&
+            (!remote || !sameValue(recovery.value, remote)),
         );
         blocked.current = Boolean(remote?.outbox || (recovery && !canRecover));
         setOutbox(remote?.outbox ?? null);
@@ -191,7 +206,13 @@ export function useDraft(user: string, id: string) {
         setValue(latest.current);
         setConflict(blocked.current ? remote : null);
         setStatus(
-          blocked.current ? 'conflict' : dirty.current ? 'unsaved' : 'saved',
+          blocked.current
+            ? 'conflict'
+            : dirty.current
+              ? 'unsaved'
+              : pristine
+                ? 'new'
+                : 'saved',
         );
         if (blocked.current)
           setError(
@@ -202,7 +223,7 @@ export function useDraft(user: string, id: string) {
         else if (dirty.current) {
           remember();
           setChanged((n) => n + 1);
-        } else removeRecovery(user, id);
+        } else if (!pristine) removeRecovery(user, id);
       } catch (failure) {
         if (controller.signal.aborted) return;
         // Recovery text remains editable offline; saving uses its recorded revision.
@@ -374,6 +395,7 @@ export function useDraft(user: string, id: string) {
     forwarded,
     outbox,
     currentRevision: () => revision.current,
+    isNew,
     status,
     error,
     recoveryFailed,

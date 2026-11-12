@@ -96,9 +96,24 @@ export function OutboxFeedback({ messages }: { messages: OutboxMessage[] }) {
         ? 'Scheduled'
         : stateText[recent.state]}{' '}
       — “{recent.subject || '(No subject)'}”.{' '}
-      <a href={mailHref({ view: 'outbox', draft: '', message: '' })}>
-        Review Outbox
-      </a>
+      {recent.state === 'failed' && recent.draftId ? (
+        <>
+          Returned to Drafts.{' '}
+          <a
+            href={mailHref({
+              view: 'drafts',
+              draft: recent.draftId,
+              message: '',
+            })}
+          >
+            Open draft
+          </a>
+        </>
+      ) : (
+        <a href={mailHref({ view: 'outbox', draft: '', message: '' })}>
+          Review Outbox
+        </a>
+      )}
     </p>
   );
 }

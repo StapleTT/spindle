@@ -6,7 +6,7 @@ The time must be at least five seconds ahead and within 366 days. Nonexistent da
 
 ## Outbox controls
 
-Scheduled entries show their deadline in **Outbox** and survive navigation/reload. Before the first dispatch claim:
+Scheduled entries show their deadline in **Outbox** (opened from the send notice; it is no longer in the drawer) and survive navigation/reload. A scheduled draft leaves Drafts until it is cancelled or fails. Before the first dispatch claim:
 
 - **Reschedule send** changes only the deadline. It checks the last-read schedule revision; another tab's newer choice produces a conflict. Replaying an acknowledged reschedule recovers it without applying it twice.
 - **Cancel send** stops the queued intent and releases its preserved draft for editing. Cancellation is idempotent.

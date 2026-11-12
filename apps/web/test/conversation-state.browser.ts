@@ -239,12 +239,14 @@ test('conversation controls persist, update private tabs, preserve focus and rec
             (await second.locator(`[data-message-row="${root}"]`).count()) ===
             0,
         );
+        // Snoozed is no longer in the drawer; the search scope remains.
         await page
-          .getByRole('button', { name: 'Snoozed', exact: true })
-          .click();
+          .getByRole('searchbox', { name: 'Search mail', exact: true })
+          .fill('in:snoozed');
         await page
-          .getByRole('heading', { name: 'Snoozed', exact: true })
-          .waitFor();
+          .getByRole('searchbox', { name: 'Search mail', exact: true })
+          .press('Enter');
+        await page.locator(`[data-message-row="${root}"]`).waitFor();
         await page
           .locator(`[data-message-row="${root}"] .message-open`)
           .click();
@@ -279,7 +281,13 @@ test('conversation controls persist, update private tabs, preserve focus and rec
     await t.test(
       'durable wakeup reaches the inbox through SSE and preserves pin/mute through reload',
       async () => {
-        await page.getByRole('button', { name: 'Pinned', exact: true }).click();
+        await page
+          .getByRole('searchbox', { name: 'Search mail', exact: true })
+          .fill('in:pinned');
+        await page
+          .getByRole('searchbox', { name: 'Search mail', exact: true })
+          .press('Enter');
+        await page.locator(`[data-message-row="${root}"]`).waitFor();
         await page
           .locator(`[data-message-row="${root}"] .message-open`)
           .click();

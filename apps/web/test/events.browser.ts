@@ -322,6 +322,8 @@ test('SSE updates private tabs, preserves edits and focus, and recovers API rest
           exact: true,
         });
         await body.waitFor();
+        // A new message is saved only after its first edit.
+        await body.fill('Saved local note');
         await page.getByText('Saved to Spindle.', { exact: true }).waitFor();
         const id = new URLSearchParams(new URL(page.url()).hash.slice(1)).get(
           'draft',

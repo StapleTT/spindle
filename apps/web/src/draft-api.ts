@@ -43,12 +43,15 @@ export type Draft = DraftValue & {
 export type DraftSummary = Pick<
   Draft,
   'id' | 'accountId' | 'revision' | 'updatedAt'
-> & { subject: string };
+> & { subject: string; sendError?: string | null };
 export type Recovery = {
   value: DraftValue;
   revision: number;
   saveId: string | null;
   editId: string;
+  // A freshly opened Compose window: kept only so a reload reopens it. It is
+  // not saved or listed until the first edit, which drops this flag.
+  pristine?: boolean;
 };
 export const emptyContent = (): DraftContent => ({
   to: '',
@@ -89,6 +92,7 @@ export function readRecovery(user: string, id: string): Recovery | null {
       item.revision < 0 ||
       typeof item.editId !== 'string' ||
       !(item.saveId === null || typeof item.saveId === 'string') ||
+      !(item.pristine === undefined || typeof item.pristine === 'boolean') ||
       !item.value ||
       !(
         item.value.accountId === null ||
@@ -144,7 +148,7 @@ export function recoveryDrafts(user: string): DraftSummary[] {
       .flatMap((name) => {
         const id = name.slice(prefix(user).length);
         const item = readRecovery(user, id);
-        return item
+        return item && !item.pristine
           ? [
               {
                 id,
@@ -193,6 +197,7 @@ export function startDraft(
     revision: 0,
     saveId: null,
     editId: crypto.randomUUID(),
+    ...(value ? {} : { pristine: true }),
   });
   if (!saved) return null;
   navigateMail({ draft: id, view: 'drafts', message: '' });
