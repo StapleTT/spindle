@@ -50,6 +50,13 @@ export function DraftList({
       if (failure instanceof MailApiError && failure.status === 404) {
         removeRecovery(user, draft.id);
         setDrafts((items) => items.filter((item) => item.id !== draft.id));
+      } else if (failure instanceof MailApiError && failure.status === 409) {
+        // Saved since this list loaded (often by another tab): reload, then
+        // the user confirms again against the current revision.
+        setAttempt((n) => n + 1);
+        setDeleteError(
+          'This draft changed since the list loaded. Delete it again to confirm.',
+        );
       } else
         setDeleteError(
           failure instanceof Error
@@ -90,7 +97,8 @@ export function DraftList({
       controller.abort();
       clearInterval(timer);
     };
-  }, [attempt, accountId, liveRevision]);
+    // `open` reloads when the composer closes, picking up its final save.
+  }, [attempt, accountId, liveRevision, open]);
   const entries = [
     ...new Map(
       [...drafts, ...recoveries].map((draft) => [draft.id, draft]),

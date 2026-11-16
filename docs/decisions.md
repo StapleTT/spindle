@@ -555,4 +555,3 @@ Status: user request on 2026-11-16 ("Add snippets"), filling the row's third lin
 - `0045_message_snippets.sql` adds the column, fills it from already-cached plain-text bodies and adds a trigger that refreshes open lists when a preview first appears. The prefetch pass fills the remaining cached (HTML-only) bodies locally, without provider I/O. While previews fill, open lists refetch at most once per browser coalescing window (about two seconds), unlike other body caching, which uses the `content` topic only.
 
 Deploy the migration, then API, worker and web. Rollback keeps the additive column; older code ignores it.
-
