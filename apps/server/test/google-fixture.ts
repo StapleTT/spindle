@@ -8,6 +8,7 @@ export type FakeMessage = {
   labels: Set<string>;
   internalDate: number;
   headers: Record<string, string>;
+  snippet?: string;
   // Full RFC 5322 source for format=raw; defaults to the headers plus a body.
   raw?: string;
 };
@@ -149,6 +150,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     labelIds: [...message.labels],
     internalDate: String(message.internalDate),
     sizeEstimate: 1234,
+    snippet: message.snippet ?? 'Synthetic preview &amp; text',
     payload: {
       headers: Object.entries(message.headers).map(([name, value]) => ({
         name,

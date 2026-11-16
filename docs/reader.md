@@ -58,6 +58,8 @@ A body that prefetch could not fetch is retried after a day. Until then the read
 
 The web app adds two requests for mail prefetch has not reached: the reader asks for its Previous and Next messages once its own body is shown, and the list asks for a row when the pointer or keyboard focus rests on it for 150 ms. Both use `POST /api/mail/messages/:id/prefetch`, the same owned, deduplicated request as opening a message, limited to 120 per minute separately from reader actions.
 
+Caching a body also stores the message's list preview when it has none ([D048](decisions.md#d048--list-previews-snippets)). Each prefetch pass first fills previews for bodies cached before migration 0045, locally and in bounded batches.
+
 Still fetched on opening: mail beyond the budget, Trash and Junk, and mail opened before its first prefetch pass. Those opens cost a provider round trip as before (D041).
 
 `0038_content_prefetch.sql` lifts the expiry of existing ready bodies and moves body-cache notifications to their own [`content` event topic](events.md#content-topic--2026-11-09), so background caching does not make open lists refetch. It changes no tables. Apply it and deploy the API, worker and web app together. For application rollback keep the data: older code reads those rows as unexpired and resumes lazy fetching.

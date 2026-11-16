@@ -86,6 +86,7 @@ type Message = {
   accountId: string;
   accountName: string;
   subject: string;
+  snippet: string | null;
   sender: { name: string; address: string }[];
   receivedAt: string;
   unread: boolean;
@@ -638,11 +639,21 @@ export function Mail({
               </a>
               <p className="row-meta">
                 <span className="dot" aria-hidden="true" />
-                {message.accountName}
-                {message.muted ? ' · Muted' : ''}
-                {message.snoozedUntil
-                  ? ` · Snoozed until ${new Date(message.snoozedUntil).toLocaleString()}`
-                  : ''}
+                <span className="row-account">
+                  {message.accountName}
+                  {message.muted ? ' · Muted' : ''}
+                  {message.snoozedUntil
+                    ? ` · Snoozed until ${new Date(message.snoozedUntil).toLocaleString()}`
+                    : ''}
+                </span>
+                {message.snippet ? (
+                  <span className="row-snippet">
+                    <span aria-hidden="true">· </span>
+                    {message.snippet}
+                  </span>
+                ) : (
+                  ''
+                )}
                 {message.unread ? (
                   <span className="visually-hidden"> · Unread</span>
                 ) : (

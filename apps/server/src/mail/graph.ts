@@ -10,12 +10,17 @@ import {
   MicrosoftPause,
   openMicrosoft,
 } from './microsoft.js';
-import { hasListUnsubscribe, headerBlock, parseReplyHeaders } from './parse.js';
+import {
+  hasListUnsubscribe,
+  headerBlock,
+  parseReplyHeaders,
+  snippet,
+} from './parse.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import {
-  recordNewsletters,
+  recordMetadata,
   text,
-  uncheckedNewsletters,
+  uncheckedMetadata,
   upsertMessage,
   validDate,
 } from './sync.js';
@@ -38,9 +43,12 @@ export type GraphMessage = {
   isRead?: boolean;
   isDraft?: boolean;
   flag?: { flagStatus?: string };
+  bodyPreview?: string;
 };
 const fields =
-  'id,parentFolderId,receivedDateTime,sentDateTime,subject,internetMessageId,internetMessageHeaders,from,toRecipients,ccRecipients,isRead,isDraft,flag';
+  'id,parentFolderId,receivedDateTime,sentDateTime,subject,internetMessageId,internetMessageHeaders,from,toRecipients,ccRecipients,isRead,isDraft,flag,bodyPreview';
+const preview = (value: unknown) =>
+  typeof value === 'string' ? snippet(value) : '';
 
 export async function graphMessage(api: MicrosoftApi, remote: string) {
   const message = await api<GraphMessage>(
@@ -124,6 +132,7 @@ export async function saveGraphMessage(
       inReplyTo: headers?.inReplyTo ?? undefined,
       references: headers?.references ?? null,
       listUnsubscribe: hasListUnsubscribe(block),
+      snippet: preview(message.bodyPreview),
       // Graph has no ordinary size property; raw content is bounded separately.
       size: 0,
     },
@@ -482,22 +491,23 @@ export async function syncGraphAccount(
             );
         });
       }
-    // One-time newsletter check for mail synchronized before D045: one
-    // header per message, in small committed batches that yield to the reader.
+    // One-time newsletter (D045) and preview (D048) check for mail synchronized
+    // earlier: one small read per message, in small committed batches that yield to the reader.
     while (Date.now() < deadline) {
       if ((await pool.query(bodyPending, [owner, id])).rowCount) break;
-      const remotes = await uncheckedNewsletters(pool, owner, id, 20);
+      const remotes = await uncheckedMetadata(pool, owner, id, 20);
       if (!remotes.length) break;
-      const checked: [string, boolean][] = [];
+      const checked: [string, boolean, string][] = [];
       for (const remote of remotes) {
-        let headers: unknown;
+        let found: Pick<
+          GraphMessage,
+          'internetMessageHeaders' | 'bodyPreview'
+        > = {};
         try {
-          headers = (
-            await api<{ internetMessageHeaders?: unknown }>(
-              `/messages/${encodeURIComponent(remote)}`,
-              { $select: 'internetMessageHeaders' },
-            )
-          ).internetMessageHeaders;
+          found = await api<typeof found>(
+            `/messages/${encodeURIComponent(remote)}`,
+            { $select: 'internetMessageHeaders,bodyPreview' },
+          );
         } catch (error) {
           // Deleted at Microsoft: not a newsletter; delta removes it locally.
           if (!(error instanceof MicrosoftError && error.status === 404))
@@ -505,11 +515,15 @@ export async function syncGraphAccount(
         }
         checked.push([
           remote,
-          hasListUnsubscribe(headerBlock(headers, ['List-Unsubscribe']).block),
+          hasListUnsubscribe(
+            headerBlock(found.internetMessageHeaders, ['List-Unsubscribe'])
+              .block,
+          ),
+          preview(found.bodyPreview),
         ]);
       }
       await withLease(pool, account, (db) =>
-        recordNewsletters(db, owner, id, checked),
+        recordMetadata(db, owner, id, checked),
       );
     }
     await withLease(pool, account, async (db) => {

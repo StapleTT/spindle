@@ -51,6 +51,8 @@ export type MessageMeta = {
   size: number;
   references: string[] | null;
   listUnsubscribe: boolean;
+  // Provider preview text (Gmail/Microsoft); IMAP fills it from the body cache.
+  snippet?: string;
 };
 
 // Shared by IMAP and Gmail: one local message per provider remote key.
@@ -62,13 +64,14 @@ export async function upsertMessage(
   notify: boolean,
 ) {
   const result = await client.query(
-    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes,reference_ids,notification_at,list_unsubscribe)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN clock_timestamp() ELSE NULL END,$14)
+    `INSERT INTO mail_messages(user_id,account_id,remote_key,message_id,subject,sender,recipients,sent_at,received_at,in_reply_to,size_bytes,reference_ids,notification_at,list_unsubscribe,snippet)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CASE WHEN $13 THEN clock_timestamp() ELSE NULL END,$14,$15)
      ON CONFLICT (account_id,remote_key) DO UPDATE SET subject=EXCLUDED.subject,
        sender=EXCLUDED.sender, recipients=EXCLUDED.recipients, sent_at=EXCLUDED.sent_at,
        received_at=EXCLUDED.received_at, size_bytes=EXCLUDED.size_bytes,
        reference_ids=COALESCE(EXCLUDED.reference_ids,mail_messages.reference_ids),
-       list_unsubscribe=coalesce(mail_messages.list_unsubscribe,false) OR EXCLUDED.list_unsubscribe
+       list_unsubscribe=coalesce(mail_messages.list_unsubscribe,false) OR EXCLUDED.list_unsubscribe,
+       snippet=coalesce(nullif(EXCLUDED.snippet,''),mail_messages.snippet,EXCLUDED.snippet)
      RETURNING id`,
     [
       account.user_id,
@@ -85,14 +88,16 @@ export async function upsertMessage(
       meta.references,
       notify,
       meta.listUnsubscribe,
+      meta.snippet ?? null,
     ],
   );
   return result.rows[0].id as string;
 }
 
-// One-time newsletter check (D045) for mail stored before the header was
-// read: newest first, so the inbox view fills before older history.
-export async function uncheckedNewsletters(
+// One-time metadata check for mail stored before Spindle read it: the
+// newsletter header (D045) and the provider preview text (D048). Newest first,
+// so visible views fill before older history. Gmail/Microsoft only.
+export async function uncheckedMetadata(
   pool: Pool,
   owner: string,
   accountId: string,
@@ -101,27 +106,29 @@ export async function uncheckedNewsletters(
   return (
     await pool.query<{ remote_key: string }>(
       `SELECT remote_key FROM mail_messages WHERE user_id=$1 AND account_id=$2
-       AND list_unsubscribe IS NULL ORDER BY received_at DESC LIMIT $3`,
+       AND (list_unsubscribe IS NULL OR snippet IS NULL) ORDER BY received_at DESC LIMIT $3`,
       [owner, accountId, limit],
     )
   ).rows.map((row) => row.remote_key);
 }
 
-export async function recordNewsletters(
+export async function recordMetadata(
   db: PoolClient,
   owner: string,
   accountId: string,
-  checked: [remoteKey: string, listUnsubscribe: boolean][],
+  checked: [remoteKey: string, listUnsubscribe: boolean, snippet: string][],
 ) {
   await db.query(
-    `UPDATE mail_messages m SET list_unsubscribe=coalesce(m.list_unsubscribe,false) OR c.flag
-     FROM unnest($3::text[],$4::boolean[]) AS c(remote,flag)
+    `UPDATE mail_messages m SET list_unsubscribe=coalesce(m.list_unsubscribe,false) OR c.flag,
+     snippet=coalesce(m.snippet,c.snippet)
+     FROM unnest($3::text[],$4::boolean[],$5::text[]) AS c(remote,flag,snippet)
      WHERE m.user_id=$1 AND m.account_id=$2 AND m.remote_key=c.remote`,
     [
       owner,
       accountId,
       checked.map(([key]) => key),
       checked.map(([, flag]) => flag),
+      checked.map(([, , preview]) => preview),
     ],
   );
 }

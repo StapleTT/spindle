@@ -1076,6 +1076,19 @@ label.avatar:has(:focus-visible) {
   width: 6px;
   height: 6px;
 }
+.row-account {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-snippet {
+  flex: 1;
+  min-width: 0;
+  margin-left: -4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .row.unread .row-from,
 .row.unread .message-open,
 .row.unread time {

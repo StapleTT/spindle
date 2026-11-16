@@ -402,7 +402,7 @@ test('Microsoft OAuth, Graph sync, reader, durable actions and sending', {
         { name: 'List-Unsubscribe', value: '<mailto:leave@example.test>' },
       ];
       await pool.query(
-        'UPDATE mail_messages SET list_unsubscribe=NULL WHERE account_id=$1',
+        'UPDATE mail_messages SET list_unsubscribe=NULL,snippet=NULL WHERE account_id=$1',
         [accountId],
       );
       assert.equal((await sync()).status, 'ready');
@@ -413,6 +413,15 @@ test('Microsoft OAuth, Graph sync, reader, durable actions and sending', {
         )
       ).rows;
       assert.deepEqual(flags, [{ remote_key: 'm2', list_unsubscribe: true }]);
+      assert.deepEqual(
+        (
+          await pool.query(
+            'SELECT DISTINCT snippet FROM mail_messages WHERE account_id=$1',
+            [accountId],
+          )
+        ).rows,
+        [{ snippet: 'Synthetic preview text' }],
+      );
       const gets = microsoft.state.gets;
       await sync();
       assert.equal(microsoft.state.gets, gets, 'checked only once');

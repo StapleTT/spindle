@@ -23,7 +23,13 @@ import {
   MicrosoftError,
   MicrosoftPause,
 } from './microsoft.js';
-import { MAX_BODY_BYTES, MAX_RAW_BYTES, parseMessage } from './parse.js';
+import {
+  htmlText,
+  MAX_BODY_BYTES,
+  MAX_RAW_BYTES,
+  parseMessage,
+  snippet,
+} from './parse.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
 import { bodyPending, contentPending } from './work-pending.js';
@@ -104,6 +110,34 @@ const providerUnavailable = (error: unknown) =>
   error instanceof TypeError ||
   error instanceof DOMException;
 
+// One-time list previews (D048) for bodies cached before migration 0045.
+// Local only; batches bound memory, and the leading 64 KiB of HTML is enough.
+async function fillCachedSnippets(pool: Pool, owner: string, id: string) {
+  for (;;) {
+    const rows = (
+      await pool.query<{ id: string; plain: string | null; html: string }>(
+        `SELECT m.id,c.plain_text AS plain,left(coalesce(c.html,''),65536) AS html
+        FROM mail_messages m JOIN mail_content c ON c.user_id=m.user_id AND c.message_id=m.id
+        WHERE m.user_id=$1 AND m.account_id=$2 AND m.snippet IS NULL AND c.state='ready' LIMIT 20`,
+        [owner, id],
+      )
+    ).rows;
+    if (!rows.length) return;
+    await pool.query(
+      `UPDATE mail_messages m SET snippet=c.snippet FROM unnest($3::uuid[],$4::text[]) AS c(id,snippet)
+      WHERE m.user_id=$1 AND m.account_id=$2 AND m.id=c.id AND m.snippet IS NULL`,
+      [
+        owner,
+        id,
+        rows.map((row) => row.id),
+        rows.map((row) =>
+          snippet(row.plain?.trim() ? row.plain : htmlText(row.html)),
+        ),
+      ],
+    );
+  }
+}
+
 export async function prefetchAccount(
   pool: Pool,
   keys: MailKeys,
@@ -118,6 +152,7 @@ export async function prefetchAccount(
   try {
     // User work on the account goes first, as it does for metadata sync.
     if ((await pool.query(contentPending, [owner, id])).rowCount) return;
+    await fillCachedSnippets(pool, owner, id);
     if (!(await waiting(pool, owner, id, 1)).length) return;
   } catch {
     return;

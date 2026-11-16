@@ -262,6 +262,11 @@ test('private cached message reader, isolated HTML and image permission', {
       assert.equal(ready.content.state, 'ready');
       assert.match(ready.content.plainText, /Private plain body/);
       assert.equal(ready.content.imageCount, 2);
+      // IMAP list previews come from the cached body.
+      const listed = (await request('messages?limit=100'))
+        .json()
+        .messages.find((message: { id: string }) => message.id === oldest);
+      assert.equal(listed.snippet, 'Private plain body');
       blockedUrl = ready.content.htmlUrl;
       assert.ok(
         !server.control.getMessage('INBOX', 1).flags.includes('\\Seen'),

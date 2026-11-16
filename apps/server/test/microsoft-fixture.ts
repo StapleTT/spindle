@@ -22,6 +22,7 @@ export type GraphMessage = {
   messageId?: string;
   raw?: string;
   headers?: { name: string; value: string }[];
+  preview?: string;
 };
 
 // Synthetic OAuth and Graph only; tokens and mail never leave loopback.
@@ -99,6 +100,7 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
       { emailAddress: { address: 'owner@outlook.test', name: '' } },
     ],
     ccRecipients: [],
+    bodyPreview: message.preview ?? 'Synthetic preview text',
     internetMessageId: message.messageId ?? `<${id}@example.test>`,
     internetMessageHeaders: message.headers ?? [
       {

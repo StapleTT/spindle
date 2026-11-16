@@ -624,7 +624,7 @@ export async function registerMailRoutes(
         throw error;
       }
       const result = await pool.query(
-        `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.sender,m.recipients,
+        `SELECT m.id,m.account_id AS "accountId",a.name AS "accountName",m.subject,m.snippet,m.sender,m.recipients,
        m.received_at AS "receivedAt",m.sent_at AS "sentAt",
        to_char(m.received_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorTime",
        ${unreadCondition} AS unread,${localStateFields},${moveFields}

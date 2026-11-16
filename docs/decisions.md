@@ -544,3 +544,15 @@ Status: user decision on 2026-11-11 ("Removed Pinned, Snoozed, Muted, and Outbox
 - The Drafts list offers a two-click delete using the existing revision-checked `DELETE`. The draft open in the composer keeps using **Discard draft**.
 
 No migration. Older clients keep working; they just see fewer drafts while sends are in flight.
+
+## D048 — list previews (snippets)
+
+Status: user request on 2026-11-16 ("Add snippets"), filling the row's third line that the design reserved for a snippet.
+
+- `mail_messages.snippet` holds up to 200 characters of visible text. `NULL` means not read yet and `''` means checked and empty. Quoted reply lines, whitespace and invisible preheader padding are collapsed. The list API returns it, and rows show it after the account name as plain text.
+- Gmail stores its own `snippet` (HTML-escaped, decoded to text) and Microsoft its `bodyPreview` during metadata sync. Their one-time worker check for older mail (shared with D045) reads them for rows that have none, newest first, yielding to reader work.
+- Every provider fills a missing preview from the parsed body whenever a body is cached (opened or prefetched); a provider preview is kept. IMAP previews therefore cover the prefetched newest mail plus whatever has been opened. Other IMAP mail shows no preview until its body is fetched; there is no extra IMAP download for previews.
+- `0045_message_snippets.sql` adds the column, fills it from already-cached plain-text bodies and adds a trigger that refreshes open lists when a preview first appears. The prefetch pass fills the remaining cached (HTML-only) bodies locally, without provider I/O. While previews fill, open lists refetch at most once per browser coalescing window (about two seconds), unlike other body caching, which uses the `content` topic only.
+
+Deploy the migration, then API, worker and web. Rollback keeps the additive column; older code ignores it.
+

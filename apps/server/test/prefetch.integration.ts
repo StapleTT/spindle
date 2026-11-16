@@ -350,6 +350,27 @@ test('bodies are prefetched after sync and match on-demand content', {
   await new Promise((resolve) => setTimeout(resolve, 300));
   assert.ok(topics.length >= 6);
   assert.deepEqual([...new Set(topics)], ['content']);
+  // Bodies cached before list previews existed fill them without provider I/O.
+  await pool.query(
+    'UPDATE mail_messages SET snippet=NULL WHERE account_id=$1',
+    [account],
+  );
+  await prefetchAccount(pool, keys, null, owner.id, account);
+  assert.equal(
+    (await one('SELECT snippet FROM mail_messages WHERE id=$1', [formatted]))
+      .snippet,
+    'Private plain body',
+  );
+  assert.equal(
+    (
+      await one(
+        `SELECT count(*) FILTER (WHERE m.snippet IS NULL) AS missing FROM mail_messages m
+        JOIN mail_content c ON c.message_id=m.id AND c.state='ready' WHERE m.account_id=$1`,
+        [account],
+      )
+    ).missing,
+    '0',
+  );
   // A waiting reader request is user work: a prefetch pass does not start
   // (and take the account lease) ahead of it.
   await pool.query('DELETE FROM mail_content WHERE message_id=$1', [plain]);

@@ -125,6 +125,14 @@ test('browser connects IMAP, receives background mail, pages and disconnects', {
       .click();
     await page.getByText('Browser mail 50', { exact: true }).waitFor();
     assert.equal(await page.locator('.message-list > li').count(), 50);
+    // A preview stored after the list loaded appears on its row as text.
+    await pool.query(
+      "UPDATE mail_messages SET snippet='Preview <b onclick=x>text</b>' WHERE subject='Browser mail 50'",
+    );
+    await page
+      .locator('.row-snippet', { hasText: 'Preview <b onclick=x>text</b>' })
+      .waitFor();
+    assert.equal(await page.locator('.message-list b').count(), 0);
     await page
       .getByRole('button', { name: 'Older messages', exact: true })
       .click();

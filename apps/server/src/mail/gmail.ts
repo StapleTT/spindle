@@ -10,13 +10,19 @@ import {
   googleJson,
   refreshAccessToken,
 } from './google.js';
-import { hasListUnsubscribe, headerBlock, parseReplyHeaders } from './parse.js';
+import {
+  hasListUnsubscribe,
+  headerBlock,
+  htmlText,
+  parseReplyHeaders,
+  snippet,
+} from './parse.js';
 import { defaultSenderName } from './smtp.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import {
-  recordNewsletters,
+  recordMetadata,
   text,
-  uncheckedNewsletters,
+  uncheckedMetadata,
   upsertMessage,
   validDate,
 } from './sync.js';
@@ -28,7 +34,14 @@ type GmailMessage = {
   internalDate?: unknown;
   sizeEstimate?: unknown;
   payload?: { headers?: { name?: unknown; value?: unknown }[] };
+  snippet?: unknown;
 };
+
+// Gmail's preview text is HTML-escaped plain text.
+const gmailSnippet = (message: GmailMessage | null) =>
+  typeof message?.snippet === 'string'
+    ? snippet(htmlText(message.snippet.slice(0, 2000)))
+    : '';
 type HistoryEntry = { message?: { id?: unknown }; labelIds?: unknown };
 type HistoryRecord = Partial<
   Record<
@@ -187,6 +200,7 @@ async function saveGmailMessage(
         : 0,
       references: meta?.references ?? null,
       listUnsubscribe: hasListUnsubscribe(block),
+      snippet: gmailSnippet(message),
     },
     notify &&
       labels.includes('INBOX') &&
@@ -736,15 +750,15 @@ export async function syncGmailAccount(
       });
       if (!next) break;
     }
-    // One-time newsletter check for mail synchronized before D045. It only
-    // reads one header per message and keeps yielding to the reader.
+    // One-time newsletter (D045) and preview (D048) check for mail synchronized
+    // earlier. It reads one header per message and keeps yielding to the reader.
     while (Date.now() < deadline) {
       if ((await pool.query(bodyPending, [owner, id])).rowCount) break;
-      const remotes = await uncheckedNewsletters(pool, owner, id, PAGE);
+      const remotes = await uncheckedMetadata(pool, owner, id, PAGE);
       if (!remotes.length) break;
       const messages = await fetchAll(remotes, ['List-Unsubscribe']);
       await withLease(pool, account, (db) =>
-        recordNewsletters(
+        recordMetadata(
           db,
           owner,
           id,
@@ -756,6 +770,7 @@ export async function syncGmailAccount(
                 'List-Unsubscribe',
               ]).block,
             ),
+            gmailSnippet(messages[index] ?? null),
           ]),
         ),
       );

@@ -1,3 +1,4 @@
+import { Parser } from 'htmlparser2';
 import { simpleParser } from 'mailparser';
 import {
   type AttachmentInfo,
@@ -42,6 +43,46 @@ export function headerBlock(headers: unknown, names: string[]) {
 // Newsletter rule: senders of bulk mail declare RFC 2369 List-Unsubscribe.
 export function hasListUnsubscribe(headers: Buffer) {
   return /^list-unsubscribe[ \t]*:/im.test(headers.toString('latin1'));
+}
+
+// List preview (row third line): quoted reply lines dropped, whitespace and
+// invisible preheader padding collapsed. '' means checked and empty.
+export function snippet(text: string) {
+  return text
+    .slice(0, 8000)
+    .replace(/^[ \t]*>.*$/gm, ' ')
+    .replace(/(?:\s|\u00ad|\u034f|[\u200b-\u200f]|\u2060|\ufeff)+/g, ' ')
+    .trim()
+    .slice(0, 200)
+    .replace(/[\ud800-\udbff]$/, '');
+}
+
+const HIDDEN = new Set(['head', 'script', 'style', 'title', 'template']);
+const BLOCK =
+  /^(address|article|blockquote|br|dd|div|dl|dt|footer|h[1-6]|header|hr|li|ol|p|pre|section|table|td|th|tr|ul)$/;
+
+// Visible text of HTML (also Gmail's entity-encoded snippets), bounded.
+export function htmlText(html: string) {
+  let out = '';
+  let hidden = 0;
+  const parser = new Parser(
+    {
+      onopentag: (name) => {
+        if (HIDDEN.has(name)) hidden++;
+        else if (BLOCK.test(name)) out += ' ';
+      },
+      ontext: (value) => {
+        if (!hidden && out.length < 8000) out += value;
+      },
+      onclosetag: (name) => {
+        if (HIDDEN.has(name)) hidden = Math.max(0, hidden - 1);
+        else if (BLOCK.test(name)) out += ' ';
+      },
+    },
+    { decodeEntities: true },
+  );
+  parser.end(html);
+  return out;
 }
 
 export async function parseReplyHeaders(headers: Buffer) {
@@ -98,6 +139,7 @@ export async function parseMessage(source: Buffer) {
     resources: safe.resources,
     images,
     listUnsubscribe: parsed.headers.has('list-unsubscribe'),
+    snippet: snippet(plain.trim() ? plain : htmlText(safe.html)),
     bytes:
       Buffer.byteLength(plain) +
       Buffer.byteLength(safe.html) +

@@ -12,7 +12,12 @@ import {
   remoteImageUrl,
   safeFilename,
 } from '../src/mail/media.js';
-import { MAX_RAW_BYTES, parseMessage } from '../src/mail/parse.js';
+import {
+  htmlText,
+  MAX_RAW_BYTES,
+  parseMessage,
+  snippet,
+} from '../src/mail/parse.js';
 import { renderMessage, sanitizeMessage } from '../src/mail/sanitize.js';
 import { testConfig } from './auth-fixture.js';
 import { imapFixture } from './imap-fixture.js';
@@ -132,6 +137,7 @@ test('MIME parser decodes charsets, alternatives and inline CIDs without retaini
   const raw = `From: sender@example.test\r\nTo: recipient@example.test\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=outer\r\n\r\n--outer\r\nContent-Type: multipart/alternative; boundary=inner\r\n\r\n--inner\r\nContent-Type: text/plain; charset=iso-8859-1\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\nCaf=E9 plain text\r\n--inner\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Hello HTML</p><img src="cid:picture@example.test"><script>alert(1)</script>\r\n--inner--\r\n--outer\r\nContent-Type: image/png\r\nContent-ID: <picture@example.test>\r\nContent-Transfer-Encoding: base64\r\n\r\n${tinyPng.toString('base64')}\r\n--outer\r\nContent-Type: application/octet-stream\r\nContent-Disposition: attachment; filename=secret.bin\r\n\r\nNot retained\r\n--outer--\r\n`;
   const parsed = await parseMessage(Buffer.from(raw));
   assert.match(parsed.plain, /Café plain text/);
+  assert.equal(parsed.snippet, 'Café plain text');
   assert.match(parsed.html, /Hello HTML/);
   assert.doesNotMatch(parsed.html, /<script/);
   assert.equal(parsed.images.length, 1);
@@ -278,4 +284,21 @@ test('attachment metadata and download names are bounded and inert', () => {
       Boolean(verifyContentGrant(signContentGrant(value, 'secret'), 'secret')),
       valid,
     );
+});
+
+test('list previews are bounded visible text without quotes, hidden markup or padding', async () => {
+  const html = await parseMessage(
+    Buffer.from(
+      'MIME-Version: 1.0\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<style>p{color:red}</style><p>Fish &amp; chips</p><p>to\u200c\u034f\u00a0night</p><script>x()</script>',
+    ),
+  );
+  assert.equal(html.snippet, 'Fish & chips to night');
+  assert.equal(
+    snippet('Thanks!\n\nOn Monday, Ana wrote:\n> earlier text\n  > more'),
+    'Thanks! On Monday, Ana wrote:',
+  );
+  assert.equal(snippet(htmlText('Tom &#39;s &lt;b&gt;')), "Tom 's <b>");
+  assert.equal(snippet(' \n '), '');
+  assert.equal(snippet('x'.repeat(500)).length, 200);
+  assert.equal(snippet(`${'a'.repeat(199)}😀`), 'a'.repeat(199));
 });

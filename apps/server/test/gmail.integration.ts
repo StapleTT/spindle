@@ -518,7 +518,7 @@ test('Gmail OAuth connection, sync, reader, actions and sending', {
       assert.ok(m2);
       m2.headers['List-Unsubscribe'] = '<mailto:leave@example.test>';
       await pool.query(
-        'UPDATE mail_messages SET list_unsubscribe=NULL WHERE account_id=$1',
+        'UPDATE mail_messages SET list_unsubscribe=NULL,snippet=NULL WHERE account_id=$1',
         [accountA],
       );
       const gets = google.state.gets;
@@ -531,6 +531,14 @@ test('Gmail OAuth connection, sync, reader, actions and sending', {
         )
       ).rows;
       assert.deepEqual(flags, [{ remote_key: 'm2', list_unsubscribe: true }]);
+      // Gmail's HTML-escaped preview is stored as plain text.
+      const previews = (
+        await pool.query(
+          'SELECT DISTINCT snippet FROM mail_messages WHERE account_id=$1',
+          [accountA],
+        )
+      ).rows;
+      assert.deepEqual(previews, [{ snippet: 'Synthetic preview & text' }]);
       // Checked once: the next run reads no message headers.
       const after = google.state.gets;
       await sync();
