@@ -172,6 +172,14 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
         ).rows[0].count,
       );
     }
+    // The action row commits before the response that adds its Undo
+    // control, and 'z' does nothing until that control exists.
+    async function undo(notice: string) {
+      await page
+        .locator(`[data-mail-command="undo"][aria-label="Undo: ${notice}"]`)
+        .waitFor({ state: 'attached' });
+      await page.keyboard.press('z');
+    }
     async function waitFor(check: () => Promise<boolean>) {
       const until = Date.now() + 12000;
       while (Date.now() < until) {
@@ -349,7 +357,7 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
         ).rows[0];
         assert.equal(latest.message_id, beta);
         assert.equal(latest.kind, 'archive');
-        await page.keyboard.press('z');
+        await undo('Archived “Project beta”.');
         await waitFor(
           async () =>
             (
@@ -466,7 +474,7 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
         await page.keyboard.press('m');
         await page.locator('.reader').waitFor({ state: 'hidden' });
         await waitFor(async () => (await rows.count()) === 0);
-        await page.keyboard.press('z');
+        await undo('Marked “Project alpha” as read.');
         await row(alpha).waitFor();
         await row(alpha).locator('.message-open').focus();
         await page.keyboard.press('#');
@@ -479,7 +487,7 @@ test('local search, saved/split views, keyboard context, page focus and replay-s
               )
             ).rows[0].kind === 'trash',
         );
-        await page.keyboard.press('z');
+        await undo('Moved to Trash “Project alpha”.');
         await row(alpha).waitFor();
         await row(alpha).locator('.message-open').focus();
         await page.keyboard.press('ControlOrMeta+k');

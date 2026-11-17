@@ -381,6 +381,12 @@ test('conversation timeline preserves scoped navigation, reply identity, message
           ),
           0,
         );
+        // 'z' does nothing until the response adds the Undo control.
+        await page
+          .locator(
+            '[data-mail-command="undo"][aria-label="Undo: Marked “Sent reply” as unread."]',
+          )
+          .waitFor({ state: 'attached' });
         await page.keyboard.press('z');
         await waitFor(
           async () =>
