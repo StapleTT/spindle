@@ -3,12 +3,14 @@
 // opening the message fetches, stay inside the cache budget without churn, and
 // step aside for a reader's own request.
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import { Client, Pool } from 'pg';
 import { PgBoss } from 'pg-boss';
 import { migrateDatabase } from '../src/db/migrate.js';
 import { fetchMessageContent } from '../src/mail/content-worker.js';
 import { readMailKeys } from '../src/mail/credentials.js';
+import { connectImap } from '../src/mail/imap.js';
 import { prefetchAccount } from '../src/mail/prefetch.js';
 import { startMailWorker } from '../src/mail/worker.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
@@ -379,6 +381,40 @@ test('bodies are prefetched after sync and match on-demand content', {
   assert.equal(await stateOf(plain), 'pending');
   await prefetchAccount(pool, keys, null, owner.id, account);
   assert.equal(await stateOf(plain), 'pending');
+  assert.ok(
+    await one(
+      'SELECT 1 FROM mail_accounts WHERE id=$1 AND lease_token IS NULL',
+      [account],
+    ),
+  );
+  // A mail action is user work too: queued while a pass is connecting, it
+  // ends the pass before any download, so the action is not left waiting
+  // for the lease until the pass budget runs out.
+  await pool.query('DELETE FROM mail_content WHERE message_id=$1', [plain]);
+  const passStart = Date.now();
+  await prefetchAccount(
+    pool,
+    keys,
+    null,
+    owner.id,
+    account,
+    undefined,
+    async (...args) => {
+      const queued = await call(
+        'POST',
+        `/api/mail/messages/${formatted}/actions`,
+        {
+          id: randomUUID(),
+          kind: 'unread',
+        },
+      );
+      assert.ok(queued.statusCode < 300, queued.body);
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      return connectImap(...args);
+    },
+  );
+  assert.ok(Date.now() - passStart < 5000);
+  assert.equal(await stateOf(plain), undefined, 'no download after the action');
   assert.ok(
     await one(
       'SELECT 1 FROM mail_accounts WHERE id=$1 AND lease_token IS NULL',

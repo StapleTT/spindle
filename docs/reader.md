@@ -49,7 +49,7 @@ After each completed metadata sync, the worker spends up to 15 seconds downloadi
 Prefetch is background work:
 
 - It runs in the metadata slot, never starts while the account has pending user work and wakes no worker.
-- A reader's body or attachment request ends a running pass within about a second; the pass resumes afterwards.
+- A reader's body or attachment request, a mail action or a send ends a running pass within about a second; the pass resumes afterwards. Before 2026-11-16 only body and attachment requests did, so a move made during a pass could wait out the 15-second budget after its undo window.
 - It does not change provider flags, and prefetched mail stays unread until the reader's one-second viewing rule marks it.
 
 The cache budget decides what is kept. A prefetched entry ranks by its message's received time, an opened entry by its last access, and the lowest-ranked entries are evicted first. A message is prefetched only while the entries ranked above it leave room, so prefetch settles on the newest mail plus what was recently read instead of evicting and refetching. Prefetch skips Trash and Junk mail and messages over the 10 MiB raw limit; those are fetched when opened.

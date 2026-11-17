@@ -32,7 +32,7 @@ import {
 } from './parse.js';
 import { SANITIZER_VERSION } from './sanitize.js';
 import { claimAccount, releaseLease, withLease } from './store.js';
-import { bodyPending, contentPending } from './work-pending.js';
+import { contentPending } from './work-pending.js';
 
 // D042: bodies are cached before they are opened. After a metadata sync the
 // worker downloads the account's newest uncached messages through the same
@@ -167,10 +167,12 @@ export async function prefetchAccount(
     client?.close();
   };
   signal?.addEventListener('abort', stop, { once: true });
-  // A reader's request must not wait behind a background download: once a
-  // second, a waiting body or attachment ends this pass and its connection.
+  // User work must not wait behind a background download: once a second, a
+  // waiting body, attachment, mail action or send ends this pass and its
+  // connection, as it ends an IDLE watch. An action in its undo window also
+  // stops the pass, since the lease would otherwise delay it once due.
   const watch = setInterval(() => {
-    pool.query(bodyPending, [owner, id]).then((requested) => {
+    pool.query(contentPending, [owner, id]).then((requested) => {
       if (requested.rowCount) stop();
     }, stop);
   }, 1000);
