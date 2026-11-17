@@ -2,14 +2,14 @@
 
 Gmail accounts connect with Google OAuth and sync through the Gmail REST API. Decision: [D038](decisions.md#d038--gmail-via-the-gmail-api-slice-1). Gmail ships in vertical slices, and each slice says exactly what works:
 
-| Slice                | Scope                                                                                                                              | Status             |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| 1                    | Connect, reconnect and disconnect; labels as folders; message list, counts and search over synced metadata; `history.list` polling | Implemented (D038) |
-| 2 — reader           | `messages.get?format=raw` into the shared parse/sanitize/cache pipeline, plus attachments and forwarded files                      | Implemented (D040) |
-| 3 — actions          | Read/unread, archive, trash, move and restore through `messages.modify`/`trash`/`untrash` under the shared action/undo model       | Implemented (D040) |
-| 4 — sending          | `messages.send` with immutable-outbox semantics, scheduling, Undo send and unknown-outcome protection                              | Implemented (D040) |
-| 4b — provider drafts | Not planned: drafts stay in Spindle by design ([D044](decisions.md#d044--drafts-stay-in-spindle))                                  | Excluded           |
-| 5 — push             | `users.watch` and Pub/Sub, once a public HTTPS domain exists (U05)                                                                 | Not implemented    |
+| Slice                | Scope                                                                                                                                     | Status             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| 1                    | Connect, reconnect and disconnect; labels as folders; message list, counts and search over synced metadata; `history.list` polling        | Implemented (D038) |
+| 2 — reader           | `messages.get?format=raw` into the shared parse/sanitize/cache pipeline, plus attachments and forwarded files                             | Implemented (D040) |
+| 3 — actions          | Read/unread, archive, trash, move and restore through `messages.modify`/`trash`/`untrash` under the shared action/undo model              | Implemented (D040) |
+| 4 — sending          | `messages.send` with immutable-outbox semantics, scheduling, Undo send and unknown-outcome protection                                     | Implemented (D040) |
+| 4b — provider drafts | Not planned: drafts stay in Spindle by design ([D044](decisions.md#d044--drafts-stay-in-spindle))                                         | Excluded           |
+| 5 — push             | `users.watch` and an authenticated Pub/Sub push subscription that wakes sync ([D049](decisions.md#d049--live-push-for-gmail-and-outlook)) | Implemented (D049) |
 
 Only SMTP settings and the SMTP test answer `409` for Gmail accounts ("Gmail accounts send through Gmail; SMTP settings do not apply."). Drafts written in Gmail's own interface are not imported, and Spindle drafts are not copied to Gmail's Drafts. Sent mail appears in Gmail's Sent label automatically.
 
@@ -18,7 +18,7 @@ Only SMTP settings and the SMTP test answer `409` for Gmail accounts ("Gmail acc
 Create these yourself in the Google Cloud console. Never paste the secret into chat or commit it.
 
 1. Create (or choose) a project per environment: one for development and one for production.
-2. Enable the **Gmail API** (APIs & Services → Library). Pub/Sub is for slice 5 only.
+2. Enable the **Gmail API** (APIs & Services → Library). Pub/Sub is needed only for [push](#push-slice-5).
 3. Configure the **OAuth consent screen**: External user type, app name, support email, and the scopes `openid`, `email` and `https://www.googleapis.com/auth/gmail.modify`.
 4. Create an **OAuth client ID** of type **Web application** with these exact **Authorized redirect URIs**:
    - Development: `http://127.0.0.1:5173/api/mail/oauth/google/callback` (must match `APP_URL` exactly, including host and port)
@@ -34,6 +34,25 @@ Create these yourself in the Google Cloud console. Never paste the secret into c
 
    Setting only one of the two fails startup. With neither set, the Google card in Settings shows "Needs operator setup". Mail encryption (`MAIL_ENCRYPTION_KEYS`) is also required.
 6. While the app is in **Testing** publishing status, add each Gmail address as a **test user** (100 at most). Google expires Testing-mode refresh tokens after **7 days**; affected accounts show "Reconnect" in Settings. Production use of `gmail.modify`, a restricted scope, requires Google's verification and a security assessment before publishing.
+
+## Push (slice 5)
+
+Optional ([D049](decisions.md#d049--live-push-for-gmail-and-outlook)). Without it, Gmail polls every 60 seconds; with it, a change usually reaches Spindle within seconds. The notification only wakes the ordinary history sync, which still runs every 60 seconds as well.
+
+1. Give Spindle a public https origin that reaches the API, and set `PUSH_URL` to it. In development a tunnel works, for example `cloudflared tunnel --url http://127.0.0.1:3000`.
+2. In the same Google Cloud project, enable **Pub/Sub** and create a topic, for example `spindle-mail`.
+3. On the topic, grant **Pub/Sub Publisher** to `gmail-api-push@system.gserviceaccount.com`, so Gmail can publish to it.
+4. Create a service account for push delivery (it needs no keys and no other roles).
+5. Create a **push** subscription on the topic. Endpoint: `<PUSH_URL>/api/push/google`. Enable authentication with the service account from step 4 and leave the audience empty (it then defaults to the endpoint URL).
+6. Set, for both the API and the worker:
+
+   ```
+   PUSH_URL=https://<public host>
+   GMAIL_PUSH_TOPIC=projects/<project>/topics/<topic>
+   GMAIL_PUSH_SERVICE_ACCOUNT=<name>@<project>.iam.gserviceaccount.com
+   ```
+
+The three Gmail values must be set together; a malformed value fails startup. After its next successful sync, each Gmail account calls `users.watch` for all labels and renews it daily. If the watch fails (for example, the topic grant is missing), the worker logs `Push renewal failed` with the HTTP status, retries after 15 minutes and keeps polling. The webhook rejects requests without a valid Pub/Sub token with 401, and answers 204 otherwise. Pub/Sub retries failed deliveries.
 
 ## Connection flow
 
@@ -84,7 +103,7 @@ The checkpoint is `mail_gmail_sync(history_id, page_token, initial_complete)`:
 - **Expired history** (404) or a stale page token resets the checkpoint for a full resync. Existing local mail stays visible until the new listing replaces it.
 - **Revoked consent** (`invalid_grant`, a Gmail 401, or 403 `insufficientPermissions`) sets `status='error'`, `error_code='reconnect_required'` and defers sync 30 days or until reconnect. Other failures use the IMAP backoff and log a redacted `Gmail sync failed` line with the account ID, HTTP status and Google's enum-like `code`/`reason`, never message text or tokens.
 
-Limits: 40-second soft and 75-second hard job deadlines inside the 90-second lease; 4 MiB per Google response; 1,000 labels; 500 IDs per list page; 1,000 new messages per history page. Polling uses the existing `next_sync_at` cadence (1 second while syncing, 60 seconds when ready, immediately for Sync now). There is no Gmail IDLE; push is slice 5.
+Limits: 40-second soft and 75-second hard job deadlines inside the 90-second lease; 4 MiB per Google response; 1,000 labels; 500 IDs per list page; 1,000 new messages per history page. Polling uses the existing `next_sync_at` cadence (1 second while syncing, 60 seconds when ready, immediately for Sync now). There is no Gmail IDLE; [push](#push-slice-5) wakes the same sync early.
 
 Quota: Gmail allows 250 units per user per second, and `messages.get` costs 5. A job uses a pool of 5 requests and starts at most one every 25 ms (about 40 requests and 200 units per second). A 429, 5xx, or 403 `rateLimitExceeded`/`userRateLimitExceeded` is retried up to 4 times with exponential backoff or `Retry-After`, and the whole job slows down with it. If retries run out or the hard deadline arrives, the job **pauses**: committed pages stay, the account remains `syncing` with no error, and the next job runs after 60 seconds (rate limit), 30 seconds (server error) or 1 second (deadline). Before 2026-11-05 the job used 10 unpaced requests and turned every rate-limit response into a sync failure, which is why automatic syncs failed after the first. If initial sync speed matters, switch to the batch endpoint (`ponytail:` note in `gmail.ts`).
 

@@ -13,6 +13,7 @@ import { readContentConfig } from './mail/content-config.js';
 import { type MailKeys, readMailKeys } from './mail/credentials.js';
 import { readGoogleConfig } from './mail/google.js';
 import { readMicrosoftConfig } from './mail/microsoft.js';
+import { registerPushRoutes } from './mail/push.js';
 import { registerMailRoutes } from './mail/routes.js';
 
 export function buildApp(
@@ -52,6 +53,10 @@ export function buildApp(
       google,
       microsoft,
     ),
+  );
+  // Provider callbacks authenticate themselves (D049), not with app cookies.
+  app.register(async (push) =>
+    registerPushRoutes(push, database, google, microsoft),
   );
   app.setErrorHandler<FastifyError>((error, request, reply) => {
     const status =

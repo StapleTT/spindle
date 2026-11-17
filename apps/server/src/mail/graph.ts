@@ -16,6 +16,7 @@ import {
   parseReplyHeaders,
   snippet,
 } from './parse.js';
+import { renewGraphSubscription } from './push.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import {
   recordMetadata,
@@ -526,6 +527,7 @@ export async function syncGraphAccount(
         recordMetadata(db, owner, id, checked),
       );
     }
+    await renewGraphSubscription(pool, microsoft, account, api);
     await withLease(pool, account, async (db) => {
       const pending = (
         await db.query(

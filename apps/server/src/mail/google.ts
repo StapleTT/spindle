@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { readPushUrl } from '../config.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
 
 // D038: one restricted scope covers read, labels, drafts and send for later slices.
@@ -13,8 +14,43 @@ export function readGoogleConfig(env: NodeJS.ProcessEnv = process.env) {
     throw new Error(
       'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must be set together',
     );
+  // D049: Gmail push through an authenticated Pub/Sub push subscription.
+  const topic = env.GMAIL_PUSH_TOPIC;
+  const serviceAccount = env.GMAIL_PUSH_SERVICE_ACCOUNT;
+  const pushUrl = readPushUrl(env);
+  let push: {
+    topic: string;
+    serviceAccount: string;
+    audience: string;
+    certsUrl: string;
+  } | null = null;
+  if (topic || serviceAccount) {
+    if (!topic || !serviceAccount || !pushUrl)
+      throw new Error(
+        'GMAIL_PUSH_TOPIC, GMAIL_PUSH_SERVICE_ACCOUNT and PUSH_URL must be set together',
+      );
+    if (
+      !/^projects\/[a-z][a-z0-9-]{4,28}[a-z0-9]\/topics\/[A-Za-z][\w.~+%-]{2,254}$/.test(
+        topic,
+      )
+    )
+      throw new Error(
+        'GMAIL_PUSH_TOPIC must be projects/<project>/topics/<topic>',
+      );
+    if (!/^[^\s@]{1,128}@[a-z0-9.-]{1,253}$/i.test(serviceAccount))
+      throw new Error(
+        'GMAIL_PUSH_SERVICE_ACCOUNT must be a service account email',
+      );
+    push = {
+      topic,
+      serviceAccount: serviceAccount.toLowerCase(),
+      audience: `${pushUrl}/api/push/google`,
+      certsUrl: 'https://www.googleapis.com/oauth2/v3/certs',
+    };
+  }
   // Fixed Google endpoints; tests replace them with a local fake.
   return {
+    push,
     clientId,
     clientSecret,
     authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',

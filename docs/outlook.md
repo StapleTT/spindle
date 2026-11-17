@@ -2,7 +2,7 @@
 
 Microsoft accounts connect using Microsoft OAuth and use Microsoft Graph v1.0 for mailbox operations. The API handles authorization code exchange and identity discovery; only the worker reads or changes mail. Spindle sign-in remains verified email/password. Shared/delegated mailboxes, send-as aliases, Exchange on-premises and sovereign Microsoft clouds are outside this integration.
 
-Implemented: connect/reconnect/disconnect, resumable folder and message delta polling, local lists/counts/search, isolated MIME reader, attachments/forwarded files, read/unread/archive/trash/move/restore with five-second undo, local composer drafts, signatures, immutable Outbox sending, Undo send and Send later. Subscription/webhook push, large attachment uploads and live personal/work-account acceptance remain open. Drafts stay in Spindle by design ([D044](decisions.md#d044--drafts-stay-in-spindle)); the Outlook Drafts folder is hidden and its drafts are not imported.
+Implemented: connect/reconnect/disconnect, resumable folder and message delta polling, local lists/counts/search, isolated MIME reader, attachments/forwarded files, read/unread/archive/trash/move/restore with five-second undo, local composer drafts, signatures, immutable Outbox sending, Undo send and Send later. Optional subscription push wakes sync ([D049](decisions.md#d049--live-push-for-gmail-and-outlook)). Large attachment uploads and live personal/work-account acceptance remain open. Drafts stay in Spindle by design ([D044](decisions.md#d044--drafts-stay-in-spindle)); the Outlook Drafts folder is hidden and its drafts are not imported.
 
 ## Operator setup
 
@@ -31,7 +31,7 @@ The callback requires all three delegated Graph scopes, gets the stable app-scop
 
 Refresh tokens are AES-GCM encrypted with the existing key ring and owner/account AAD. Worker refreshes persist any rotated token under the fenced account lease before mailbox requests. Access tokens live only within the job. Provider errors expose only generic result codes; no provider text, tokens or mail content enter logs or redirect URLs.
 
-Password-confirmed disconnect deletes the local account, its encrypted token, checkpoints and mirror by cascade, leaving provider mail untouched. Scheduled/admin user deletion uses the same cascades. Microsoft has no equivalent of Google's per-token revocation endpoint: Spindle does not revoke unrelated Microsoft sessions or request broad directory permissions. Users can remove Spindle's consent in Microsoft account/application settings when desired. There are no subscriptions to clean up in this polling version. Export includes provider metadata and the sender display name, never credentials, tokens or delta links.
+Password-confirmed disconnect deletes the local account, its encrypted token, checkpoints and mirror by cascade, leaving provider mail untouched. Scheduled/admin user deletion uses the same cascades. Microsoft has no equivalent of Google's per-token revocation endpoint: Spindle does not revoke unrelated Microsoft sessions or request broad directory permissions. Users can remove Spindle's consent in Microsoft account/application settings when desired. A push subscription is not cancelled on disconnect, because the token is gone; it expires within three days and its notifications are ignored. Export includes provider metadata and the sender display name, never credentials, tokens or delta links.
 
 ## Sync and identity
 
@@ -43,7 +43,13 @@ Graph reports moves as a source-folder removal and destination-folder addition. 
 
 Delta links are opaque and retained exactly. Links must stay on the configured Graph origin under the owned `/me/mailFolders` path; redirects and cross-origin continuation links are refused. Pages request at most 50 entries; response bytes and structures are bounded. HTTP 410/expired delta resets only that scope and resumes a full listing. Rate limits honor Retry-After without spending action attempts. Revoked consent sets “Reconnect”; other errors retain local mail and back off.
 
-The 90-day boundary is fixed at connection time and enforced locally. Delta is intentionally unfiltered to avoid Graph's limit on date-filtered message delta; a large old mailbox can therefore take longer to traverse even when only recent mail is mirrored. Polling reconciles ready accounts every 60 seconds; Sync now uses the existing durable request. Browser updates use the existing local SSE triggers, with polling recovery. Rendering never calls Microsoft.
+The 90-day boundary is fixed at connection time and enforced locally. Delta is intentionally unfiltered to avoid Graph's limit on date-filtered message delta; a large old mailbox can therefore take longer to traverse even when only recent mail is mirrored. Polling reconciles ready accounts every 60 seconds; Sync now uses the existing durable request. With [push](#push), a change usually wakes the same sync within seconds. Browser updates use the existing local SSE triggers, with polling recovery. Rendering never calls Microsoft.
+
+## Push
+
+Optional ([D049](decisions.md#d049--live-push-for-gmail-and-outlook)). Set `PUSH_URL` to a public https origin that reaches the API (a tunnel such as `cloudflared tunnel --url http://127.0.0.1:3000` works in development) for both the API and the worker. No Azure portal change is needed: the existing delegated `Mail.ReadWrite` permission covers subscriptions.
+
+After its next successful sync, each Outlook account subscribes to `me/messages` (created, updated and deleted) with `<PUSH_URL>/api/push/microsoft` as both the notification and lifecycle URL. Graph validates that URL when the subscription is created, so the API must be reachable then. The subscription lasts 4,200 minutes and renews daily; a renewal that returns 404 creates a new one. Each subscription has a random `clientState`, stored only as its SHA-256 hash, and a notification wakes the account only when both its subscription ID and client state match. `subscriptionRemoved` and `reauthorizationRequired` also force a renewal. A failed renewal logs `Push renewal failed` with the HTTP status, retries after 15 minutes and never fails the sync. Polling continues every 60 seconds either way.
 
 ## Reader, actions and sending
 

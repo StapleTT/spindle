@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import { readPushUrl } from '../config.js';
 import {
   decryptCredential,
   encryptCredential,
@@ -17,6 +18,7 @@ export function readMicrosoftConfig(env: NodeJS.ProcessEnv = process.env) {
     throw new Error(
       'MICROSOFT_CLIENT_ID and MICROSOFT_CLIENT_SECRET must be set together',
     );
+  const pushUrl = readPushUrl(env);
   return {
     clientId,
     clientSecret,
@@ -24,6 +26,8 @@ export function readMicrosoftConfig(env: NodeJS.ProcessEnv = process.env) {
     tokenUrl: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
     userinfoUrl: 'https://graph.microsoft.com/oidc/userinfo',
     graphUrl: 'https://graph.microsoft.com/v1.0/me',
+    // D049: Graph change notifications for /me/messages.
+    pushUrl: pushUrl ? `${pushUrl}/api/push/microsoft` : null,
   };
 }
 
@@ -250,6 +254,9 @@ export async function openMicrosoft(
         ? path
         : `${base.href}${!path || path.startsWith('/') ? path : `/${path}`}`,
     );
+    // Mailbox paths under /me, plus the sibling /subscriptions collection
+    // for push (D049).
+    const subscriptions = new URL('subscriptions', base).pathname;
     if (
       url.origin !== base.origin ||
       url.username ||
@@ -257,7 +264,9 @@ export async function openMicrosoft(
       url.hash ||
       !(
         url.pathname === base.pathname ||
-        url.pathname.startsWith(`${base.pathname}/`)
+        url.pathname.startsWith(`${base.pathname}/`) ||
+        url.pathname === subscriptions ||
+        url.pathname.startsWith(`${subscriptions}/`)
       )
     )
       throw new MicrosoftError(502, 'invalid_link');

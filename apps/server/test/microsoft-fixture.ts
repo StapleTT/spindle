@@ -402,6 +402,45 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
       };
     },
   );
+  // D049 push: Graph subscriptions. Removing one from `subscriptions`
+  // makes its renewal 404, as after Graph deletes an expired subscription.
+  const subscriptions = new Map<
+    string,
+    { body: Record<string, unknown>; expires: string }
+  >();
+  app.post<{ Body: Record<string, unknown> }>(
+    '/v1.0/subscriptions',
+    async (request, reply) => {
+      if (!identity(request.headers.authorization))
+        return reply
+          .code(401)
+          .send({ error: { code: 'InvalidAuthenticationToken' } });
+      const id = randomUUID();
+      subscriptions.set(id, {
+        body: request.body,
+        expires: String(request.body.expirationDateTime),
+      });
+      return reply.code(201).send({ id, ...request.body });
+    },
+  );
+  app.patch<{ Params: { id: string }; Body: { expirationDateTime?: string } }>(
+    '/v1.0/subscriptions/:id',
+    async (request, reply) => {
+      if (!identity(request.headers.authorization))
+        return reply
+          .code(401)
+          .send({ error: { code: 'InvalidAuthenticationToken' } });
+      const found = subscriptions.get(request.params.id);
+      if (!found)
+        return reply.code(404).send({ error: { code: 'ResourceNotFound' } });
+      found.expires = String(request.body.expirationDateTime);
+      return {
+        id: request.params.id,
+        ...found.body,
+        expirationDateTime: found.expires,
+      };
+    },
+  );
   await app.listen({ host: '127.0.0.1', port: 0 });
   const address = app.server.address();
   assert.ok(address && typeof address === 'object');
@@ -413,6 +452,7 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
     tokenUrl: `${base}/token`,
     userinfoUrl: `${base}/userinfo`,
     graphUrl: `${base}/v1.0/me`,
+    pushUrl: null as string | null,
   };
   return {
     app,
@@ -428,5 +468,6 @@ export async function fakeMicrosoft(appUrl = testConfig.appUrl) {
     sent,
     requests,
     record,
+    subscriptions,
   };
 }

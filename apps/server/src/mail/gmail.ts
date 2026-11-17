@@ -17,6 +17,7 @@ import {
   parseReplyHeaders,
   snippet,
 } from './parse.js';
+import { renewGmailWatch } from './push.js';
 import { defaultSenderName } from './smtp.js';
 import { claimAccount, type MailAccount, withLease } from './store.js';
 import {
@@ -775,6 +776,7 @@ export async function syncGmailAccount(
         ),
       );
     }
+    await renewGmailWatch(pool, google, account, api);
     await withLease(pool, account, async (db) => {
       const state = (
         await db.query(

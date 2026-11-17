@@ -56,6 +56,7 @@ try {
             'apps/server/test/authorization.integration.ts',
             'apps/server/test/gmail.integration.ts',
             'apps/server/test/microsoft.integration.ts',
+            'apps/server/test/push.integration.ts',
             'apps/server/test/content-latency.integration.ts',
             'apps/server/test/prefetch.integration.ts',
             'apps/server/test/mail.integration.ts',

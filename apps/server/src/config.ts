@@ -22,3 +22,19 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env) {
 
   return { databaseUrl, port, host: env.HOST ?? '127.0.0.1' };
 }
+
+// D049: public HTTPS origin that providers call for push notifications.
+// Unset means no push; polling continues either way.
+export function readPushUrl(env: NodeJS.ProcessEnv = process.env) {
+  const value = env.PUSH_URL;
+  if (!value) return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error('PUSH_URL must be an https origin');
+  }
+  if (url.protocol !== 'https:' || url.origin !== value.replace(/\/$/, ''))
+    throw new Error('PUSH_URL must be an https origin');
+  return url.origin;
+}

@@ -137,9 +137,11 @@ test('Gmail connects through Google consent, then reads and archives mail', {
       await input.fill('Discarded');
       await input.press('Escape');
       await rename.waitFor();
-      assert.equal(
-        await rename.evaluate((el) => el === document.activeElement),
-        true,
+      // Focus returns on the next animation frame after the button reappears.
+      await page.waitForFunction(
+        (el) => el === document.activeElement,
+        await rename.elementHandle(),
+        { timeout: 5000 },
       );
       await rename.click();
       // The inline form stays one compact row (it once inherited the global

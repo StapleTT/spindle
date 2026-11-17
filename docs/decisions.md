@@ -555,3 +555,16 @@ Status: user request on 2026-11-16 ("Add snippets"), filling the row's third lin
 - `0045_message_snippets.sql` adds the column, fills it from already-cached plain-text bodies and adds a trigger that refreshes open lists when a preview first appears. The prefetch pass fills the remaining cached (HTML-only) bodies locally, without provider I/O. While previews fill, open lists refetch at most once per browser coalescing window (about two seconds), unlike other body caching, which uses the `content` topic only.
 
 Deploy the migration, then API, worker and web. Rollback keeps the additive column; older code ignores it.
+
+## D049 — live push for Gmail and Outlook
+
+Status: user request on 2026-11-16 ("Add live push for Gmail and Outlook"). The user chose webhooks for both providers (Gmail through an authenticated Pub/Sub push subscription rather than a pulled one) and kept 60-second polling while push works.
+
+- A notification is only a wake signal. It sets the account due now with a new `sync_request`, exactly like Sync now, and wakes the worker through `spindle_mail_work`. The ordinary Gmail history or Graph delta sync stays the authority, and polling continues every 60 seconds as the fallback. Accounts waiting for reconnect are not woken.
+- Push is enabled by `PUSH_URL`, a public https origin. Gmail push also needs `GMAIL_PUSH_TOPIC` and `GMAIL_PUSH_SERVICE_ACCOUNT`. Without them nothing changes.
+- The worker creates and renews push at the end of a successful sync, under the account lease, with the job's provider client: a Gmail `users.watch` on all labels, or a Graph subscription on `me/messages` (`created,updated,deleted`) with a random per-subscription `clientState`. Both renew daily. A Graph renewal that returns 404 creates a new subscription. A failed renewal is logged with its status only, retried after 15 minutes and never fails the sync.
+- `POST /api/push/google` accepts only a Pub/Sub OIDC token: RS256 with a current Google key, Google issuer, this webhook as audience and the configured service account as verified email. It wakes every watched Gmail account with the notified address, since several Spindle users may connect one Gmail address; each still syncs only its own mailbox with its own grant.
+- `POST /api/push/microsoft` echoes Graph's `validationToken` as plain text. Notifications wake an account only when the subscription ID and the SHA-256 of `clientState` match its row. `subscriptionRemoved` and `reauthorizationRequired` lifecycle events also force a renewal. Unknown or mismatched items are acknowledged and ignored.
+- `0046_mail_push.sql` adds `mail_push`, one row per account, cascading with it. Disconnect deletes tokens, so provider-side watches and subscriptions are not cancelled. They expire on their own (seven days for Gmail, under three for Graph), and their notifications are ignored meanwhile.
+
+Deploy the migration, then API and worker together. Rollback leaves an unused table; older workers simply keep polling. Live Gmail and Outlook acceptance needs a public URL or tunnel and the Google Pub/Sub setup in [Gmail](gmail.md#push-slice-5).

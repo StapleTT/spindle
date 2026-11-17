@@ -44,6 +44,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     exhausted: false,
     gets: 0,
     peakPerSecond: 0,
+    watchFails: false,
   };
   // Browser consent: approves as `state.consent` and returns to Spindle.
   const consent: { identity: Identity | null } = { identity: null };
@@ -158,6 +159,20 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
       })),
     },
   });
+  // D049 push: users.watch; `watchFails` stands in for a missing topic grant.
+  const watches: { topicName: unknown }[] = [];
+  app.post<{ Body: { topicName?: unknown } }>(
+    '/gmail/watch',
+    async (request, reply) => {
+      if (state.watchFails)
+        return reply.code(403).send({ error: { code: 403 } });
+      watches.push({ topicName: request.body.topicName });
+      return {
+        historyId: String(state.historyId),
+        expiration: String(Date.now() + 7 * 86400000),
+      };
+    },
+  );
   app.get('/gmail/profile', async () => ({
     emailAddress: 'owner@gmail.test',
     historyId: String(state.historyId),
@@ -367,6 +382,7 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
   assert.ok(address && typeof address === 'object');
   const base = `http://127.0.0.1:${address.port}`;
   const config: GoogleConfig = {
+    push: null,
     clientId: 'fake-client',
     clientSecret: 'fake-secret',
     authUrl: `${base}/auth`,
@@ -393,5 +409,6 @@ export async function fakeGoogle(appUrl = testConfig.appUrl) {
     messages,
     state,
     record,
+    watches,
   };
 }
