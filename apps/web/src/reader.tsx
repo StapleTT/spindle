@@ -36,7 +36,14 @@ type Attachment = {
   filename: string;
   contentType: string;
   size: number;
-  state: 'missing' | 'pending' | 'ready' | 'failed';
+  state: 'missing' | 'pending' | 'ready' | 'failed' | 'unchecked' | 'blocked';
+};
+const attachmentProblems: Partial<Record<Attachment['state'], string>> = {
+  failed: 'This attachment could not be fetched.',
+  unchecked:
+    'The security check is unavailable, so this attachment was not downloaded. Try again later.',
+  blocked:
+    'Blocked: the security check detected malware in this attachment. It cannot be downloaded.',
 };
 type Detail = {
   message: {
@@ -106,7 +113,9 @@ function AttachmentItem({
   const [state, setState] = useState<Attachment['state'] | 'error'>(
     attachment.state,
   );
-  const [error, setError] = useState('');
+  const [error, setError] = useState(
+    attachmentProblems[attachment.state] ?? '',
+  );
   const request = useRef<AbortController | null>(null);
 
   // Polls until the worker finishes; opens the short-lived download link when asked.
@@ -135,9 +144,10 @@ function AttachmentItem({
           if (open && result.url) window.location.assign(result.url);
           return;
         }
-        if (result.state === 'failed') {
-          setState('failed');
-          setError(result.message ?? 'This attachment could not be fetched.');
+        const problem = attachmentProblems[result.state];
+        if (problem) {
+          setState(result.state);
+          setError(result.message ?? problem);
           return;
         }
         await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -178,9 +188,13 @@ function AttachmentItem({
         </span>
       ) : state === 'pending' ? (
         <span role="status" className="muted small">
-          Fetching attachment…
+          Fetching and checking attachment…
         </span>
-      ) : state === 'failed' || state === 'error' ? (
+      ) : state === 'blocked' ? (
+        <span role="alert" className="error">
+          {error}
+        </span>
+      ) : state === 'failed' || state === 'unchecked' || state === 'error' ? (
         <>
           <span role="alert" className="error">
             {error}
@@ -188,7 +202,7 @@ function AttachmentItem({
           <button
             type="button"
             className="text-button"
-            onClick={() => void fetchFile(state === 'failed', true)}
+            onClick={() => void fetchFile(state !== 'error', true)}
           >
             Retry download
           </button>

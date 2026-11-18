@@ -15,6 +15,7 @@ import { connectSmtp } from '../src/mail/smtp.js';
 import { startMailWorker } from '../src/mail/worker.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
 import { fakeGoogle, type Identity } from './google-fixture.js';
+import { useScannerFixture } from './scanner-fixture.js';
 
 test('Gmail OAuth connection, sync, reader, actions and sending', {
   skip: !process.env.TEST_DATABASE_URL,
@@ -22,6 +23,7 @@ test('Gmail OAuth connection, sync, reader, actions and sending', {
 }, async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
   assert.ok(connectionString);
+  await useScannerFixture(t);
   assert.match(
     new URL(connectionString).pathname,
     /^\/spindle_test_[a-z0-9_]+$/,

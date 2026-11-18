@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import { trimContentCache } from './content-cache.js';
 import { reconcileConversationState } from './conversation-state.js';
 import { decryptCredential, type MailKeys } from './credentials.js';
+import { scanFile } from './file-scanner.js';
 import { gmailContentSource } from './gmail-mail.js';
 import type { GoogleConfig } from './google.js';
 import { graphContentSource } from './graph-mail.js';
@@ -19,6 +20,7 @@ import {
   claimAccount,
   type MailAccount,
   releaseLease,
+  transaction,
   withLease,
 } from './store.js';
 
@@ -367,6 +369,7 @@ async function fetchAttachment(
   const attachmentRow = `FROM mail_content c WHERE t.user_id=$1 AND t.message_id=$3 AND t.position=$5
     AND t.state='pending' AND c.user_id=t.user_id AND c.message_id=t.message_id AND c.account_id=$2
     AND c.version=$4 AND c.state='ready'`;
+  let data: Buffer;
   try {
     const message = (
       await pool.query(
@@ -390,25 +393,52 @@ async function fetchAttachment(
         [owner, messageId, position],
       );
     });
-    const data = await source.attachment(message, part, MAX_ATTACHMENT_BYTES);
-    await withLease(pool, account, async (db) => {
-      const updated = await db.query(
-        `UPDATE mail_content_attachments t SET state='ready',data=$6 ${attachmentRow}`,
-        [owner, accountId, messageId, version, position, data],
-      );
-      if (!updated.rowCount) return;
-      await db.query(
-        'UPDATE mail_content SET byte_size=byte_size+$3 WHERE user_id=$1 AND message_id=$2',
-        [owner, messageId, data.length],
-      );
-      await trimContentCache(db, owner, messageId);
-    });
+    data = await source.attachment(message, part, MAX_ATTACHMENT_BYTES);
   } catch {
     await pool.query(
       `UPDATE mail_content_attachments t SET state='failed' ${attachmentRow} AND ${leased('$6')}`,
       [owner, accountId, messageId, version, position, account.lease_token],
     );
+    return;
   } finally {
     await releaseLease(pool, account);
   }
+  // Received files are hostile input: only a clean ClamAV result is served.
+  // The scan runs after the account lease is released (it needs no provider
+  // access) and inside the 90-second hold set above, so no second job starts.
+  let outcome: 'ready' | 'blocked' | 'unchecked';
+  try {
+    outcome =
+      (await scanFile(chunks(data, 256 * 1024))) === 'clean'
+        ? 'ready'
+        : 'blocked';
+  } catch {
+    outcome = 'unchecked';
+  }
+  await transaction(pool, async (db) => {
+    const updated = await db.query(
+      `UPDATE mail_content_attachments t SET state=$6,data=$7 ${attachmentRow}
+      AND EXISTS(SELECT 1 FROM users u WHERE u.id=$1 AND u.email_verified AND NOT u.suspended)`,
+      [
+        owner,
+        accountId,
+        messageId,
+        version,
+        position,
+        outcome,
+        outcome === 'ready' ? data : null,
+      ],
+    );
+    if (!updated.rowCount || outcome !== 'ready') return;
+    await db.query(
+      'UPDATE mail_content SET byte_size=byte_size+$3 WHERE user_id=$1 AND message_id=$2',
+      [owner, messageId, data.length],
+    );
+    await trimContentCache(db, owner, messageId);
+  });
+}
+
+async function* chunks(data: Buffer, size: number) {
+  for (let offset = 0; offset < data.length; offset += size)
+    yield data.subarray(offset, offset + size);
 }

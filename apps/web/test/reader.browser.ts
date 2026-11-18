@@ -28,12 +28,14 @@ import {
   readerMail,
   tinyPng,
 } from '../../server/test/reader-fixture.js';
+import { useScannerFixture } from '../../server/test/scanner-fixture.js';
 
 test('browser reader navigation, isolated HTML, image controls, caching and stale responses', {
   timeout: 120000,
 }, async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
   assert.ok(connectionString);
+  await useScannerFixture(t);
   assert.match(
     new URL(connectionString).pathname,
     /^\/spindle_test_[a-z0-9_]+$/,
@@ -431,7 +433,7 @@ test('browser reader navigation, isolated HTML, image controls, caching and stal
     await attachments.getByText('Simulated outage.').waitFor();
     const downloaded = page.waitForEvent('download');
     await attachments.getByRole('button', { name: 'Retry download' }).click();
-    await attachments.getByText('Fetching attachment…').waitFor();
+    await attachments.getByText('Fetching and checking attachment…').waitFor();
     const download = await downloaded;
     assert.equal(download.suggestedFilename(), 'résumé__evil.pdf');
     assert.deepEqual(await readFile(await download.path()), attachmentBytes);

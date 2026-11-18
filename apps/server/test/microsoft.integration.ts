@@ -18,6 +18,7 @@ import { connectSmtp } from '../src/mail/smtp.js';
 import { claimAccount, releaseLease } from '../src/mail/store.js';
 import { createTestUser, testApp, testConfig } from './auth-fixture.js';
 import { fakeMicrosoft, type MicrosoftIdentity } from './microsoft-fixture.js';
+import { useScannerFixture } from './scanner-fixture.js';
 
 test('Microsoft configuration is optional and requires a complete credential pair', () => {
   assert.equal(readMicrosoftConfig({}), null);
@@ -39,6 +40,7 @@ test('Microsoft OAuth, Graph sync, reader, durable actions and sending', {
 }, async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
   assert.ok(connectionString);
+  await useScannerFixture(t);
   assert.match(
     new URL(connectionString).pathname,
     /^\/spindle_test_[a-z0-9_]+$/,

@@ -602,7 +602,12 @@ export function registerReaderRoutes(
             [owner, id, index],
           )
         ).rows[0];
-        if (existing && (existing.state !== 'failed' || !request.body.retry))
+        // Malware stays blocked; failed fetches and unavailable checks may retry.
+        if (
+          existing &&
+          (!['failed', 'unchecked'].includes(existing.state) ||
+            !request.body.retry)
+        )
           return { state: existing.state as string, version: content.version };
         await db.query(
           'DELETE FROM mail_content_attachments WHERE user_id=$1 AND message_id=$2 AND position=$3',
@@ -633,6 +638,18 @@ export function registerReaderRoutes(
           state: 'failed',
           message:
             'This attachment could not be fetched. It may have moved, exceeded the 10 MiB attachment or cache limit, or the provider may be unavailable.',
+        };
+      if (result.state === 'unchecked')
+        return {
+          state: 'unchecked',
+          message:
+            'The security check is unavailable, so this attachment was not downloaded. Try again later.',
+        };
+      if (result.state === 'blocked')
+        return {
+          state: 'blocked',
+          message:
+            'Blocked: the security check detected malware in this attachment. It cannot be downloaded.',
         };
       return reply.code(202).send({ state: result.state });
     },

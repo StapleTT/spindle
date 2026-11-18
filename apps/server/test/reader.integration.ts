@@ -28,6 +28,7 @@ import {
   readerMail,
   tinyPng,
 } from './reader-fixture.js';
+import { useScannerFixture } from './scanner-fixture.js';
 
 test('private cached message reader, isolated HTML and image permission', {
   skip: !process.env.TEST_DATABASE_URL,
@@ -35,6 +36,7 @@ test('private cached message reader, isolated HTML and image permission', {
 }, async (t) => {
   const connectionString = process.env.TEST_DATABASE_URL;
   assert.ok(connectionString);
+  const scanner = await useScannerFixture(t);
   assert.match(
     new URL(connectionString).pathname,
     /^\/spindle_test_[a-z0-9_]+$/,
@@ -783,6 +785,29 @@ test('private cached message reader, isolated HTML and image permission', {
         (await request(path, 'POST', { retry: true })).statusCode,
         202,
       );
+      // A scanner outage fails closed and keeps no bytes; retry refetches.
+      scanner.controls.unavailable = true;
+      await fetchMessageContent(pool, keys, pending);
+      scanner.controls.unavailable = false;
+      const stored = async () =>
+        (
+          await pool.query(
+            'SELECT state,data FROM mail_content_attachments WHERE message_id=$1 AND position=0',
+            [id],
+          )
+        ).rows[0];
+      assert.deepEqual(await stored(), { state: 'unchecked', data: null });
+      const unchecked = (await request(path, 'POST', {})).json();
+      assert.equal(unchecked.state, 'unchecked');
+      assert.match(unchecked.message, /security check is unavailable/);
+      assert.equal(
+        (await request(detail)).json().content.attachments[0].state,
+        'unchecked',
+      );
+      assert.equal(
+        (await request(path, 'POST', { retry: true })).statusCode,
+        202,
+      );
       const before = (
         await pool.query(
           'SELECT byte_size FROM mail_content WHERE message_id=$1',
@@ -875,6 +900,39 @@ test('private cached message reader, isolated HTML and image permission', {
       assert.match(
         String(forwarded.headers['content-disposition']),
         /filename="message\.eml"/,
+      );
+      // Detected malware is discarded, never served, and cannot be retried.
+      const sizeBefore = (
+        await pool.query(
+          'SELECT byte_size FROM mail_content WHERE message_id=$1',
+          [id],
+        )
+      ).rows[0].byte_size;
+      await pool.query(
+        'DELETE FROM mail_content_attachments WHERE message_id=$1 AND position=0',
+        [id],
+      );
+      await request(path, 'POST', {});
+      scanner.controls.infected = true;
+      await fetchMessageContent(pool, keys, pending);
+      scanner.controls.infected = false;
+      assert.deepEqual(await stored(), { state: 'blocked', data: null });
+      for (const body of [{}, { retry: true }]) {
+        const blocked = await request(path, 'POST', body);
+        assert.equal(blocked.statusCode, 200);
+        assert.equal(blocked.json().state, 'blocked');
+        assert.match(blocked.json().message, /detected malware/);
+      }
+      assert.equal((await stored()).state, 'blocked');
+      assert.equal((await contentRequest(ready.url)).statusCode, 404);
+      assert.equal(
+        (
+          await pool.query(
+            'SELECT byte_size FROM mail_content WHERE message_id=$1',
+            [id],
+          )
+        ).rows[0].byte_size,
+        sizeBefore,
       );
       await pool.query(
         "UPDATE mail_content SET state='failed' WHERE message_id=$1",

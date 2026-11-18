@@ -5,7 +5,7 @@ export const eicar = Buffer.from(
   'X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*',
 );
 export async function scannerFixture(t: TestContext) {
-  const controls = { unavailable: false, hold: false },
+  const controls = { unavailable: false, hold: false, infected: false },
     received: Buffer[] = [];
   const server = createServer((socket) => {
     let pending = Buffer.alloc(0),
@@ -38,7 +38,7 @@ export async function scannerFixture(t: TestContext) {
         socket.end(
           controls.unavailable
             ? 'stream: scanner unavailable ERROR\0'
-            : content.includes(eicar)
+            : controls.infected || content.includes(eicar)
               ? 'stream: Eicar-Test-Signature FOUND\0'
               : 'stream: OK\0',
         );
@@ -56,4 +56,20 @@ export async function scannerFixture(t: TestContext) {
     received,
     env: { CLAMAV_HOST: '127.0.0.1', CLAMAV_PORT: String(address.port) },
   };
+}
+
+// Points scanFile's default environment at a fixture for one test file.
+export async function useScannerFixture(t: TestContext) {
+  const scanner = await scannerFixture(t);
+  const previous = {
+    CLAMAV_HOST: process.env.CLAMAV_HOST,
+    CLAMAV_PORT: process.env.CLAMAV_PORT,
+  };
+  Object.assign(process.env, scanner.env);
+  t.after(() => {
+    for (const [name, value] of Object.entries(previous))
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+  });
+  return scanner;
 }

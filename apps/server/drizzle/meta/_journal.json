@@ -330,6 +330,13 @@
       "when": 1793550000015,
       "tag": "0046_mail_push",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1793550000016,
+      "tag": "0047_received_attachment_scan",
+      "breakpoints": true
     }
   ]
 }

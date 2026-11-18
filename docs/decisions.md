@@ -568,3 +568,15 @@ Status: user request on 2026-11-16 ("Add live push for Gmail and Outlook"). The 
 - `0046_mail_push.sql` adds `mail_push`, one row per account, cascading with it. Disconnect deletes tokens, so provider-side watches and subscriptions are not cancelled. They expire on their own (seven days for Gmail, under three for Graph), and their notifications are ignored meanwhile.
 
 Deploy the migration, then API and worker together. Rollback leaves an unused table; older workers simply keep polling. Live Gmail and Outlook acceptance needs a public URL or tunnel and the Google Pub/Sub setup in [Gmail](gmail.md#push-slice-5).
+
+## D050 — scan received attachments
+
+Status: user request on 2026-11-18 ("add incoming attachment scanning"), closing the received-file part of G05.
+
+- Received attachments are scanned with the existing private ClamAV client after the worker fetches them and before they are cached. Only a clean result is stored and served. The same rule applies to IMAP, Gmail and Outlook through the shared content fetch step.
+- Detected malware becomes `blocked`: bytes discarded, never served, no retry for that cached copy. A scanner outage, timeout or malformed reply becomes `unchecked`: bytes discarded and a retry refetches. Neither outcome falls back to serving unscanned bytes.
+- The scan runs after the account lease is released and inside the 90-second request hold, so it cannot delay sync or user actions and no duplicate job starts. The result write still requires the same cached body version, a pending row and a verified, unsuspended owner.
+- `0047_received_attachment_scan.sql` deletes cached downloads made before scanning existed. They are a re-fetchable cache, not user data.
+- Inline images are not scanned: they remain bounded, validated raster body resources shown only in the sandboxed reader.
+
+Rollback: keep the migration. Older code does not know the new states and would serve files without scanning, so roll back only with a worker that keeps scanning.
